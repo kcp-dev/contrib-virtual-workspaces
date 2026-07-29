@@ -1,0 +1,80 @@
+/*
+Copyright 2026 The kcp Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package scar
+
+import (
+	"context"
+	"errors"
+	"strings"
+
+	restStorage "k8s.io/apiserver/pkg/registry/rest"
+	genericapiserver "k8s.io/apiserver/pkg/server"
+
+	"github.com/kcp-dev/virtual-workspace-framework/framework"
+	"github.com/kcp-dev/virtual-workspace-framework/pkg/fixedgvs"
+	"github.com/kcp-dev/virtual-workspace-framework/pkg/rootapiserver"
+
+	accessv1alpha1 "github.com/kcp-dev/contrib-access-virtual-workspace/pkg/apis/access/v1alpha1"
+	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/graph"
+	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/virtual"
+)
+
+const VirtualWorkspaceName = "access"
+
+// RootPath is the URL prefix the front-proxy routes to this VW.
+// SCAR is served at RootPath + /apis/access.contrib.kcp.io/v1alpha1/selfclusteraccessreviews.
+const RootPath = "/services/" + VirtualWorkspaceName
+
+// NewVirtualWorkspace builds the Access VW: a fixed-group-version
+// delegated apiserver serving the access.contrib.kcp.io/v1alpha1 API with the
+// selfclusteraccessreviews REST storage, backed by the shared access
+// graph.
+func NewVirtualWorkspace(g *graph.Graph) rootapiserver.NamedVirtualWorkspace {
+	vw := &fixedgvs.FixedGroupVersionsVirtualWorkspace{
+		RootPathResolver: framework.RootPathResolverFunc(func(urlPath string, ctx context.Context) (bool, string, context.Context) {
+			if urlPath != RootPath && !strings.HasPrefix(urlPath, RootPath+"/") {
+				return false, "", ctx
+			}
+			return true, RootPath, ctx
+		}),
+		Authorizer: virtual.AuthenticatedOnlyAuthorizer(),
+		ReadyChecker: framework.ReadyFunc(func() error {
+			if !g.Ready() {
+				return errors.New("access graph has not completed its initial sync")
+			}
+			return nil
+		}),
+		GroupVersionAPISets: []fixedgvs.GroupVersionAPISet{
+			{
+				GroupVersion: accessv1alpha1.SchemeGroupVersion,
+				AddToScheme:  accessv1alpha1.AddToScheme,
+				BootstrapRestResources: func(_ genericapiserver.CompletedConfig) (map[string]fixedgvs.RestStorageBuilder, error) {
+					return map[string]fixedgvs.RestStorageBuilder{
+						"selfclusteraccessreviews": func(_ genericapiserver.CompletedConfig) (restStorage.Storage, error) {
+							return NewREST(g), nil
+						},
+					}, nil
+				},
+			},
+		},
+	}
+
+	return rootapiserver.NamedVirtualWorkspace{
+		Name:             VirtualWorkspaceName,
+		VirtualWorkspace: &virtual.WithoutAdmission{CoreVirtualWorkspace: vw},
+	}
+}

@@ -1,3 +1,5 @@
+# Access Virtual Workspace
+
 Permission-aware workspace discovery for kcp. Answers "which workspaces does this
 user have access to?" in a single API call — a **SelfClusterAccessReview** (SCAR) —
 instead of N `SelfSubjectAccessReview`s.
@@ -22,7 +24,7 @@ When bumping the root `go.mod`, keep this one in sync.
 ## How it works
 
 1. **Indexing.** A provider watches `ClusterRoleBindings` and `RoleBindings` across
-   every workspace that has bound the `access.kcp.io` APIExport, translating them into
+   every workspace that has bound the `access.contrib.kcp.io` APIExport, translating them into
    an in-memory permission graph of subjects (users, groups, service accounts) to
    logical clusters. Indexing is opt-in by design: a workspace is only discoverable
    once it binds the APIExport.
@@ -52,7 +54,7 @@ implement the same interface without changing the SCAR API surface.
 | `pkg/rbacprovider` | Watches CRBs/RBs, translates them into graph grants. |
 | `pkg/server` | Options and wiring: serving, delegated authn, VW registration. |
 | `pkg/virtual/scar` | SCAR REST storage and virtual workspace definition. |
-| `config/apiexport` | `access.kcp.io` APIExport + APIResourceSchema. |
+| `config/apiexport` | `access.contrib.kcp.io` APIExport + APIResourceSchema. |
 | `config/examples` | APIBinding for consumer workspaces to opt in. |
 
 ## Running
@@ -65,13 +67,13 @@ kubectl apply -f config/apiexport/
 
 bin/access-vw \
   --kubeconfig=$KUBECONFIG \
-  --apiexport-endpointslice=access.kcp.io \
+  --apiexport-endpointslice=access.contrib.kcp.io \
   --endpoint-base=https://localhost:6443/clusters/ \
   --secure-port=9443
 ```
 
 `--apiexport-endpointslice` names the `APIExportEndpointSlice` kcp generates for the
-APIExport, so it matches the export's name (`access.kcp.io`).
+APIExport, so it matches the export's name (`access.contrib.kcp.io`).
 
 Serving is TLS-only; a self-signed certificate is generated for development if none is
 supplied. Callers are authenticated by the standard delegated stack — front-proxy
@@ -83,7 +85,7 @@ Issue a review:
 ```sh
 curl -k -XPOST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" -d '{}' \
-  https://localhost:9443/services/access/apis/access.kcp.io/v1alpha1/selfclusteraccessreviews
+  https://localhost:9443/services/access/apis/access.contrib.kcp.io/v1alpha1/selfclusteraccessreviews
 ```
 
 ### Behind the front-proxy
