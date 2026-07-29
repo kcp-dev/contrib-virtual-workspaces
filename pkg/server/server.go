@@ -111,7 +111,7 @@ func Run(ctx context.Context, o *Options) error {
 	if err := o.SecureServing.ApplyTo(&recommended.Config.SecureServing); err != nil {
 		return fmt.Errorf("apply secure serving: %w", err)
 	}
-	if err := o.Authentication.ApplyTo(&recommended.Config.Authentication, recommended.Config.SecureServing, nil); err != nil {
+	if err := o.Authentication.ApplyTo(ctx, &recommended.Config.Authentication, recommended.Config.SecureServing); err != nil {
 		return fmt.Errorf("apply authentication: %w", err)
 	}
 	if err := o.Authorization.ApplyTo(&recommended.Config, func() []rootapiserver.NamedVirtualWorkspace { return vws }); err != nil {
@@ -141,7 +141,11 @@ func Run(ctx context.Context, o *Options) error {
 		w.Header().Set("Content-Type", "application/json")
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
-		if err := enc.Encode(g.Snapshot()); err != nil {
+		if err := enc.Encode(graphDebug{
+			Snapshot:               g.Snapshot(),
+			EngagedClusters:        provider.EngagedClusters(),
+			APIExportEndpointSlice: o.APIExportEndpointSlice,
+		}); err != nil {
 			klog.ErrorS(err, "encoding access graph snapshot")
 		}
 	})
@@ -176,4 +180,10 @@ func pathScopedAuthorizer(path string, delegate authorizer.Authorizer) authorize
 		}
 		return authorizer.DecisionNoOpinion, "", nil
 	})
+}
+
+type graphDebug struct {
+	graph.Snapshot
+	EngagedClusters        int    `json:"engagedClusters"`
+	APIExportEndpointSlice string `json:"apiExportEndpointSlice,omitempty"`
 }

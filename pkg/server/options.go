@@ -35,23 +35,21 @@ type Options struct {
 	// the proxy's client cert via the requestheader CA.
 	SecureServing *genericoptions.SecureServingOptions
 
-	// Authentication configures delegated authentication:
-	//   - requestheader: trust X-Remote-User/X-Remote-Group/X-Remote-Extra-*
-	//     from clients presenting a cert signed by --requestheader-client-ca-file
-	//     (this is how kcp's front-proxy forwards identity),
-	//   - bearer tokens: TokenReview against kcp (direct access without
-	//     the front-proxy, e.g. local development),
-	//   - client certs via --client-ca-file.
-	Authentication *genericoptions.DelegatingAuthenticationOptions
+	// Authentication configures how callers are identified: a JWT
+	// authenticator (--authentication-config or the --oidc-* flags),
+	// request header identity forwarded by kcp's front-proxy, and
+	// client certificates. Its configuration must match kcp's, because
+	// the graph compares usernames verbatim against RBAC subjects —
+	// see authentication.go.
+	Authentication *Authentication
 
 	// Authorization is the virtual-workspace-framework authorizer setup:
 	// always-allow paths (health endpoints) plus per-VW authorizers.
 	Authorization *vwoptions.Authorization
 
 	// Kubeconfig is the path to the kubeconfig for the target kcp.
-	// Used by the RBAC provider (informers), for TokenReview-based
-	// authentication, and as the base identity for impersonated
-	// per-workspace MCP calls.
+	// Used by the RBAC provider's informers and as the base identity
+	// for impersonated per-workspace calls.
 	Kubeconfig string
 
 	// EndpointBase is the front-proxy URL prefix used to construct
@@ -70,13 +68,12 @@ type Options struct {
 func NewOptions() *Options {
 	o := &Options{
 		SecureServing:  genericoptions.NewSecureServingOptions(),
-		Authentication: genericoptions.NewDelegatingAuthenticationOptions(),
+		Authentication: NewAuthentication(),
 		Authorization:  vwoptions.NewAuthorization(),
 	}
 
 	o.SecureServing.BindPort = 9443
 	o.SecureServing.ServerCert.PairName = "access-vw"
-	o.Authentication.SkipInClusterLookup = true
 
 	return o
 }
@@ -104,8 +101,9 @@ func (o *Options) Complete() error {
 		return fmt.Errorf("--kubeconfig is required")
 	}
 
-	if o.Authentication.RemoteKubeConfigFile == "" {
-		o.Authentication.RemoteKubeConfigFile = o.Kubeconfig
+	if !o.Authentication.OIDCEnabled() && !o.Authentication.RequestHeaderEnabled() {
+		return fmt.Errorf("no authentication method configured: set --authentication-config or --oidc-issuer-url " +
+			"for direct callers, and/or --requestheader-client-ca-file when running behind kcp's front-proxy")
 	}
 
 	return nil

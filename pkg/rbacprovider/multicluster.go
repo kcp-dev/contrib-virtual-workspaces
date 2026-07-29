@@ -64,7 +64,7 @@ func (p *Provider) runMulticluster(ctx context.Context, cfg *rest.Config, g *gra
 	provider, err := apiexport.New(cfg, p.APIExportEndpointSlice, apiexport.Options{
 		Scheme:   sch,
 		Log:      &logger,
-		Handlers: handlers.Handlers{clusterLifecycle{t: p.translator, logger: logger}},
+		Handlers: handlers.Handlers{clusterLifecycle{t: p.translator, engaged: &p.engaged, logger: logger}},
 	})
 	if err != nil {
 		return fmt.Errorf("construct apiexport provider: %w", err)
@@ -93,7 +93,18 @@ func (p *Provider) runMulticluster(ctx context.Context, cfg *rest.Config, g *gra
 		}
 
 		g.SetReady()
-		logger.Info("access graph marked ready (cluster discovery cache synced)")
+
+		engaged := p.EngagedClusters()
+		if engaged == 0 {
+			logger.Info("access graph is ready but no logical clusters were discovered; "+
+				"check that the APIExportEndpointSlice exists and that consumer workspaces have an "+
+				"APIBinding accepting this APIExport's permission claims",
+				"apiExportEndpointSlice", p.APIExportEndpointSlice)
+		} else {
+			logger.Info("access graph marked ready (cluster discovery cache synced)",
+				"engagedClusters", engaged)
+		}
+
 		<-ctx.Done()
 		return nil
 	})); err != nil {
@@ -103,12 +114,23 @@ func (p *Provider) runMulticluster(ctx context.Context, cfg *rest.Config, g *gra
 	return mgr.Start(ctx)
 }
 
+// clusterLifecycle tracks logical clusters joining and leaving the
+// provider's fleet: it keeps the engaged-cluster count current for
+// diagnostics, and drops departing clusters from the graph.
 type clusterLifecycle struct {
-	t      *Translator
-	logger logr.Logger
+	t       *Translator
+	engaged *clusterSet
+	logger  logr.Logger
 }
 
-func (c clusterLifecycle) OnAdd(client.Object) {}
+func (c clusterLifecycle) OnAdd(obj client.Object) {
+	cluster := graph.LogicalCluster(logicalcluster.From(obj).String())
+	if cluster == "" {
+		return
+	}
+	c.engaged.add(cluster)
+	c.logger.V(2).Info("cluster joined the fleet", "cluster", cluster, "engagedClusters", c.engaged.len())
+}
 
 func (c clusterLifecycle) OnUpdate(client.Object, client.Object) {}
 
@@ -117,7 +139,9 @@ func (c clusterLifecycle) OnDelete(obj client.Object) {
 	if cluster == "" {
 		return
 	}
-	c.logger.Info("cluster left the fleet, dropping from access graph", "cluster", cluster)
+	c.engaged.remove(cluster)
+	c.logger.Info("cluster left the fleet, dropping from access graph",
+		"cluster", cluster, "engagedClusters", c.engaged.len())
 	c.t.ForgetCluster(cluster)
 }
 

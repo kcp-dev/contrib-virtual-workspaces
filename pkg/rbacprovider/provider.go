@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -78,11 +79,44 @@ type Provider struct {
 	APIExportEndpointSlice string
 
 	translator *Translator
+	engaged    clusterSet
 }
 
 // New returns a configured Provider in stub mode.
 func New(endpointBaseURL string) *Provider {
 	return &Provider{EndpointBaseURL: endpointBaseURL}
+}
+
+// EngagedClusters returns how many logical clusters the provider is
+// currently watching.
+func (p *Provider) EngagedClusters() int {
+	return p.engaged.len()
+}
+
+type clusterSet struct {
+	mu       sync.Mutex
+	clusters map[graph.LogicalCluster]struct{}
+}
+
+func (s *clusterSet) add(c graph.LogicalCluster) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.clusters == nil {
+		s.clusters = make(map[graph.LogicalCluster]struct{})
+	}
+	s.clusters[c] = struct{}{}
+}
+
+func (s *clusterSet) remove(c graph.LogicalCluster) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.clusters, c)
+}
+
+func (s *clusterSet) len() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.clusters)
 }
 
 // Start implements accessprovider.AccessProvider. It dispatches to

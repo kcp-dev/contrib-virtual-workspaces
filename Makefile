@@ -7,6 +7,8 @@ ENDPOINT_BASE    ?= https://localhost:6443/clusters/
 SECURE_PORT      ?= 9443
 APIEXPORT_SLICE  ?= access.contrib.kcp.io
 EXPORT_PATH      ?= root
+WORKSPACE         ?= root:access
+CREATE_WORKSPACES ?= false
 WS_ALICE         ?= workspace-alice
 WS_BOB           ?= workspace-bob
 
@@ -24,8 +26,9 @@ help: ## Show available targets
 #Build & test
 
 .PHONY: build
-build: ## Build the access-vw and scar-to-kubeconfig binaries into bin/
-	go build -o bin/access-vw ./cmd/server
+build: ## Build all binaries into bin/
+	go build -o bin/access-vw ./cmd/access-vw
+	go build -o bin/access-vw-init ./cmd/init
 	go build -o bin/scar-to-kubeconfig ./cmd/scar-to-kubeconfig
 
 .PHONY: test
@@ -40,6 +43,14 @@ vet: ## Run go vet
 tidy: ## Sync go.mod / go.sum
 	go mod tidy
 
+.PHONY: verify
+verify: vet verify-fork-pin ## Run all verification checks
+	go mod tidy -diff
+
+.PHONY: verify-fork-pin
+verify-fork-pin: ## Check the kcp Kubernetes fork pin matches virtual-workspace-framework
+	./hack/verify-fork-pin.sh
+
 .PHONY: clean
 clean: ## Remove build artifacts
 	rm -rf bin/
@@ -48,11 +59,19 @@ clean: ## Remove build artifacts
 # Run these against the workspace where the access VW's APIExport
 # should live (usually root or a system-adjacent workspace).
 
+.PHONY: init
+init: build ## Bootstrap kcp: install the APIExport, schema and endpoint slice, then verify
+	./bin/access-vw-init \
+		--kubeconfig $(KUBECONFIG) \
+		--workspace $(WORKSPACE) \
+		$(if $(filter true,$(CREATE_WORKSPACES)),--create-workspaces,)
+
 .PHONY: install-apiexport
-install-apiexport: ## Install the access.contrib.kcp.io APIExport + ARS in $(EXPORT_PATH)
+install-apiexport: ## Deprecated: use `make init`. Applies the APIExport assets with kubectl.
 	kubectl ws use $(EXPORT_PATH)
 	kubectl apply -f config/apiexport/apiresourceschema.yaml
 	kubectl apply -f config/apiexport/apiexport.yaml
+	kubectl apply -f config/apiexport/apiexportendpointslice.yaml
 
 .PHONY: show-apiexport
 show-apiexport: ## Show the APIExport, ARS and generated EndpointSlice

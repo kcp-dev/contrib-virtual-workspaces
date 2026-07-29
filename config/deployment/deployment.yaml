@@ -17,6 +17,23 @@ spec:
         app.kubernetes.io/name: access-vw
     spec:
       serviceAccountName: access-vw
+      initContainers:
+        - name: init
+          image: ghcr.io/kcp-dev/access-vw:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/access-vw-init"]
+          args:
+            - --kubeconfig=/etc/kcp/kubeconfig/kubeconfig
+          volumeMounts:
+            - name: kubeconfig
+              mountPath: /etc/kcp/kubeconfig
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
       containers:
         - name: server
           image: ghcr.io/kcp-dev/access-vw:latest
