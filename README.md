@@ -1,3 +1,5 @@
+# contrib-access-virtual-workspace
+
 Permission-aware workspace discovery for kcp. Answers "which workspaces does this
 user have access to?" in a single API call — a **SelfClusterAccessReview** (SCAR) —
 instead of N `SelfSubjectAccessReview`s.
