@@ -19,25 +19,13 @@ limitations under the License.
 // APIExportEndpointSlice the RBAC provider follows — and verifies they came
 // up.
 //
-// It is idempotent, so it can run as an init container that re-runs on every
-// pod restart. Two ways to use it:
-//
-// Privileged, with rights to create workspaces from root down. Creates any
-// missing workspace along the path, then installs into the leaf:
-//
 //	access-vw-init --kubeconfig=admin.kubeconfig --create-workspaces \
 //	  --workspace=root:access:magic
-//
-// Unprivileged, holding cluster-admin in one workspace and not necessarily
-// knowing where it sits in the tree. The kubeconfig's current context is the
-// target, and nothing else is touched:
-//
-//	access-vw-init --kubeconfig=my.kubeconfig
 package main
 
 import (
-	goflag "flag"
 	"context"
+	goflag "flag"
 	"os"
 	"time"
 
@@ -130,8 +118,6 @@ func main() {
 	report(logger, target, result)
 }
 
-// report prints the values the server needs, so a human running this by hand
-// does not have to go looking for them.
 func report(logger klog.Logger, cfg *rest.Config, result *bootstrap.Result) {
 	logger.Info("bootstrap complete",
 		"workspace", result.WorkspacePath,

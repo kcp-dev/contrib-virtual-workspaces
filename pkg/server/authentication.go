@@ -32,17 +32,6 @@ import (
 // component needs and override ApplyTo so unused auth plumbing is not dragged
 // in.
 //
-// Why the VW authenticates callers itself rather than delegating:
-//
-// The graph indexes RBAC subjects verbatim — a ClusterRoleBinding naming
-// "pm:bob@pm.localhost" is stored under exactly that string — and SCAR looks
-// the caller up the same way. That only matches if the username the VW
-// resolves is byte-identical to the one kcp resolves, which means the VW must
-// apply the same issuer, audience, claim mappings and username/group prefixes
-// that kcp does. Validating the JWT here with kcp's own authentication options
-// is what makes that true; delegating to TokenReview would depend on kcp
-// serving an API it does not necessarily expose.
-//
 // Enabled methods:
 //
 //   - OIDC / structured authentication config: for clients that reach the VW
@@ -63,6 +52,7 @@ type Authentication struct {
 func NewAuthentication() *Authentication {
 	return &Authentication{
 		BuiltInOptions: kubeoptions.NewBuiltInAuthenticationOptions().
+			WithAnonymous().
 			WithClientCert().
 			WithOIDC().
 			WithRequestHeader(),
