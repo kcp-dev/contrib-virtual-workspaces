@@ -1,0 +1,128 @@
+# Applied in the provider workspace, e.g. root:providers:s3.
+#
+# Two schemas, and nothing in either says how it will be served -- that is the
+# APIExport's decision, in 02-apiexport.yaml:
+#
+#   Bucket      a record. Stored in etcd, all the usual verbs, exactly like any
+#               other resource a provider exports.
+#   BucketInfo  a question. Answered by the provider's webhook and never stored.
+#
+# They are deliberately in one export, because that is the realistic shape: the
+# thing you own, and a live question about it. Only the second one is unusual.
+---
+# The ordinary half. Nothing about this resource involves this project: it is
+# here to show that a virtual-storage resource sits next to CRD-backed ones in
+# the same APIExport, and that the shard keeps serving those from its own
+# storage rather than forwarding them anywhere.
+apiVersion: apis.kcp.io/v1alpha1
+kind: APIResourceSchema
+metadata:
+  name: v1alpha1.buckets.s3.example.com
+spec:
+  group: s3.example.com
+  scope: Cluster
+  names:
+    kind: Bucket
+    listKind: BucketList
+    plural: buckets
+    singular: bucket
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    # A status subresource, which the ephemeral resource below cannot have:
+    # /status needs a stored, named object to address.
+    subresources:
+      status: {}
+    schema:
+      description: Bucket is a bucket this provider manages.
+      type: object
+      properties:
+        apiVersion:
+          type: string
+        kind:
+          type: string
+        metadata:
+          type: object
+        spec:
+          type: object
+          required:
+          - region
+          properties:
+            region:
+              description: region is where the bucket lives.
+              type: string
+              minLength: 1
+            versioning:
+              description: versioning enables object versioning.
+              type: boolean
+              default: false
+        status:
+          type: object
+          properties:
+            phase:
+              description: phase is where the bucket is in its lifecycle.
+              type: string
+              enum:
+              - Pending
+              - Ready
+              - Deleting
+---
+# The ephemeral half.
+#
+# Note there is no `status` subresource: only create is served, there is no
+# named object to hang /status off, and the status of an ephemeral object is
+# part of the single response -- the way SelfSubjectReview returns its status
+# inline.
+apiVersion: apis.kcp.io/v1alpha1
+kind: APIResourceSchema
+metadata:
+  name: v1alpha1.bucketinfos.s3.example.com
+spec:
+  group: s3.example.com
+  scope: Cluster
+  names:
+    kind: BucketInfo
+    listKind: BucketInfoList
+    plural: bucketinfos
+    singular: bucketinfo
+  versions:
+  - name: v1alpha1
+    served: true
+    # Nothing is ever stored, but kcp's admission requires exactly one version
+    # marked as the storage version, and this flag is inert for virtual storage:
+    # the apibinding reconciler only tracks storage versions for resources whose
+    # APIExport entry uses `storage: crd`. A virtual resource ends up with zero
+    # storage versions on the binding regardless, which is the signal the shard
+    # looks for.
+    storage: true
+    schema:
+      description: BucketInfo answers a question about a bucket with live numbers.
+      type: object
+      properties:
+        apiVersion:
+          type: string
+        kind:
+          type: string
+        metadata:
+          type: object
+        spec:
+          type: object
+          required:
+          - bucketName
+          properties:
+            bucketName:
+              description: bucketName is the bucket to report on.
+              type: string
+              minLength: 1
+        status:
+          type: object
+          properties:
+            sizeBytes:
+              description: sizeBytes is the total size of the bucket right now.
+              type: integer
+              format: int64
+            objectCount:
+              description: objectCount is the number of objects in the bucket right now.
+              type: integer
+              format: int64

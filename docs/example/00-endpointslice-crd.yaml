@@ -1,0 +1,158 @@
+# Applied in the provider workspace, e.g. root:providers:s3.
+#
+# The kind an APIExport points at to say where its ephemeral resources are
+# served. It exists because the alternative -- referencing an
+# APIExportEndpointSlice -- means accepting a URL kcp composes from
+# shard.spec.virtualWorkspaceURL, and that setting is shard-global: aiming it at
+# this server redirects every virtual workspace on the shard.
+#
+# A provider owns this object because a provider is the only party that knows
+# where their virtual workspace runs. The ephemeral virtual workspace fills in
+# status.endpoints itself, from its --external-url.
+#
+# For the shard to resolve a reference to this kind, kcp has to replicate the
+# object to the cache server. That is what the reference-driven replication
+# controller does: it replicates what an APIExport names, rather than a fixed
+# list of kinds.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: ephemeralresourceendpointslices.ephemeral.contrib.kcp.io
+spec:
+  group: ephemeral.contrib.kcp.io
+  scope: Cluster
+  names:
+    kind: EphemeralResourceEndpointSlice
+    listKind: EphemeralResourceEndpointSliceList
+    plural: ephemeralresourceendpointslices
+    singular: ephemeralresourceendpointslice
+    categories:
+    - kcp
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    subresources:
+      status: {}
+    additionalPrinterColumns:
+    - name: URL
+      type: string
+      jsonPath: .status.endpoints[0].url
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+    schema:
+      openAPIV3Schema:
+        description: |-
+          EphemeralResourceEndpointSlice tells kcp where the virtual workspace
+          serving an APIExport's ephemeral resources can be reached.
+        type: object
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            type: object
+            required:
+            - export
+            properties:
+              export:
+                description: |-
+                  export names the APIExport whose ephemeral resources this
+                  virtual workspace serves, in this same workspace.
+                type: object
+                required:
+                - name
+                properties:
+                  name:
+                    type: string
+                    minLength: 1
+          status:
+            type: object
+            properties:
+              endpoints:
+                description: |-
+                  endpoints are the URLs the resources are served on, written by
+                  the virtual workspace itself.
+                type: array
+                items:
+                  type: object
+                  required:
+                  - url
+                  properties:
+                    url:
+                      type: string
+                      minLength: 1
+                    shards:
+                      description: |-
+                        shards says which shards should use this URL. matchAll is
+                        the whole installation; selector is a subset of it, by
+                        shard labels. Saying neither leaves the URL to be matched
+                        by prefix against the shard's own address, which is not
+                        what a provider-run virtual workspace wants.
+                      type: object
+                      x-kubernetes-validations:
+                      - rule: "!(has(self.matchAll) && self.matchAll && has(self.selector))"
+                        message: matchAll and selector are mutually exclusive
+                      properties:
+                        matchAll:
+                          description: |-
+                            matchAll says this URL serves every shard, which is
+                            what one virtual workspace publishes.
+                          type: boolean
+                        selector:
+                          description: |-
+                            selector picks shards by label. Every shard labels
+                            itself with its own name, so one shard is
+                            matchLabels: {name: <shard>}.
+                          type: object
+                          properties:
+                            matchLabels:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            matchExpressions:
+                              type: array
+                              items:
+                                type: object
+                                required:
+                                - key
+                                - operator
+                                properties:
+                                  key:
+                                    type: string
+                                  operator:
+                                    type: string
+                                  values:
+                                    type: array
+                                    items:
+                                      type: string
+                          x-kubernetes-map-type: atomic
+              conditions:
+                type: array
+                items:
+                  type: object
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  properties:
+                    lastTransitionTime:
+                      type: string
+                      format: date-time
+                    message:
+                      type: string
+                    observedGeneration:
+                      type: integer
+                      format: int64
+                    reason:
+                      type: string
+                    status:
+                      type: string
+                    type:
+                      type: string

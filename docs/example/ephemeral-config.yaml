@@ -1,0 +1,54 @@
+# Passed to the server as --ephemeral-config.
+#
+# This file is the registration point for webhook-backed resources, and it is
+# owned by whoever operates this virtual workspace -- not by service providers.
+# That is a deliberate consequence of running out of tree: a provider-owned CRD
+# carrying webhook configuration would never reach the shard that resolves the
+# request, because kcp's cache server only replicates a hardcoded set of kinds.
+#
+# It is also the de facto authorization gate. Adding an entry here is what
+# grants a provider the ability to have kcp call out to their endpoint, which is
+# the control the feature needs and does not otherwise have.
+apiVersion: ephemeral.contrib.kcp.io/v1alpha1
+kind: EphemeralWebhookConfiguration
+resources:
+- export:
+    # Either the workspace path or the logical cluster name of the APIExport.
+    path: root:providers:s3
+    name: s3.example.com
+
+  # Which resource of that export is webhook-backed. The APIResourceSchema is
+  # resolved from the export's own spec.resources entry, so it is not named
+  # here: there is only one place the mapping lives.
+  group: s3.example.com
+  resource: bucketinfos
+
+  webhook:
+    # https only. There is no service variant: a Service in a logical cluster
+    # has no backing endpoints.
+    #
+    # This is examples/webhook on its default port, so the file works as it
+    # stands -- but only against that example, and only with
+    # --allow-private-webhook-addresses, because the server refuses loopback and
+    # private addresses by default. A real provider endpoint replaces this, and
+    # then that flag comes back off.
+    url: https://localhost:18443/ephemeral/bucketinfos
+
+    # Verifies the endpoint's serving certificate. Omit to use the system trust
+    # store. hack/gen-pki.sh writes its own CA path here, and signs
+    # examples/webhook's serving certificate with it.
+    caBundleFile: /etc/ephemeral/webhook-ca.crt
+
+    # The client certificate this server presents to the webhook.
+    #
+    # Strongly recommended. The review tells the webhook who the user is, which
+    # puts the webhook in the position of an aggregated API server: without
+    # client authentication, anyone who can reach the endpoint can assert any
+    # identity and read any user's data. Providers should verify the chain, not
+    # merely require that a certificate was presented.
+    clientCertFile: /etc/ephemeral/client.crt
+    clientKeyFile: /etc/ephemeral/client.key
+
+    # Capped at 30 by the server. A slow webhook holds a request goroutine for
+    # its whole duration.
+    timeoutSeconds: 10
