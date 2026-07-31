@@ -1,0 +1,6 @@
+apiVersion: v2
+name: mcp-virtual-workspace
+description: Model Context Protocol served as a kcp virtual workspace
+type: application
+version: 0.1.0
+appVersion: 0.1.0
