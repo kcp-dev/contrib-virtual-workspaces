@@ -1,5 +1,5 @@
 /*
-Copyright 2026 The KCP Authors.
+Copyright 2026 The kcp Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -34,8 +34,31 @@ import (
 	"k8s.io/klog/v2"
 )
 
-// DefaultWorkspacePath is where the APIExport lands when no path is given.
-const DefaultWorkspacePath = "root:access"
+// The APIExport lands in <prefix>:<leaf>, both configurable so a deployment
+// can bring its own tree. The default is root:access:controllers.
+const (
+	// DefaultWorkspacePrefix is the parent path the leaf is created under.
+	DefaultWorkspacePrefix = "root:access"
+
+	// DefaultControllersWorkspace is the leaf workspace this component owns.
+	DefaultControllersWorkspace = "controllers"
+)
+
+// JoinWorkspacePath composes a prefix and leaf into an absolute path,
+// tolerating a prefix given with kubectl-ws style leading colons.
+func JoinWorkspacePath(prefix, leaf string) (string, error) {
+	if leaf == "" {
+		return "", fmt.Errorf("controllers workspace name must not be empty")
+	}
+	if strings.Contains(leaf, ":") {
+		return "", fmt.Errorf("controllers workspace name %q must be a single segment, not a path", leaf)
+	}
+	trimmed := strings.Trim(prefix, ":")
+	if trimmed == "" {
+		return "", fmt.Errorf("workspace prefix must not be empty")
+	}
+	return trimmed + ":" + leaf, nil
+}
 
 // DefaultWorkspaceType is the WorkspaceType used for workspaces this
 // bootstrap creates. "universal" is the plain, unopinionated type; a
@@ -65,7 +88,9 @@ func ParseWorkspacePath(path string) ([]string, error) {
 	return segments, nil
 }
 
-// CreateWorkspacePath creates every workspace along path that does not exist yet.
+// CreateWorkspacePath creates every workspace along path that does not exist
+// yet and returns a config addressing the leaf. Requires rights to create
+// workspaces from root down.
 func CreateWorkspacePath(ctx context.Context, cfg *rest.Config, path, workspaceType string) (*rest.Config, error) {
 	segments, err := ParseWorkspacePath(path)
 	if err != nil {
@@ -82,8 +107,8 @@ func CreateWorkspacePath(ctx context.Context, cfg *rest.Config, path, workspaceT
 		return nil, err
 	}
 
-	// segments[0] is root, which always exists.
-	current := segments[0]
+	current := segments[0] // root always exists
+
 	for _, name := range segments[1:] {
 		parent := configForCluster(cfg, base, current)
 
@@ -99,20 +124,6 @@ func CreateWorkspacePath(ctx context.Context, cfg *rest.Config, path, workspaceT
 	}
 
 	return configForCluster(cfg, base, current), nil
-}
-
-// ConfigForPath returns a config addressing an existing absolute workspace
-// path, without creating anything.
-func ConfigForPath(cfg *rest.Config, path string) (*rest.Config, error) {
-	segments, err := ParseWorkspacePath(path)
-	if err != nil {
-		return nil, err
-	}
-	base, err := baseURL(cfg.Host)
-	if err != nil {
-		return nil, err
-	}
-	return configForCluster(cfg, base, strings.Join(segments, ":")), nil
 }
 
 func baseURL(host string) (string, error) {
@@ -151,8 +162,6 @@ func createWorkspace(ctx context.Context, parent *rest.Config, name, workspaceTy
 
 	if _, err := client.Resource(workspaceGVR).Create(ctx, ws, metav1.CreateOptions{}); err != nil {
 		if apierrors.IsAlreadyExists(err) {
-			// Left as-is on purpose: the workspace may hold unrelated
-			// content, and this bootstrap has no business reconciling it.
 			logger.V(2).Info("workspace already exists", "name", name)
 			return nil
 		}

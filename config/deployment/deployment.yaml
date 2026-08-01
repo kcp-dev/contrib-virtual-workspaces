@@ -19,11 +19,24 @@ spec:
       serviceAccountName: access-vw
       initContainers:
         - name: init
-          image: ghcr.io/kcp-dev/access-vw:latest
+          image: ghcr.io/kcp-dev/contrib-access-vw:latest
           imagePullPolicy: IfNotPresent
           command: ["/access-vw-init"]
           args:
             - --kubeconfig=/etc/kcp/kubeconfig/kubeconfig
+            # The APIExport and the ServiceAccount the server runs as land in
+            # <prefix>:<controllers-workspace>. Both are configurable so this
+            # can be dropped anywhere in an existing tree.
+            - --workspace-prefix=root:access
+            - --controllers-workspace=controllers
+            # Add --create-workspaces when the mounted kubeconfig is a
+            # kcp-admin one and the tree should be created. Without it, the
+            # kubeconfig's current context is the target and must already
+            # exist.
+            # - --create-workspaces
+            # The generated kubeconfig has to address kcp from where the
+            # server runs, which is not necessarily the URL init used.
+            # - --host-override=https://frontproxy.kcp-system.svc:6443
           volumeMounts:
             - name: kubeconfig
               mountPath: /etc/kcp/kubeconfig
@@ -36,7 +49,7 @@ spec:
               memory: 256Mi
       containers:
         - name: server
-          image: ghcr.io/kcp-dev/access-vw:latest
+          image: ghcr.io/kcp-dev/contrib-access-vw:latest
           imagePullPolicy: IfNotPresent
           args:
             - --secure-port=9443

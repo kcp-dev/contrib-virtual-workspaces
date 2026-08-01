@@ -1,5 +1,5 @@
 /*
-Copyright 2026 The KCP Authors.
+Copyright 2026 The kcp Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,8 +19,12 @@ limitations under the License.
 // APIExportEndpointSlice the RBAC provider follows — and verifies they came
 // up.
 //
+// The APIExport and the ServiceAccount the server runs as land in
+// <prefix>:<controllers-workspace>, default root:access:controllers. Both
+// halves are configurable so a deployment can bring its own tree:
+//
 //	access-vw-init --kubeconfig=admin.kubeconfig --create-workspaces \
-//	  --workspace=root:access:magic
+//	  --workspace-prefix=root:magic --controllers-workspace=controllers
 package main
 
 import (
@@ -40,12 +44,14 @@ import (
 
 func main() {
 	var (
-		kubeconfig       string
-		workspacePath    string
-		workspaceType    string
-		createWorkspaces bool
-		verifyBinding    string
-		timeout          time.Duration
+		kubeconfig            string
+		workspacePrefix       string
+		controllersWorkspace  string
+		workspaceType         string
+		createWorkspaces      bool
+		hostOverride          string
+		verifyBinding         string
+		timeout               time.Duration
 	)
 
 	klog.InitFlags(goflag.CommandLine)
@@ -53,14 +59,22 @@ func main() {
 
 	pflag.StringVar(&kubeconfig, "kubeconfig", os.Getenv("KUBECONFIG"),
 		"Path to the kubeconfig for the target kcp. Defaults to $KUBECONFIG.")
-	pflag.StringVar(&workspacePath, "workspace", bootstrap.DefaultWorkspacePath,
-		"Absolute path of the workspace to install into, e.g. root:access:magic. "+
+	pflag.StringVar(&workspacePrefix, "workspace-prefix", bootstrap.DefaultWorkspacePrefix,
+		"Parent path the controllers workspace is created under, e.g. root:magic. "+
 			"Only meaningful with --create-workspaces; without it the kubeconfig's "+
 			"current context decides the target workspace.")
+	pflag.StringVar(&controllersWorkspace, "controllers-workspace", bootstrap.DefaultControllersWorkspace,
+		"Name of the workspace this component owns, created under --workspace-prefix. "+
+			"Holds the APIExport and the ServiceAccount the server runs as.")
+	pflag.StringVar(&hostOverride, "host-override", os.Getenv("HOST_OVERRIDE"),
+		"Replace scheme://host[:port] in the generated kubeconfig, keeping the "+
+			"workspace path. Use when init runs against an external URL but the "+
+			"server connects from inside the cluster, e.g. "+
+			"https://frontproxy.kcp-system.svc:6443.")
 	pflag.StringVar(&workspaceType, "workspace-type", bootstrap.DefaultWorkspaceType,
 		"WorkspaceType for workspaces created by --create-workspaces.")
 	pflag.BoolVar(&createWorkspaces, "create-workspaces", false,
-		"Create any missing workspace along --workspace before installing. Requires "+
+		"Create any missing workspace along the target path before installing. Requires "+
 			"rights to create workspaces from root down; omit it when you only hold "+
 			"cluster-admin in the target workspace.")
 	pflag.StringVar(&verifyBinding, "verify-apibinding", "",
@@ -89,6 +103,12 @@ func main() {
 	reportedPath := "(kubeconfig current context)"
 
 	if createWorkspaces {
+		workspacePath, err := bootstrap.JoinWorkspacePath(workspacePrefix, controllersWorkspace)
+		if err != nil {
+			logger.Error(err, "invalid workspace configuration")
+			os.Exit(1)
+		}
+
 		logger.Info("creating workspace path", "path", workspacePath, "type", workspaceType)
 		target, err = bootstrap.CreateWorkspacePath(ctx, cfg, workspacePath, workspaceType)
 		if err != nil {
@@ -100,6 +120,7 @@ func main() {
 
 	result, err := bootstrap.Bootstrap(ctx, target, bootstrap.Options{
 		WorkspacePath: reportedPath,
+		HostOverride:  hostOverride,
 		Timeout:       timeout,
 	})
 	if err != nil {
@@ -126,7 +147,7 @@ func report(logger klog.Logger, cfg *rest.Config, result *bootstrap.Result) {
 	)
 	logger.Info("start the server with",
 		"--apiexport-endpointslice", result.APIExportEndpointSlice,
-		"--kubeconfig", "(a kubeconfig for "+cfg.Host+")",
+		"--kubeconfig", "(from Secret "+result.KubeconfigSecret+" in this workspace)",
 	)
 	logger.Info("consumer workspaces opt in by creating an APIBinding to this APIExport; " +
 		"see config/examples/apibinding-consumer.yaml")

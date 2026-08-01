@@ -42,7 +42,7 @@ import (
 
 	"github.com/kcp-dev/virtual-workspace-framework/pkg/rootapiserver"
 
-	accessv1alpha1 "github.com/kcp-dev/contrib-access-virtual-workspace/pkg/apis/access/v1alpha1"
+	accessv1alpha1 "github.com/kcp-dev/contrib-access-virtual-workspace/sdk/apis/access/v1alpha1"
 	generatedopenapi "github.com/kcp-dev/contrib-access-virtual-workspace/pkg/generated/openapi"
 	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/graph"
 	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/rbacprovider"
@@ -118,8 +118,7 @@ func Run(ctx context.Context, o *Options) error {
 		return fmt.Errorf("apply authorization: %w", err)
 	}
 
-	// /debug/graph sits outside the VW authorizers (it is not under a
-	// /services/ prefix), so grant it to authenticated users explicitly.
+	// Outside the VW authorizers, so granted explicitly.
 	recommended.Config.Authorization.Authorizer = union.New(
 		recommended.Config.Authorization.Authorizer,
 		pathScopedAuthorizer(debugGraphPath, virtual.AuthenticatedOnlyAuthorizer()),

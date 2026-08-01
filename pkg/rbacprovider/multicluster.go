@@ -83,11 +83,8 @@ func (p *Provider) runMulticluster(ctx context.Context, cfg *rest.Config, g *gra
 	}
 
 	if err := mgr.GetLocalManager().Add(manager.RunnableFunc(func(ctx context.Context) error {
-		// Wait for the discovery cache — the wildcard APIBinding watch
-		// that tells the provider which logical clusters exist — before
-		// answering queries. Without this the graph would report ready
-		// the moment the manager starts, and SCAR would return an empty
-		// or partial answer that looks authoritative.
+		// Without this the graph reports ready the moment the manager starts,
+		// and SCAR returns a partial answer that looks authoritative.
 		if !mgr.GetLocalManager().GetCache().WaitForCacheSync(ctx) {
 			return fmt.Errorf("discovery cache did not sync")
 		}
@@ -114,9 +111,6 @@ func (p *Provider) runMulticluster(ctx context.Context, cfg *rest.Config, g *gra
 	return mgr.Start(ctx)
 }
 
-// clusterLifecycle tracks logical clusters joining and leaving the
-// provider's fleet: it keeps the engaged-cluster count current for
-// diagnostics, and drops departing clusters from the graph.
 type clusterLifecycle struct {
 	t       *Translator
 	engaged *clusterSet

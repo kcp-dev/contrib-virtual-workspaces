@@ -14,17 +14,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package apiexport holds the kcp-side assets the access virtual workspace
-// needs in the workspace that hosts its APIExport: the APIResourceSchema for
-// SelfClusterAccessReview, the APIExport itself, and the
-// APIExportEndpointSlice the RBAC provider follows.
-//
-// They are embedded rather than applied with kubectl so the init binary can
-// bootstrap a deployment on its own, following the same pattern as kcp's own
-// config packages (config/root, config/shard, ...).
-package apiexport
+// Package controller holds the identity the access virtual workspace runs
+// as: a ServiceAccount in the workspace that hosts the APIExport, its token,
+// and the RBAC it needs. Keeping the identity in that workspace means the
+// server never needs an admin kubeconfig.
+package controller
 
 import "embed"
 
+// FS holds the ServiceAccount, its token secret and RBAC.
+//
 //go:embed *.yaml
 var FS embed.FS

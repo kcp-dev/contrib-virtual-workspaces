@@ -98,11 +98,7 @@ func (p *Provider) onRB(obj any, deleted bool) {
 	p.translator.ApplyRoleBinding(rb, cluster, p.endpointFor(cluster))
 }
 
-// typedFromEvent extracts a typed object from an informer event
-// payload. A DeletedFinalStateUnknown tombstone always means the
-// object is gone, whatever the caller passed in, so the returned
-// deleted flag is authoritative. ok is false for anything that cannot
-// be resolved to T.
+// A tombstone always means deleted, whatever the caller passed in.
 func typedFromEvent[T metav1.Object](obj any, deleted bool) (T, bool, bool) {
 	if typed, ok := obj.(T); ok {
 		return typed, deleted, true

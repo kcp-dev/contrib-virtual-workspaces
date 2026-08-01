@@ -1,5 +1,5 @@
 /*
-Copyright 2026 The KCP Authors.
+Copyright 2026 The kcp Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -26,29 +26,17 @@ import (
 	kubeoptions "k8s.io/kubernetes/pkg/kubeapiserver/options"
 )
 
-// Authentication wraps BuiltInAuthenticationOptions, following the same
-// pattern as kcp's front-proxy (pkg/proxy/options/authentication.go): reuse
-// kube-apiserver's authentication machinery, but enable only the methods this
-// component needs and override ApplyTo so unused auth plumbing is not dragged
-// in.
+// Authentication enables anonymous, client certificate, OIDC and request
+// header authentication, following the same pattern as kcp's front-proxy.
 //
-// Enabled methods:
-//
-//   - OIDC / structured authentication config: for clients that reach the VW
-//     directly (MCP clients, scarctl) presenting a bearer token nobody has
-//     validated yet. Point --authentication-config at the same file kcp uses,
-//     or mirror kcp's --oidc-* flags.
-//   - Request header: for requests arriving through kcp's front-proxy, which
-//     has already authenticated the user and forwards identity as X-Remote-*
-//     over mTLS.
-//   - Client certificates: for direct certificate-based callers.
+// Its OIDC configuration must match kcp's: the access graph indexes RBAC
+// subjects verbatim, so a username that differs by an issuer prefix resolves
+// to no workspaces at all.
 type Authentication struct {
 	BuiltInOptions *kubeoptions.BuiltInAuthenticationOptions
 }
 
-// NewAuthentication returns Authentication with the methods the access VW
-// supports. Service accounts, token files and webhook authentication are
-// deliberately left out; add them here if a deployment needs them.
+// NewAuthentication returns Authentication with the supported methods enabled.
 func NewAuthentication() *Authentication {
 	return &Authentication{
 		BuiltInOptions: kubeoptions.NewBuiltInAuthenticationOptions().
@@ -59,20 +47,18 @@ func NewAuthentication() *Authentication {
 	}
 }
 
-// AddFlags registers the authentication flags. WithOIDC contributes the
-// --oidc-* family and --authentication-config; WithRequestHeader contributes
-// --requestheader-*; WithClientCert contributes --client-ca-file.
+// AddFlags registers the --oidc-*, --authentication-config, --requestheader-*
+// and --client-ca-file flags.
 func (c *Authentication) AddFlags(fs *pflag.FlagSet) {
 	c.BuiltInOptions.AddFlags(fs)
 }
 
-// Validate delegates to the built-in options.
+// Validate reports configuration errors in the enabled methods.
 func (c *Authentication) Validate() []error {
 	return c.BuiltInOptions.Validate()
 }
 
-// OIDCEnabled reports whether a JWT authenticator is configured, either
-// through the structured authentication config or the --oidc-* flags.
+// OIDCEnabled reports whether a JWT authenticator is configured.
 func (c *Authentication) OIDCEnabled() bool {
 	if c.BuiltInOptions == nil {
 		return false
@@ -84,19 +70,18 @@ func (c *Authentication) OIDCEnabled() bool {
 }
 
 // RequestHeaderEnabled reports whether identity headers from a trusted proxy
-// are accepted, which requires a requestheader client CA to verify that proxy.
+// are accepted.
 func (c *Authentication) RequestHeaderEnabled() bool {
 	return c.BuiltInOptions != nil &&
 		c.BuiltInOptions.RequestHeader != nil &&
 		c.BuiltInOptions.RequestHeader.ClientCAFile != ""
 }
 
-// ApplyTo builds the union authenticator and wires the CAs that must also be
-// advertised on the serving side.
+// ApplyTo builds the union authenticator and advertises the client and
+// requestheader CAs on the serving side.
 //
 // BuiltInAuthenticationOptions.ApplyTo is intentionally not called: it expects
-// kube-apiserver infrastructure (service account token getters, informers)
-// this component does not have.
+// kube-apiserver infrastructure this component does not have.
 func (c *Authentication) ApplyTo(
 	ctx context.Context,
 	authenticationInfo *genericapiserver.AuthenticationInfo,
@@ -113,12 +98,9 @@ func (c *Authentication) ApplyTo(
 		}
 	}
 
-	// The requestheader CA has to be advertised in the TLS handshake as well,
-	// not just used for verification. Without it the front-proxy finds no
-	// acceptable CA matching its client certificate, sends none, the
-	// requestheader authenticator never runs, and the forwarded identity
-	// headers are dropped — which looks like an authorization failure rather
-	// than a TLS configuration one.
+	// Advertised in the TLS handshake, not only used for verification: without
+	// this the front-proxy sends no client certificate and its identity headers
+	// are dropped.
 	if authenticatorConfig.RequestHeaderConfig != nil && authenticatorConfig.RequestHeaderConfig.CAContentProvider != nil {
 		if err := authenticationInfo.ApplyClientCert(authenticatorConfig.RequestHeaderConfig.CAContentProvider, servingInfo); err != nil {
 			return fmt.Errorf("unable to load requestheader CA file: %w", err)

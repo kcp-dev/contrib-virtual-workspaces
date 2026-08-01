@@ -7,8 +7,10 @@ ENDPOINT_BASE    ?= https://localhost:6443/clusters/
 SECURE_PORT      ?= 9443
 APIEXPORT_SLICE  ?= access.contrib.kcp.io
 EXPORT_PATH      ?= root
-WORKSPACE         ?= root:access
-CREATE_WORKSPACES ?= false
+WORKSPACE_PREFIX      ?= root:access
+CONTROLLERS_WORKSPACE ?= controllers
+CREATE_WORKSPACES     ?= false
+HOST_OVERRIDE         ?=
 WS_ALICE         ?= workspace-alice
 WS_BOB           ?= workspace-bob
 
@@ -63,15 +65,11 @@ clean: ## Remove build artifacts
 init: build ## Bootstrap kcp: install the APIExport, schema and endpoint slice, then verify
 	./bin/access-vw-init \
 		--kubeconfig $(KUBECONFIG) \
-		--workspace $(WORKSPACE) \
+		--workspace-prefix $(WORKSPACE_PREFIX) \
+		--controllers-workspace $(CONTROLLERS_WORKSPACE) \
+		$(if $(HOST_OVERRIDE),--host-override $(HOST_OVERRIDE),) \
 		$(if $(filter true,$(CREATE_WORKSPACES)),--create-workspaces,)
 
-.PHONY: install-apiexport
-install-apiexport: ## Deprecated: use `make init`. Applies the APIExport assets with kubectl.
-	kubectl ws use $(EXPORT_PATH)
-	kubectl apply -f config/apiexport/apiresourceschema.yaml
-	kubectl apply -f config/apiexport/apiexport.yaml
-	kubectl apply -f config/apiexport/apiexportendpointslice.yaml
 
 .PHONY: show-apiexport
 show-apiexport: ## Show the APIExport, ARS and generated EndpointSlice

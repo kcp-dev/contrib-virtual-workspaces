@@ -48,13 +48,15 @@ implement the same interface without changing the SCAR API surface.
 |------|-------------|
 | `cmd/access-vw` | Main binary: RBAC indexer + access VW. |
 | `cmd/scar-to-kubeconfig` | Calls SCAR and writes a scoped kubeconfig. |
-| `pkg/apis/access/v1alpha1` | `SelfClusterAccessReview` API types. |
+| `sdk/apis/access/v1alpha1` | `SelfClusterAccessReview` API types. |
 | `pkg/graph` | In-memory permission graph. No kcp imports. |
 | `pkg/accessprovider` | The `AccessProvider` seam. |
 | `pkg/rbacprovider` | Watches CRBs/RBs, translates them into graph grants. |
 | `pkg/server` | Options and wiring: serving, delegated authn, VW registration. |
 | `pkg/virtual/scar` | SCAR REST storage and virtual workspace definition. |
-| `config/apiexport` | `access.kcp.io` APIExport + APIResourceSchema. |
+| `config/apiexport` | `access.contrib.kcp.io` APIExport, APIResourceSchema and APIExportEndpointSlice. |
+| `config/controller` | ServiceAccount and RBAC for the controller identity. |
+| `config/deployment` | Deployment and authentication configuration. |
 | `config/examples` | APIBinding for consumer workspaces to opt in. |
 
 ## Running

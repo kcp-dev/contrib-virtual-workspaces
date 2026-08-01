@@ -1,5 +1,5 @@
 /*
-Copyright 2026 The KCP Authors.
+Copyright 2026 The kcp Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,13 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package bootstrap installs the kcp-side objects the access virtual
-// workspace needs, and verifies that they came up.
-//
-// The apply logic is deliberately local rather than importing
-// github.com/kcp-dev/kcp/config/helpers: that would pull kcp core and its
-// Kubernetes fork into this module for about a hundred lines of
-// create-or-update. platform-mesh/provider-quickstart makes the same trade.
+// Package bootstrap installs the kcp-side objects the access virtual workspace
+// needs and verifies they came up.
 package bootstrap
 
 import (
@@ -31,11 +26,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"strings"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -45,19 +42,35 @@ import (
 	"k8s.io/client-go/discovery"
 	memory "k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/restmapper"
+	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/yaml"
 
 	configapiexport "github.com/kcp-dev/contrib-access-virtual-workspace/config/apiexport"
+	configcontroller "github.com/kcp-dev/contrib-access-virtual-workspace/config/controller"
 )
 
-// Names of the objects the access VW installs. The APIExport, its
-// endpoint slice and the API group all share one name so operators have a
-// single string to reason about.
 const (
 	APIExportName = "access.contrib.kcp.io"
+
+	// ControllerNamespace is the namespace inside the APIExport's
+	// workspace holding the server's identity and generated kubeconfig.
+	ControllerNamespace = "default"
+
+	// ControllerServiceAccount is the identity the server runs as.
+	ControllerServiceAccount = "access-vw-controller"
+
+	// ControllerTokenSecret is the ServiceAccount token secret kcp
+	// populates.
+	ControllerTokenSecret = "access-vw-controller-token"
+
+	// ControllerKubeconfigSecret holds the kubeconfig built from that
+	// token, for the server to mount.
+	ControllerKubeconfigSecret = "access-vw-kubeconfig"
 )
 
 var apiExportEndpointSliceGVR = schema.GroupVersionResource{
@@ -78,6 +91,10 @@ type Result struct {
 	// VirtualWorkspaceURLs are the per-shard URLs the slice resolved to.
 	// Empty means the provider will discover nothing.
 	VirtualWorkspaceURLs []string
+
+	// KubeconfigSecret is the Secret, in the APIExport's workspace, holding
+	// the kubeconfig the server should run with.
+	KubeconfigSecret string
 }
 
 // Options configures Bootstrap.
@@ -85,6 +102,12 @@ type Options struct {
 	// WorkspacePath is the absolute path the objects were installed
 	// into, used only for reporting.
 	WorkspacePath string
+
+	// HostOverride replaces the scheme://host[:port] of the generated
+	// kubeconfig, keeping the workspace path. Needed when init runs with
+	// an externally reachable URL but the server will connect from inside
+	// the cluster (or the reverse).
+	HostOverride string
 
 	// Timeout bounds the apply-and-verify loop.
 	Timeout time.Duration
@@ -117,8 +140,21 @@ func Bootstrap(ctx context.Context, cfg *rest.Config, opts Options) (*Result, er
 		return nil, fmt.Errorf("apply assets: %w", err)
 	}
 
+	logger.Info("applying controller identity", "serviceAccount", ControllerServiceAccount)
+	if err := applyFS(ctx, dynamicClient, mapper, cache, configcontroller.FS); err != nil {
+		return nil, fmt.Errorf("apply controller identity: %w", err)
+	}
+
 	urls, err := waitForEndpointSlice(ctx, dynamicClient)
 	if err != nil {
+		return nil, err
+	}
+
+	kubeClient, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("build kubernetes client: %w", err)
+	}
+	if err := createControllerKubeconfig(ctx, kubeClient, cfg, opts.HostOverride); err != nil {
 		return nil, err
 	}
 
@@ -126,7 +162,92 @@ func Bootstrap(ctx context.Context, cfg *rest.Config, opts Options) (*Result, er
 		WorkspacePath:          opts.WorkspacePath,
 		APIExportEndpointSlice: APIExportName,
 		VirtualWorkspaceURLs:   urls,
+		KubeconfigSecret:       ControllerKubeconfigSecret,
 	}, nil
+}
+
+func createControllerKubeconfig(ctx context.Context, client kubernetes.Interface, cfg *rest.Config, hostOverride string) error {
+	logger := klog.FromContext(ctx)
+
+	var token []byte
+	var caCert []byte
+	err := wait.PollUntilContextCancel(ctx, time.Second, true, func(ctx context.Context) (bool, error) {
+		secret, err := client.CoreV1().Secrets(ControllerNamespace).Get(ctx, ControllerTokenSecret, metav1.GetOptions{})
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return false, nil
+			}
+			return false, err
+		}
+		if len(secret.Data["token"]) == 0 {
+			logger.V(2).Info("waiting for ServiceAccount token to be populated", "secret", ControllerTokenSecret)
+			return false, nil
+		}
+		token = secret.Data["token"]
+		caCert = secret.Data["ca.crt"]
+		return true, nil
+	})
+	if err != nil {
+		return fmt.Errorf("waiting for ServiceAccount token %q: %w", ControllerTokenSecret, err)
+	}
+
+	server := cfg.Host
+	if hostOverride != "" {
+		if u, parseErr := url.Parse(cfg.Host); parseErr == nil && u.Path != "" {
+			server = strings.TrimSuffix(hostOverride, "/") + u.Path
+		} else {
+			server = hostOverride
+		}
+		logger.Info("applying host override to generated kubeconfig", "server", server)
+	}
+
+	kubeconfig := clientcmdapi.Config{
+		Kind:       "Config",
+		APIVersion: "v1",
+		Clusters: map[string]*clientcmdapi.Cluster{
+			"workspace": {Server: server, CertificateAuthorityData: caCert},
+		},
+		AuthInfos: map[string]*clientcmdapi.AuthInfo{
+			"controller": {Token: string(token)},
+		},
+		Contexts: map[string]*clientcmdapi.Context{
+			"workspace": {Cluster: "workspace", AuthInfo: "controller"},
+		},
+		CurrentContext: "workspace",
+	}
+
+	raw, err := clientcmd.Write(kubeconfig)
+	if err != nil {
+		return fmt.Errorf("marshal kubeconfig: %w", err)
+	}
+
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ControllerKubeconfigSecret,
+			Namespace: ControllerNamespace,
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{"kubeconfig": raw},
+	}
+
+	if _, err := client.CoreV1().Secrets(ControllerNamespace).Create(ctx, secret, metav1.CreateOptions{}); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			return fmt.Errorf("create kubeconfig secret: %w", err)
+		}
+		existing, getErr := client.CoreV1().Secrets(ControllerNamespace).Get(ctx, secret.Name, metav1.GetOptions{})
+		if getErr != nil {
+			return fmt.Errorf("get existing kubeconfig secret: %w", getErr)
+		}
+		secret.ResourceVersion = existing.ResourceVersion
+		if _, err := client.CoreV1().Secrets(ControllerNamespace).Update(ctx, secret, metav1.UpdateOptions{}); err != nil {
+			return fmt.Errorf("update kubeconfig secret: %w", err)
+		}
+		logger.Info("updated controller kubeconfig secret", "secret", secret.Name)
+		return nil
+	}
+
+	logger.Info("created controller kubeconfig secret", "secret", secret.Name)
+	return nil
 }
 
 func applyFS(ctx context.Context, client dynamic.Interface, mapper meta.RESTMapper, cache discovery.CachedDiscoveryInterface, fs embed.FS) error {
@@ -139,7 +260,6 @@ func applyFS(ctx context.Context, client dynamic.Interface, mapper meta.RESTMapp
 		if err := applyResources(ctx, client, mapper, fs); err != nil {
 			lastErr = err
 			logger.V(2).Info("assets not applied yet, retrying", "attempt", attempt, "err", err)
-			// New CRDs may have appeared since the mapper last looked.
 			cache.Invalidate()
 			return false, nil
 		}

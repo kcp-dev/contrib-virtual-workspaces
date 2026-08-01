@@ -179,11 +179,8 @@ func (t *Translator) decrementRef(s graph.Subject, c graph.LogicalCluster, key b
 	}
 }
 
-// translateSubjects converts RBAC subjects to graph subjects, dropping
-// kinds the graph does not model and de-duplicating the result.
-// defaultNamespace is used for ServiceAccount subjects that omit one;
-// pass "" when there is no meaningful default, and such subjects are
-// skipped.
+// defaultNamespace applies to ServiceAccount subjects that omit one; pass ""
+// to skip them instead.
 func translateSubjects(in []rbacv1.Subject, defaultNamespace string) []graph.Subject {
 	seen := make(map[graph.Subject]struct{})
 	out := make([]graph.Subject, 0, len(in))
