@@ -64,7 +64,7 @@ func (p *Provider) runMulticluster(ctx context.Context, cfg *rest.Config, g *gra
 	provider, err := apiexport.New(cfg, p.APIExportEndpointSlice, apiexport.Options{
 		Scheme:   sch,
 		Log:      &logger,
-		Handlers: handlers.Handlers{clusterLifecycle{t: p.translator, logger: logger}},
+		Handlers: handlers.Handlers{clusterLifecycle{t: p.translator, engaged: &p.engaged, logger: logger}},
 	})
 	if err != nil {
 		return fmt.Errorf("construct apiexport provider: %w", err)
@@ -83,17 +83,25 @@ func (p *Provider) runMulticluster(ctx context.Context, cfg *rest.Config, g *gra
 	}
 
 	if err := mgr.GetLocalManager().Add(manager.RunnableFunc(func(ctx context.Context) error {
-		// Wait for the discovery cache — the wildcard APIBinding watch
-		// that tells the provider which logical clusters exist — before
-		// answering queries. Without this the graph would report ready
-		// the moment the manager starts, and SCAR would return an empty
-		// or partial answer that looks authoritative.
+		// Without this the graph reports ready the moment the manager starts,
+		// and SCAR returns a partial answer that looks authoritative.
 		if !mgr.GetLocalManager().GetCache().WaitForCacheSync(ctx) {
 			return fmt.Errorf("discovery cache did not sync")
 		}
 
 		g.SetReady()
-		logger.Info("access graph marked ready (cluster discovery cache synced)")
+
+		engaged := p.EngagedClusters()
+		if engaged == 0 {
+			logger.Info("access graph is ready but no logical clusters were discovered; "+
+				"check that the APIExportEndpointSlice exists and that consumer workspaces have an "+
+				"APIBinding accepting this APIExport's permission claims",
+				"apiExportEndpointSlice", p.APIExportEndpointSlice)
+		} else {
+			logger.Info("access graph marked ready (cluster discovery cache synced)",
+				"engagedClusters", engaged)
+		}
+
 		<-ctx.Done()
 		return nil
 	})); err != nil {
@@ -104,11 +112,19 @@ func (p *Provider) runMulticluster(ctx context.Context, cfg *rest.Config, g *gra
 }
 
 type clusterLifecycle struct {
-	t      *Translator
-	logger logr.Logger
+	t       *Translator
+	engaged *clusterSet
+	logger  logr.Logger
 }
 
-func (c clusterLifecycle) OnAdd(client.Object) {}
+func (c clusterLifecycle) OnAdd(obj client.Object) {
+	cluster := graph.LogicalCluster(logicalcluster.From(obj).String())
+	if cluster == "" {
+		return
+	}
+	c.engaged.add(cluster)
+	c.logger.V(2).Info("cluster joined the fleet", "cluster", cluster, "engagedClusters", c.engaged.len())
+}
 
 func (c clusterLifecycle) OnUpdate(client.Object, client.Object) {}
 
@@ -117,7 +133,9 @@ func (c clusterLifecycle) OnDelete(obj client.Object) {
 	if cluster == "" {
 		return
 	}
-	c.logger.Info("cluster left the fleet, dropping from access graph", "cluster", cluster)
+	c.engaged.remove(cluster)
+	c.logger.Info("cluster left the fleet, dropping from access graph",
+		"cluster", cluster, "engagedClusters", c.engaged.len())
 	c.t.ForgetCluster(cluster)
 }
 

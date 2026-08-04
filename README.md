@@ -17,14 +17,15 @@ multicluster-runtime, and will later host an MCP protocol server — dependencie
 core does not otherwise carry. Keeping it out of the root module keeps those out of
 kcp's dependency graph.
 
-It builds against the in-repo staging modules (`sdk`, `virtual-workspace-framework`)
-and the same kcp fork of Kubernetes as kcp core, via relative `replace` directives.
-When bumping the root `go.mod`, keep this one in sync.
+It builds against `kcp-dev/sdk` and `kcp-dev/virtual-workspace-framework`, and — because
+the framework compiles against kcp's cluster-aware fork of Kubernetes and Go does not
+propagate `replace` across module boundaries — it mirrors that fork pin in its own
+`go.mod`. `hack/verify-fork-pin.sh` fails the build when the two drift.
 
 ## How it works
 
 1. **Indexing.** A provider watches `ClusterRoleBindings` and `RoleBindings` across
-   every workspace that has bound the `access.kcp.io` APIExport, translating them into
+   every workspace that has bound the `access.contrib.kcp.io` APIExport, translating them into
    an in-memory permission graph of subjects (users, groups, service accounts) to
    logical clusters. Indexing is opt-in by design: a workspace is only discoverable
    once it binds the APIExport.
@@ -48,32 +49,35 @@ implement the same interface without changing the SCAR API surface.
 |------|-------------|
 | `cmd/access-vw` | Main binary: RBAC indexer + access VW. |
 | `cmd/scar-to-kubeconfig` | Calls SCAR and writes a scoped kubeconfig. |
-| `pkg/apis/access/v1alpha1` | `SelfClusterAccessReview` API types. |
+| `sdk/apis/access/v1alpha1` | `SelfClusterAccessReview` API types. |
 | `pkg/graph` | In-memory permission graph. No kcp imports. |
 | `pkg/accessprovider` | The `AccessProvider` seam. |
 | `pkg/rbacprovider` | Watches CRBs/RBs, translates them into graph grants. |
 | `pkg/server` | Options and wiring: serving, delegated authn, VW registration. |
 | `pkg/virtual/scar` | SCAR REST storage and virtual workspace definition. |
-| `config/apiexport` | `access.kcp.io` APIExport + APIResourceSchema. |
+| `config/apiexport` | `access.contrib.kcp.io` APIExport, APIResourceSchema and APIExportEndpointSlice. |
+| `config/deployment` | Deployment and authentication configuration. |
 | `config/examples` | APIBinding for consumer workspaces to opt in. |
 
 ## Running
 
 ```sh
-go build -o bin/access-vw ./cmd/access-vw
+make build
 
-# Install the APIExport in root, then bind it from the workspaces you want indexed.
-kubectl apply -f config/apiexport/
+# Create root:access:controllers and install the schema, export, bind RBAC and
+# endpoint slice there.
+make init
 
 bin/access-vw \
   --kubeconfig=$KUBECONFIG \
-  --apiexport-endpointslice=access.kcp.io \
+  --apiexport-endpointslice=access.contrib.kcp.io \
   --endpoint-base=https://localhost:6443/clusters/ \
   --secure-port=9443
 ```
 
-`--apiexport-endpointslice` names the `APIExportEndpointSlice` kcp generates for the
-APIExport, so it matches the export's name (`access.kcp.io`).
+`--apiexport-endpointslice` names the `APIExportEndpointSlice` in the exports
+workspace, which `init` creates under the export's own name
+(`access.contrib.kcp.io`). kcp does not create it for you.
 
 Serving is TLS-only; a self-signed certificate is generated for development if none is
 supplied. Callers are authenticated by the standard delegated stack — front-proxy
@@ -85,7 +89,7 @@ Issue a review:
 ```sh
 curl -k -XPOST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" -d '{}' \
-  https://localhost:9443/services/access/apis/access.kcp.io/v1alpha1/selfclusteraccessreviews
+  https://localhost:9443/services/access/apis/access.contrib.kcp.io/v1alpha1/selfclusteraccessreviews
 ```
 
 ### Behind the front-proxy

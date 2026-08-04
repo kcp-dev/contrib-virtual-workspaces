@@ -42,7 +42,7 @@ import (
 
 	"github.com/kcp-dev/virtual-workspace-framework/pkg/rootapiserver"
 
-	accessv1alpha1 "github.com/kcp-dev/contrib-access-virtual-workspace/pkg/apis/access/v1alpha1"
+	accessv1alpha1 "github.com/kcp-dev/contrib-access-virtual-workspace/sdk/apis/access/v1alpha1"
 	generatedopenapi "github.com/kcp-dev/contrib-access-virtual-workspace/pkg/generated/openapi"
 	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/graph"
 	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/rbacprovider"
@@ -111,15 +111,14 @@ func Run(ctx context.Context, o *Options) error {
 	if err := o.SecureServing.ApplyTo(&recommended.Config.SecureServing); err != nil {
 		return fmt.Errorf("apply secure serving: %w", err)
 	}
-	if err := o.Authentication.ApplyTo(&recommended.Config.Authentication, recommended.Config.SecureServing, nil); err != nil {
+	if err := o.Authentication.ApplyTo(ctx, &recommended.Config.Authentication, recommended.Config.SecureServing); err != nil {
 		return fmt.Errorf("apply authentication: %w", err)
 	}
 	if err := o.Authorization.ApplyTo(&recommended.Config, func() []rootapiserver.NamedVirtualWorkspace { return vws }); err != nil {
 		return fmt.Errorf("apply authorization: %w", err)
 	}
 
-	// /debug/graph sits outside the VW authorizers (it is not under a
-	// /services/ prefix), so grant it to authenticated users explicitly.
+	// Outside the VW authorizers, so granted explicitly.
 	recommended.Config.Authorization.Authorizer = union.New(
 		recommended.Config.Authorization.Authorizer,
 		pathScopedAuthorizer(debugGraphPath, virtual.AuthenticatedOnlyAuthorizer()),
@@ -141,7 +140,11 @@ func Run(ctx context.Context, o *Options) error {
 		w.Header().Set("Content-Type", "application/json")
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
-		if err := enc.Encode(g.Snapshot()); err != nil {
+		if err := enc.Encode(graphDebug{
+			Snapshot:               g.Snapshot(),
+			EngagedClusters:        provider.EngagedClusters(),
+			APIExportEndpointSlice: o.APIExportEndpointSlice,
+		}); err != nil {
 			klog.ErrorS(err, "encoding access graph snapshot")
 		}
 	})
@@ -176,4 +179,10 @@ func pathScopedAuthorizer(path string, delegate authorizer.Authorizer) authorize
 		}
 		return authorizer.DecisionNoOpinion, "", nil
 	})
+}
+
+type graphDebug struct {
+	graph.Snapshot
+	EngagedClusters        int    `json:"engagedClusters"`
+	APIExportEndpointSlice string `json:"apiExportEndpointSlice,omitempty"`
 }

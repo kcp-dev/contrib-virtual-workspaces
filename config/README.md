@@ -4,19 +4,27 @@ The repo ships three layers of manifest. Apply in this order against the kcp ins
 
 ## 1. System APIExport (apply once, in a system workspace)
 
+Prefer `make init`, which applies the assets below in the order kcp requires and verifies them. To do it by hand:
+
 ```sh
-kubectl --context system kcp ws use root           # or wherever access.contrib.kcp.io should live
+kubectl --context system kcp ws use root:access:controllers   # or your own --workspace-prefix
 kubectl apply -f config/apiexport/apiresourceschema.yaml
 kubectl apply -f config/apiexport/apiexport.yaml
+kubectl apply -f config/apiexport/rbac-bind.yaml
+kubectl apply -f config/apiexport/apiexportendpointslice.yaml
 ```
 
-This creates the `SelfClusterAccessReview` schema and the `access.contrib.kcp.io` APIExport. kcp will generate an `APIExportEndpointSlice` named after the export — that's what `access-vw --apiexport-endpointslice` points at.
+Order matters. An APIExport naming a schema that does not exist yet is rejected, and kcp gates `APIExportEndpointSlice` (and every consumer `APIBinding`) on a `bind` verb against the APIExport evaluated in the export's own workspace — a separate admission check that cluster-admin does not satisfy, which is what `rbac-bind.yaml` grants.
 
-Grab the system identity kubeconfig for the workspace where the APIExport lives; the controller authenticates as that identity to reach the APIExport's virtual workspace and watch bound resources across all consumer workspaces. Save it as a secret in the controller's namespace:
+kcp does **not** create the `APIExportEndpointSlice` for you. Without it `--apiexport-endpointslice` names an object that does not exist, no logical clusters are ever engaged, and the server reports itself ready while serving an empty graph.
+
+Both `init` and the server need a kcp credential, mounted from the `access-vw-kubeconfig` Secret in the deployment's namespace. In a kcp-operator installation that Secret is produced by a `Kubeconfig` resource; otherwise create it by hand:
 
 ```sh
 kubectl create secret generic access-vw-kubeconfig --from-file=kubeconfig=./access-vw.kubeconfig
 ```
+
+It may point at any workspace — both containers compute their own target from `--workspace-prefix` / `--controllers-workspace`. `init` needs rights to create workspaces from the root down and to install in the target workspace; the server needs to read the `APIExportEndpointSlice` there and reach `apiexports/content`.
 
 ## 2. Controller deployment (apply once)
 
@@ -32,6 +40,8 @@ The deployment runs the `cmd/access-vw` binary in multi-shard mode. It does NOT 
 kubectl --context user kcp ws use my-workspace
 kubectl apply -f config/examples/apibinding-consumer.yaml
 ```
+
+The example references the default exports workspace, `root:access:controllers`. Edit `spec.reference.export.path` if the install used a different `--workspace-prefix` or `--controllers-workspace`; `init` logs the workspace it installed into and its logical cluster ID, either of which kcp accepts.
 
 Until a workspace applies this APIBinding **and** accepts the permission claims, it stays invisible to the indexer. That's the opt-in mechanism the design calls for.
 

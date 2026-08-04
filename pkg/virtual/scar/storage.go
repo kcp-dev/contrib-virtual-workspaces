@@ -27,8 +27,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/registry/rest"
+	"k8s.io/klog/v2"
 
-	accessv1alpha1 "github.com/kcp-dev/contrib-access-virtual-workspace/pkg/apis/access/v1alpha1"
+	accessv1alpha1 "github.com/kcp-dev/contrib-access-virtual-workspace/sdk/apis/access/v1alpha1"
 	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/graph"
 )
 
@@ -84,6 +85,13 @@ func (r *REST) Create(ctx context.Context, obj runtime.Object, _ rest.ValidateOb
 	}
 
 	clusters := r.graph.ClustersFor(user.GetName(), user.GetGroups())
+
+	klog.FromContext(ctx).V(4).Info("answered SelfClusterAccessReview",
+		"username", user.GetName(),
+		"groups", user.GetGroups(),
+		"clusters", len(clusters),
+	)
+
 	out := review.DeepCopy()
 	out.Status = accessv1alpha1.SelfClusterAccessReviewStatus{
 		Clusters: toAccessEndpointSlices(clusters),

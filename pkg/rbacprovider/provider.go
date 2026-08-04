@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -28,61 +29,69 @@ import (
 	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/graph"
 )
 
-// Compile-time check that Provider satisfies the AccessProvider
-// contract. If the interface ever changes, this line breaks first
-// and we hear about it before any caller does.
 var _ accessprovider.AccessProvider = (*Provider)(nil)
 
-// Provider is the kcp-native RBAC AccessProvider.
+// Provider is the kcp-native RBAC AccessProvider. It watches
+// ClusterRoleBindings and RoleBindings and projects them onto the access
+// graph, treating any binding as "view" — rule-level evaluation against
+// (Cluster)Roles is not implemented.
 //
-// On Start, it stands up cross-shard informers on
-// ClusterRoleBinding and RoleBinding (RBAC verb-level filtering
-// against (Cluster)Role rules is a follow-up; the MVP treats any
-// binding as "view"), translates events into graph mutations via a
-// Translator, and marks the graph Ready once the initial sync
-// completes.
-//
-// Provider supports three modes, picked at Start time from the
-// fields set on the struct:
-//
-//   - Multi-shard (preferred): RestConfig and APIExportEndpointSlice
-//     are both set. Start brings up a multicluster-runtime manager
-//     backed by the kcp apiexport provider, and runs CRB/RB
-//     reconcilers across every workspace that has an APIBinding to
-//     the access VW's APIExport. This is the production wiring.
-//   - Single-shard: RestConfig is set, APIExportEndpointSlice is
-//     empty. Start uses standard client-go informers against one
-//     shard. Useful for development against a non-kcp Kubernetes
-//     cluster, or for a kcp setup with a single shard exposed on the
-//     supplied REST config.
-//   - Stub mode: RestConfig is nil. Start builds the translator,
-//     marks the graph Ready (with an empty data set), and blocks on
-//     ctx. Useful for the demo binary. Tests that want to drive
-//     translation directly construct a NewTranslator instead of going
-//     through a Provider.
+// Start picks a mode from the fields set: multi-shard when RestConfig and
+// APIExportEndpointSlice are both set, single-shard with RestConfig alone, and
+// a no-op stub when RestConfig is nil.
 type Provider struct {
-	// EndpointBaseURL is the FrontProxy URL prefix used to construct
-	// each cluster's endpoint. Per-cluster URL is base + cluster name.
+	// EndpointBaseURL is the front-proxy URL prefix; a cluster's endpoint is
+	// this plus the cluster name.
 	EndpointBaseURL string
 
-	// RestConfig is the Kubernetes/kcp REST config the provider
-	// talks to. When nil, Provider runs in stub mode. In multi-shard
-	// mode this should point at the kcp root shard so the apiexport
-	// virtual workspace can be reached.
+	// RestConfig must reach the kcp root shard in multi-shard mode, so the
+	// apiexport virtual workspace is addressable.
 	RestConfig *rest.Config
 
-	// APIExportEndpointSlice is the name of the APIExportEndpointSlice
-	// object the apiexport multicluster provider should follow. When
-	// non-empty, Start runs in multi-shard mode. Empty means single-
-	// shard (or stub if RestConfig is also nil).
+	// APIExportEndpointSlice names the slice the provider follows to discover
+	// workspaces.
 	APIExportEndpointSlice string
 
 	translator *Translator
+	engaged    clusterSet
 }
 
 // New returns a configured Provider in stub mode.
 func New(endpointBaseURL string) *Provider {
 	return &Provider{EndpointBaseURL: endpointBaseURL}
+}
+
+// EngagedClusters returns how many logical clusters the provider is watching.
+// Zero on a ready graph means discovery found nothing, which is distinct from
+// finding clusters that hold no bindings.
+func (p *Provider) EngagedClusters() int {
+	return p.engaged.len()
+}
+
+type clusterSet struct {
+	mu       sync.Mutex
+	clusters map[graph.LogicalCluster]struct{}
+}
+
+func (s *clusterSet) add(c graph.LogicalCluster) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.clusters == nil {
+		s.clusters = make(map[graph.LogicalCluster]struct{})
+	}
+	s.clusters[c] = struct{}{}
+}
+
+func (s *clusterSet) remove(c graph.LogicalCluster) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.clusters, c)
+}
+
+func (s *clusterSet) len() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.clusters)
 }
 
 // Start implements accessprovider.AccessProvider. It dispatches to

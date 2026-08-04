@@ -17,9 +17,31 @@ spec:
         app.kubernetes.io/name: access-vw
     spec:
       serviceAccountName: access-vw
+      initContainers:
+        - name: init
+          image: ghcr.io/kcp-dev/contrib-access-vw:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/access-vw-init"]
+          args:
+            - --kubeconfig=/etc/kcp/kubeconfig/kubeconfig
+            # The APIExport lands in <prefix>:<controllers-workspace>, and any
+            # missing workspace along that path is created. Both halves are
+            # configurable so this can be dropped anywhere in an existing tree.
+            - --workspace-prefix=root:access
+            - --controllers-workspace=controllers
+          volumeMounts:
+            - name: kubeconfig
+              mountPath: /etc/kcp/kubeconfig
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
       containers:
         - name: server
-          image: ghcr.io/kcp-dev/access-vw:latest
+          image: ghcr.io/kcp-dev/contrib-access-vw:latest
           imagePullPolicy: IfNotPresent
           args:
             - --secure-port=9443
@@ -61,6 +83,15 @@ spec:
             limits:
               memory: 512Mi
       volumes:
+        # The kcp credential, shared by init and the server. Both compute their
+        # own workspace URL from --workspace-prefix / --controllers-workspace, so
+        # it may point at any workspace and neither can be aimed at one the other
+        # did not use.
+        #
+        # Produced by kcp-operator's Kubeconfig resource. init needs rights to
+        # create workspaces from the root down and to install in the target
+        # workspace; the server needs to read the APIExportEndpointSlice there
+        # and reach apiexports/content.
         - name: kubeconfig
           secret:
             secretName: access-vw-kubeconfig

@@ -20,8 +20,14 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o /access-vw ./cmd/access-vw/
+# Shipped in the same image so a Deployment can run it as an init container
+# without pulling a second artifact.
+RUN CGO_ENABLED=0 GOOS=linux go build -o /access-vw-init ./cmd/init/
+RUN CGO_ENABLED=0 GOOS=linux go build -o /scar-to-kubeconfig ./cmd/scar-to-kubeconfig/
 
 FROM gcr.io/distroless/static:nonroot
 COPY --from=builder /access-vw /access-vw
+COPY --from=builder /access-vw-init /access-vw-init
+COPY --from=builder /scar-to-kubeconfig /scar-to-kubeconfig
 USER 65532:65532
 ENTRYPOINT ["/access-vw"]

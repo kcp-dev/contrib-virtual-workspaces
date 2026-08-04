@@ -28,7 +28,7 @@ import (
 	"github.com/kcp-dev/virtual-workspace-framework/pkg/fixedgvs"
 	"github.com/kcp-dev/virtual-workspace-framework/pkg/rootapiserver"
 
-	accessv1alpha1 "github.com/kcp-dev/contrib-access-virtual-workspace/pkg/apis/access/v1alpha1"
+	accessv1alpha1 "github.com/kcp-dev/contrib-access-virtual-workspace/sdk/apis/access/v1alpha1"
 	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/graph"
 	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/virtual"
 )
