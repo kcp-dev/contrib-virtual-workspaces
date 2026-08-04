@@ -24,19 +24,11 @@ spec:
           command: ["/access-vw-init"]
           args:
             - --kubeconfig=/etc/kcp/kubeconfig/kubeconfig
-            # The APIExport and the ServiceAccount the server runs as land in
-            # <prefix>:<controllers-workspace>. Both are configurable so this
-            # can be dropped anywhere in an existing tree.
+            # The APIExport lands in <prefix>:<controllers-workspace>, and any
+            # missing workspace along that path is created. Both halves are
+            # configurable so this can be dropped anywhere in an existing tree.
             - --workspace-prefix=root:access
             - --controllers-workspace=controllers
-            # Add --create-workspaces when the mounted kubeconfig is a
-            # kcp-admin one and the tree should be created. Without it, the
-            # kubeconfig's current context is the target and must already
-            # exist.
-            # - --create-workspaces
-            # The generated kubeconfig has to address kcp from where the
-            # server runs, which is not necessarily the URL init used.
-            # - --host-override=https://frontproxy.kcp-system.svc:6443
           volumeMounts:
             - name: kubeconfig
               mountPath: /etc/kcp/kubeconfig
@@ -91,6 +83,15 @@ spec:
             limits:
               memory: 512Mi
       volumes:
+        # The kcp credential, shared by init and the server. Both compute their
+        # own workspace URL from --workspace-prefix / --controllers-workspace, so
+        # it may point at any workspace and neither can be aimed at one the other
+        # did not use.
+        #
+        # Produced by kcp-operator's Kubeconfig resource. init needs rights to
+        # create workspaces from the root down and to install in the target
+        # workspace; the server needs to read the APIExportEndpointSlice there
+        # and reach apiexports/content.
         - name: kubeconfig
           secret:
             secretName: access-vw-kubeconfig

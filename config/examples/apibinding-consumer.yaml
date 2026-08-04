@@ -5,7 +5,7 @@ metadata:
 spec:
   reference:
     export:
-      path: root
+      path: root:access:controllers
       name: access.contrib.kcp.io
   permissionClaims:
     - group: rbac.authorization.k8s.io

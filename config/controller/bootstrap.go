@@ -26,3 +26,10 @@ import "embed"
 //
 //go:embed *.yaml
 var FS embed.FS
+
+// Order is the sequence the assets must be applied in: the ServiceAccount
+// before the RBAC that binds it.
+var Order = []string{
+	"serviceaccount.yaml",
+	"rbac.yaml",
+}

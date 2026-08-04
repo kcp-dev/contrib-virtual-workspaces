@@ -23,8 +23,12 @@ limitations under the License.
 // <prefix>:<controllers-workspace>, default root:access:controllers. Both
 // halves are configurable so a deployment can bring its own tree:
 //
-//	access-vw-init --kubeconfig=admin.kubeconfig --create-workspaces \
+//	access-vw-init --kubeconfig=admin.kubeconfig \
 //	  --workspace-prefix=root:magic --controllers-workspace=controllers
+//
+// Any missing workspace along that path is created, so the credential needs
+// rights to create workspaces from the root down. Idempotent: safe to run on
+// every pod start and every upgrade.
 package main
 
 import (
@@ -35,7 +39,6 @@ import (
 
 	"github.com/spf13/pflag"
 
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
 
@@ -44,14 +47,13 @@ import (
 
 func main() {
 	var (
-		kubeconfig            string
-		workspacePrefix       string
-		controllersWorkspace  string
-		workspaceType         string
-		createWorkspaces      bool
-		hostOverride          string
-		verifyBinding         string
-		timeout               time.Duration
+		kubeconfig           string
+		workspacePrefix      string
+		controllersWorkspace string
+		workspaceType        string
+		hostOverride         string
+		verifyBinding        string
+		timeout              time.Duration
 	)
 
 	klog.InitFlags(goflag.CommandLine)
@@ -60,9 +62,7 @@ func main() {
 	pflag.StringVar(&kubeconfig, "kubeconfig", os.Getenv("KUBECONFIG"),
 		"Path to the kubeconfig for the target kcp. Defaults to $KUBECONFIG.")
 	pflag.StringVar(&workspacePrefix, "workspace-prefix", bootstrap.DefaultWorkspacePrefix,
-		"Parent path the controllers workspace is created under, e.g. root:magic. "+
-			"Only meaningful with --create-workspaces; without it the kubeconfig's "+
-			"current context decides the target workspace.")
+		"Parent path the controllers workspace is created under, e.g. root:magic.")
 	pflag.StringVar(&controllersWorkspace, "controllers-workspace", bootstrap.DefaultControllersWorkspace,
 		"Name of the workspace this component owns, created under --workspace-prefix. "+
 			"Holds the APIExport and the ServiceAccount the server runs as.")
@@ -72,11 +72,7 @@ func main() {
 			"server connects from inside the cluster, e.g. "+
 			"https://frontproxy.kcp-system.svc:6443.")
 	pflag.StringVar(&workspaceType, "workspace-type", bootstrap.DefaultWorkspaceType,
-		"WorkspaceType for workspaces created by --create-workspaces.")
-	pflag.BoolVar(&createWorkspaces, "create-workspaces", false,
-		"Create any missing workspace along the target path before installing. Requires "+
-			"rights to create workspaces from root down; omit it when you only hold "+
-			"cluster-admin in the target workspace.")
+		"WorkspaceType for any workspace this creates.")
 	pflag.StringVar(&verifyBinding, "verify-apibinding", "",
 		"After installing, check that this APIBinding in the target workspace has all "+
 			"of its permission claims accepted. Useful when the workspace being "+
@@ -99,27 +95,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	target := cfg
-	reportedPath := "(kubeconfig current context)"
+	workspacePath, err := bootstrap.JoinWorkspacePath(workspacePrefix, controllersWorkspace)
+	if err != nil {
+		logger.Error(err, "invalid workspace configuration")
+		os.Exit(1)
+	}
 
-	if createWorkspaces {
-		workspacePath, err := bootstrap.JoinWorkspacePath(workspacePrefix, controllersWorkspace)
-		if err != nil {
-			logger.Error(err, "invalid workspace configuration")
-			os.Exit(1)
-		}
-
-		logger.Info("creating workspace path", "path", workspacePath, "type", workspaceType)
-		target, err = bootstrap.CreateWorkspacePath(ctx, cfg, workspacePath, workspaceType)
-		if err != nil {
-			logger.Error(err, "creating workspace path", "path", workspacePath)
-			os.Exit(1)
-		}
-		reportedPath = workspacePath
+	target, err := bootstrap.CreateWorkspacePath(ctx, cfg, workspacePath, workspaceType)
+	if err != nil {
+		logger.Error(err, "resolving workspace path", "path", workspacePath)
+		os.Exit(1)
 	}
 
 	result, err := bootstrap.Bootstrap(ctx, target, bootstrap.Options{
-		WorkspacePath: reportedPath,
+		WorkspacePath: workspacePath,
 		HostOverride:  hostOverride,
 		Timeout:       timeout,
 	})
@@ -136,10 +125,10 @@ func main() {
 		logger.Info("APIBinding permission claims accepted", "name", verifyBinding)
 	}
 
-	report(logger, target, result)
+	report(logger, result)
 }
 
-func report(logger klog.Logger, cfg *rest.Config, result *bootstrap.Result) {
+func report(logger klog.Logger, result *bootstrap.Result) {
 	logger.Info("bootstrap complete",
 		"workspace", result.WorkspacePath,
 		"apiExportEndpointSlice", result.APIExportEndpointSlice,
@@ -149,6 +138,9 @@ func report(logger klog.Logger, cfg *rest.Config, result *bootstrap.Result) {
 		"--apiexport-endpointslice", result.APIExportEndpointSlice,
 		"--kubeconfig", "(from Secret "+result.KubeconfigSecret+" in this workspace)",
 	)
-	logger.Info("consumer workspaces opt in by creating an APIBinding to this APIExport; " +
-		"see config/examples/apibinding-consumer.yaml")
+	logger.Info("consumer workspaces opt in with an APIBinding to this export; "+
+		"see config/examples/apibinding-consumer.yaml",
+		"exportPath", result.WorkspacePath,
+		"exportCluster", result.ExportsClusterRef,
+	)
 }

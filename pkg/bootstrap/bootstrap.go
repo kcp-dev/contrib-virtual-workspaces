@@ -30,9 +30,9 @@ import (
 	"strings"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -54,14 +54,18 @@ import (
 	configcontroller "github.com/kcp-dev/contrib-access-virtual-workspace/config/controller"
 )
 
-const (
-	APIExportName = "access.contrib.kcp.io"
+// APIExportName is the APIExport, and the APIExportEndpointSlice, this
+// component installs and serves.
+const APIExportName = "access.contrib.kcp.io"
 
+const (
 	// ControllerNamespace is the namespace inside the APIExport's
 	// workspace holding the server's identity and generated kubeconfig.
 	ControllerNamespace = "default"
 
-	// ControllerServiceAccount is the identity the server runs as.
+	// ControllerServiceAccount is the identity the server runs as. It lives
+	// in the same workspace as the APIExport so the server never needs an
+	// admin kubeconfig.
 	ControllerServiceAccount = "access-vw-controller"
 
 	// ControllerTokenSecret is the ServiceAccount token secret kcp
@@ -77,6 +81,12 @@ var apiExportEndpointSliceGVR = schema.GroupVersionResource{
 	Group: "apis.kcp.io", Version: "v1alpha1", Resource: "apiexportendpointslices",
 }
 
+var logicalClusterGVR = schema.GroupVersionResource{
+	Group: "core.kcp.io", Version: "v1alpha1", Resource: "logicalclusters",
+}
+
+var createOnlyKinds = map[string]bool{"APIResourceSchema": true}
+
 // Result reports what a successful bootstrap produced, so callers can
 // print the values the server needs.
 type Result struct {
@@ -91,6 +101,12 @@ type Result struct {
 	// VirtualWorkspaceURLs are the per-shard URLs the slice resolved to.
 	// Empty means the provider will discover nothing.
 	VirtualWorkspaceURLs []string
+
+	// ExportsClusterRef is the logical cluster ID of the workspace the
+	// APIExport landed in, which is what a consumer APIBinding must
+	// reference. Reported because the workspace is configurable, so no
+	// committed example can carry it.
+	ExportsClusterRef string
 
 	// KubeconfigSecret is the Secret, in the APIExport's workspace, holding
 	// the kubeconfig the server should run with.
@@ -135,17 +151,26 @@ func Bootstrap(ctx context.Context, cfg *rest.Config, opts Options) (*Result, er
 	cache := memory.NewMemCacheClient(discoveryClient)
 	mapper := restmapper.NewDeferredDiscoveryRESTMapper(cache)
 
+	if err := preflight(discoveryClient, cfg.Host); err != nil {
+		return nil, err
+	}
+
 	logger.Info("applying access virtual workspace assets", "workspace", opts.WorkspacePath)
-	if err := applyFS(ctx, dynamicClient, mapper, cache, configapiexport.FS); err != nil {
+	if err := applyFS(ctx, dynamicClient, mapper, cache, configapiexport.FS, configapiexport.Order); err != nil {
 		return nil, fmt.Errorf("apply assets: %w", err)
 	}
 
 	logger.Info("applying controller identity", "serviceAccount", ControllerServiceAccount)
-	if err := applyFS(ctx, dynamicClient, mapper, cache, configcontroller.FS); err != nil {
+	if err := applyFS(ctx, dynamicClient, mapper, cache, configcontroller.FS, configcontroller.Order); err != nil {
 		return nil, fmt.Errorf("apply controller identity: %w", err)
 	}
 
 	urls, err := waitForEndpointSlice(ctx, dynamicClient)
+	if err != nil {
+		return nil, err
+	}
+
+	exportsRef, err := exportsClusterRef(ctx, dynamicClient)
 	if err != nil {
 		return nil, err
 	}
@@ -162,10 +187,15 @@ func Bootstrap(ctx context.Context, cfg *rest.Config, opts Options) (*Result, er
 		WorkspacePath:          opts.WorkspacePath,
 		APIExportEndpointSlice: APIExportName,
 		VirtualWorkspaceURLs:   urls,
+		ExportsClusterRef:      exportsRef,
 		KubeconfigSecret:       ControllerKubeconfigSecret,
 	}, nil
 }
 
+// createControllerKubeconfig waits for kcp to populate the ServiceAccount's
+// token secret, then writes a kubeconfig for that identity into
+// ControllerKubeconfigSecret in the same workspace. Idempotent: an existing
+// secret is updated in place.
 func createControllerKubeconfig(ctx context.Context, client kubernetes.Interface, cfg *rest.Config, hostOverride string) error {
 	logger := klog.FromContext(ctx)
 
@@ -250,20 +280,54 @@ func createControllerKubeconfig(ctx context.Context, client kubernetes.Interface
 	return nil
 }
 
-func applyFS(ctx context.Context, client dynamic.Interface, mapper meta.RESTMapper, cache discovery.CachedDiscoveryInterface, fs embed.FS) error {
+func preflight(client discovery.DiscoveryInterface, host string) error {
+	groups, err := client.ServerGroups()
+	if err != nil {
+		return fmt.Errorf("cannot reach kcp at %s: %T: %w", host, err, err)
+	}
+	for _, g := range groups.Groups {
+		if g.Name == "apis.kcp.io" {
+			return nil
+		}
+	}
+	return fmt.Errorf("%s does not serve apis.kcp.io — is this a kcp workspace?", host)
+}
+
+func exportsClusterRef(ctx context.Context, client dynamic.Interface) (string, error) {
+	lc, err := client.Resource(logicalClusterGVR).Get(ctx, "cluster", metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("reading LogicalCluster of the exports workspace: %w", err)
+	}
+	ref := lc.GetAnnotations()["kcp.io/cluster"]
+	if ref == "" {
+		return "", fmt.Errorf("LogicalCluster of the exports workspace carries no kcp.io/cluster annotation")
+	}
+	return ref, nil
+}
+
+func applyFS(ctx context.Context, client dynamic.Interface, mapper meta.RESTMapper, cache discovery.CachedDiscoveryInterface, fs embed.FS, order []string) error {
 	logger := klog.FromContext(ctx)
+
+	if err := verifyOrderCoversFS(fs, order); err != nil {
+		return err
+	}
 
 	var lastErr error
 	attempt := 0
 	err := wait.PollUntilContextCancel(ctx, 2*time.Second, true, func(ctx context.Context) (bool, error) {
 		attempt++
-		if err := applyResources(ctx, client, mapper, fs); err != nil {
-			lastErr = err
-			logger.V(2).Info("assets not applied yet, retrying", "attempt", attempt, "err", err)
-			cache.Invalidate()
-			return false, nil
+		// Sequentially, stopping at the first failure: a later asset usually
+		// depends on an earlier one, so continuing produces a pile of errors
+		// whose first entry is the only real one.
+		for _, name := range order {
+			if err := applyFile(ctx, client, mapper, fs, name); err != nil {
+				lastErr = err
+				logger.V(2).Info("asset not applied yet, retrying", "file", name, "attempt", attempt, "err", err)
+				cache.Invalidate()
+				return false, nil
+			}
 		}
-		logger.Info("assets applied", "attempts", attempt)
+		logger.Info("assets applied", "files", len(order), "attempts", attempt)
 		return true, nil
 	})
 	if err != nil && lastErr != nil {
@@ -272,22 +336,30 @@ func applyFS(ctx context.Context, client dynamic.Interface, mapper meta.RESTMapp
 	return err
 }
 
-func applyResources(ctx context.Context, client dynamic.Interface, mapper meta.RESTMapper, fs embed.FS) error {
+func verifyOrderCoversFS(fs embed.FS, order []string) error {
+	listed := make(map[string]bool, len(order))
+	for _, n := range order {
+		listed[n] = true
+	}
+
 	entries, err := fs.ReadDir(".")
 	if err != nil {
 		return fmt.Errorf("read embedded assets: %w", err)
 	}
 
-	var errs []error
+	var missing []string
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
 			continue
 		}
-		if err := applyFile(ctx, client, mapper, fs, e.Name()); err != nil {
-			errs = append(errs, err)
+		if !listed[e.Name()] {
+			missing = append(missing, e.Name())
 		}
 	}
-	return utilerrors.NewAggregate(errs)
+	if len(missing) > 0 {
+		return fmt.Errorf("embedded assets %v are not in the apply order; add them to Order", missing)
+	}
+	return nil
 }
 
 func applyFile(ctx context.Context, client dynamic.Interface, mapper meta.RESTMapper, fs embed.FS, filename string) error {
@@ -336,14 +408,14 @@ func applyResource(ctx context.Context, client dynamic.Interface, mapper meta.RE
 
 	resource := client.Resource(m.Resource).Namespace(u.GetNamespace())
 
+	if createOnlyKinds[gvk.Kind] {
+		return create(ctx, resource, u, gvk.Kind)
+	}
+
 	existing, err := resource.Get(ctx, u.GetName(), metav1.GetOptions{})
 	switch {
 	case apierrors.IsNotFound(err):
-		if _, err := resource.Create(ctx, u, metav1.CreateOptions{}); err != nil {
-			return fmt.Errorf("create %s %s: %w", gvk.Kind, u.GetName(), err)
-		}
-		logger.Info("created", "kind", gvk.Kind, "name", u.GetName())
-		return nil
+		return create(ctx, resource, u, gvk.Kind)
 	case err != nil:
 		return fmt.Errorf("get %s %s: %w", gvk.Kind, u.GetName(), err)
 	}
@@ -354,6 +426,22 @@ func applyResource(ctx context.Context, client dynamic.Interface, mapper meta.RE
 	}
 	logger.V(2).Info("updated", "kind", gvk.Kind, "name", u.GetName())
 	return nil
+}
+
+func create(ctx context.Context, resource dynamic.ResourceInterface, u *unstructured.Unstructured, kind string) error {
+	logger := klog.FromContext(ctx)
+
+	_, err := resource.Create(ctx, u, metav1.CreateOptions{})
+	switch {
+	case err == nil:
+		logger.Info("created", "kind", kind, "name", u.GetName())
+		return nil
+	case apierrors.IsAlreadyExists(err) && createOnlyKinds[kind]:
+		logger.V(2).Info("exists", "kind", kind, "name", u.GetName())
+		return nil
+	default:
+		return fmt.Errorf("create %s %s: %w", kind, u.GetName(), err)
+	}
 }
 
 func waitForEndpointSlice(ctx context.Context, client dynamic.Interface) ([]string, error) {

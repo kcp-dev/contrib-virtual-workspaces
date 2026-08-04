@@ -6,11 +6,13 @@ KUBECONFIG       ?= $(HOME)/.kcp/admin.kubeconfig
 ENDPOINT_BASE    ?= https://localhost:6443/clusters/
 SECURE_PORT      ?= 9443
 APIEXPORT_SLICE  ?= access.contrib.kcp.io
-EXPORT_PATH      ?= root
 WORKSPACE_PREFIX      ?= root:access
 CONTROLLERS_WORKSPACE ?= controllers
-CREATE_WORKSPACES     ?= false
-HOST_OVERRIDE         ?=
+
+# Shorthand for the workspace the targets below operate in. Deliberately NOT
+# overridable: overriding it alone would point the demo targets at a workspace
+# `init` never installed into.
+EXPORT_PATH = $(WORKSPACE_PREFIX):$(CONTROLLERS_WORKSPACE)
 WS_ALICE         ?= workspace-alice
 WS_BOB           ?= workspace-bob
 
@@ -58,17 +60,14 @@ clean: ## Remove build artifacts
 	rm -rf bin/
 
 #kcp setup
-# Run these against the workspace where the access VW's APIExport
-# should live (usually root or a system-adjacent workspace).
+# These operate on $(EXPORT_PATH), which `init` creates if it does not exist.
 
 .PHONY: init
-init: build ## Bootstrap kcp: install the APIExport, schema and endpoint slice, then verify
+init: build ## Bootstrap kcp: create the workspace, install the APIExport, schema, bind RBAC and endpoint slice, then verify
 	./bin/access-vw-init \
 		--kubeconfig $(KUBECONFIG) \
 		--workspace-prefix $(WORKSPACE_PREFIX) \
-		--controllers-workspace $(CONTROLLERS_WORKSPACE) \
-		$(if $(HOST_OVERRIDE),--host-override $(HOST_OVERRIDE),) \
-		$(if $(filter true,$(CREATE_WORKSPACES)),--create-workspaces,)
+		--controllers-workspace $(CONTROLLERS_WORKSPACE)
 
 
 .PHONY: show-apiexport
@@ -94,21 +93,24 @@ create-test-workspaces: ## Create workspace-alice and workspace-bob, bind APIExp
 
 .PHONY: seed-rbac
 seed-rbac: ## Seed RBAC: alice-sa in workspace-alice, bob-sa in workspace-bob
-	kubectl ws use $(EXPORT_PATH)/$(WS_ALICE)
+	kubectl ws use $(EXPORT_PATH):$(WS_ALICE)
 	kubectl apply -f config/rbac/seed-rbac-alice.yaml
-	kubectl ws use $(EXPORT_PATH)/$(WS_BOB)
+	kubectl ws use $(EXPORT_PATH):$(WS_BOB)
 	kubectl apply -f config/rbac/seed-rbac-bob.yaml
 	kubectl ws use $(EXPORT_PATH)
 
 
 .PHONY: cleanup
 cleanup: ## Remove all test resources: RBAC, workspaces, APIExport
-	-kubectl ws use $(EXPORT_PATH)/$(WS_ALICE) && kubectl delete -f config/rbac/seed-rbac-alice.yaml
-	-kubectl ws use $(EXPORT_PATH)/$(WS_BOB) && kubectl delete -f config/rbac/seed-rbac-bob.yaml
+	-kubectl ws use $(EXPORT_PATH):$(WS_ALICE) && kubectl delete -f config/rbac/seed-rbac-alice.yaml
+	-kubectl ws use $(EXPORT_PATH):$(WS_BOB) && kubectl delete -f config/rbac/seed-rbac-bob.yaml
 	-kubectl ws use $(EXPORT_PATH) && kubectl ws delete $(WS_ALICE)
 	-kubectl ws use $(EXPORT_PATH) && kubectl ws delete $(WS_BOB)
-	-kubectl ws use $(EXPORT_PATH) && kubectl delete -f config/apiexport/apiexport.yaml
-	-kubectl ws use $(EXPORT_PATH) && kubectl delete -f config/apiexport/apiresourceschema.yaml
+	-kubectl ws use $(EXPORT_PATH) && kubectl delete \
+		-f config/apiexport/apiexportendpointslice.yaml \
+		-f config/apiexport/rbac-bind.yaml \
+		-f config/apiexport/apiexport.yaml \
+		-f config/apiexport/apiresourceschema.yaml
 	kubectl ws use $(EXPORT_PATH)
 
 # ── Run against kcp ──────────────────────────────────────────────────
@@ -147,7 +149,7 @@ healthz: ## Hit /healthz
 .PHONY: mcp-demo
 mcp-demo: build ## Generate scoped alice.kubeconfig for MCP demo
 	@echo "==> Generating alice.kubeconfig (workspace-alice only)..."; \
-	kubectl ws use $(EXPORT_PATH)/$(WS_ALICE) >/dev/null 2>&1 || true; \
+	kubectl ws use $(EXPORT_PATH):$(WS_ALICE) >/dev/null 2>&1 || true; \
 	TOKEN_VAL=$$(kubectl create token alice-sa --namespace=default --duration=1h 2>/dev/null); \
 	if [ -z "$$TOKEN_VAL" ]; then \
 		echo "error: could not obtain token for alice-sa. Run 'make seed-rbac' first." >&2; \
