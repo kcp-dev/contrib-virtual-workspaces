@@ -21,15 +21,25 @@ package access
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
-	accessv1alpha1 "github.com/kcp-dev/contrib-access-virtual-workspace/sdk/apis/access/v1alpha1"
+	accessv1alpha1 "github.com/kcp-dev/contrib-access-virtual-workspace/pkg/apis/access/v1alpha1"
 
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 )
+
+var codecs = func() serializer.CodecFactory {
+	scheme := runtime.NewScheme()
+	utilruntime.Must(accessv1alpha1.AddToScheme(scheme))
+	return serializer.NewCodecFactory(scheme)
+}()
 
 // Workspace is one workspace a caller may use.
 type Workspace struct {
@@ -108,8 +118,15 @@ func (c *Client) Workspaces(ctx context.Context, u user.Info) ([]Workspace, erro
 		return nil, err
 	}
 
+	now := time.Now()
 	c.mu.Lock()
-	c.cache[key] = cacheEntry{workspaces: workspaces, expires: time.Now().Add(c.opts.CacheTTL)}
+
+	for k, entry := range c.cache {
+		if now.After(entry.expires) {
+			delete(c.cache, k)
+		}
+	}
+	c.cache[key] = cacheEntry{workspaces: workspaces, expires: now.Add(c.opts.CacheTTL)}
 	c.mu.Unlock()
 
 	klog.FromContext(ctx).V(4).Info("resolved caller workspaces",
@@ -118,12 +135,12 @@ func (c *Client) Workspaces(ctx context.Context, u user.Info) ([]Workspace, erro
 	return workspaces, nil
 }
 
-// review POSTs a SelfClusterAccessReview impersonating u.
 func (c *Client) review(ctx context.Context, u user.Info) ([]Workspace, error) {
 	cfg := rest.CopyConfig(c.opts.Impersonator)
 	cfg.Host = c.opts.BaseURL
 	cfg.APIPath = "/apis"
 	cfg.GroupVersion = &accessv1alpha1.SchemeGroupVersion
+	cfg.NegotiatedSerializer = codecs.WithoutConversion()
 	cfg.Impersonate = rest.ImpersonationConfig{
 		UserName: u.GetName(),
 		Groups:   u.GetGroups(),
@@ -166,14 +183,22 @@ func (c *Client) Invalidate(u user.Info) {
 	delete(c.cache, cacheKey(u))
 }
 
-// cacheKey includes groups because group membership changes the answer, and a
-// group added between calls must not be served from a stale entry keyed on the
-// username alone.
 func cacheKey(u user.Info) string {
 	key := u.GetName()
 	for _, g := range u.GetGroups() {
 		key += "\x00" + g
 	}
+	extra := u.GetExtra()
+	extraKeys := make([]string, 0, len(extra))
+	for k := range extra {
+		extraKeys = append(extraKeys, k)
+	}
+	sort.Strings(extraKeys)
+	for _, k := range extraKeys {
+		key += "\x01" + k
+		for _, v := range extra[k] {
+			key += "\x02" + v
+		}
+	}
 	return key
 }
-

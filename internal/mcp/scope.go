@@ -29,12 +29,6 @@ import (
 
 // ClientFactory produces per-workspace clients that act as the caller through
 // impersonation.
-//
-// Behind kcp's front-proxy the caller's bearer token is consumed by the proxy
-// and never reaches this server, so token passthrough is not available. This
-// server's own identity impersonates instead, which means it needs impersonate
-// on users, groups and userextras — and kcp still authorizes every request as
-// the caller, with both identities in the audit log.
 type ClientFactory struct {
 	base *rest.Config
 }
@@ -102,6 +96,10 @@ func (s *Scope) HasAccess(workspace string) bool {
 }
 
 // ClientFor returns clients for workspace, or an error when it is out of scope.
+//
+// TODO: clients are rebuilt on every call. A scope lives for a single request
+// today, so this costs one build per tool call; if scopes ever outlive a
+// request, cache per (endpoint, user) here.
 func (s *Scope) ClientFor(workspace string) (kubernetes.Interface, dynamic.Interface, error) {
 	for _, w := range s.Workspaces {
 		if w.Name == workspace {

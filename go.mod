@@ -3,7 +3,7 @@ module github.com/kcp-dev/contrib-mcp-virtual-workspace
 go 1.26.4
 
 require (
-	github.com/kcp-dev/contrib-access-virtual-workspace v0.0.0-00010101000000-000000000000
+	github.com/kcp-dev/contrib-access-virtual-workspace v0.0.0-20260729135058-6921878638a2
 	github.com/kcp-dev/virtual-workspace-framework v0.32.3
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/spf13/cobra v1.10.2
@@ -144,11 +144,6 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.1 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
-
-// Until the access virtual workspace publishes its SelfClusterAccessReview
-// types as a tagged module, point at a local checkout. Replace with a version
-// once kcp-dev/contrib-access-virtual-workspace tags one.
-replace github.com/kcp-dev/contrib-access-virtual-workspace => ../contrib-access-virtual-workspace
 
 // virtual-workspace-framework builds against kcp's fork of Kubernetes, and Go
 // does not propagate replace directives across module boundaries, so this block

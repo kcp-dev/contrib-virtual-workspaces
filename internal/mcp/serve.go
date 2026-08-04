@@ -58,6 +58,10 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 	codecs := serializer.NewCodecFactory(runtime.NewScheme())
 	recommended := genericapiserver.NewRecommendedConfig(codecs)
 
+	// Self-signed defaulting is a local-development convenience only. Behind
+	// the front-proxy a real serving certificate is required — the proxy
+	// verifies it against its backend CA — so deployments must set
+	// --tls-cert-file/--tls-private-key-file, which makes this a no-op.
 	if err := opts.SecureServing.MaybeDefaultWithSelfSignedCerts("localhost", nil,
 		[]net.IP{netutils.ParseIPSloppy("127.0.0.1")}); err != nil {
 		return fmt.Errorf("defaulting serving certificates: %w", err)

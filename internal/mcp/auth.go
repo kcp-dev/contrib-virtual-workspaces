@@ -34,9 +34,6 @@ import (
 
 // applyAuthentication builds the union authenticator and advertises the client
 // and requestheader CAs on the serving side.
-//
-// BuiltInAuthenticationOptions.ApplyTo is intentionally not called: it expects
-// kube-apiserver infrastructure this component does not have.
 func applyAuthentication(ctx context.Context, opts *kubeoptions.BuiltInAuthenticationOptions, cfg *genericapiserver.Config) error {
 	authenticatorConfig, err := opts.ToAuthenticationConfig()
 	if err != nil {
@@ -67,8 +64,6 @@ func applyAuthentication(ctx context.Context, opts *kubeoptions.BuiltInAuthentic
 	return nil
 }
 
-// applyAuthorization allows the health endpoints unauthenticated and delegates
-// everything else to the per-virtual-workspace authorizer.
 func applyAuthorization(cfg *genericapiserver.Config, vws []rootapiserver.NamedVirtualWorkspace) error {
 	healthz, err := path.NewAuthorizer([]string{"/healthz", "/readyz", "/livez"})
 	if err != nil {
@@ -89,8 +84,17 @@ func applyAuthorization(cfg *genericapiserver.Config, vws []rootapiserver.NamedV
 // There is nothing further to authorize at this layer: the workspaces a caller
 // may reach come from the access virtual workspace, and kcp re-authorizes every
 // per-workspace request as the impersonated user.
+//
+// Impersonation is the one exception. The generic server's WithImpersonation
+// filter honors Impersonate-* headers whenever this authorizer allows the
+// impersonate verb, so allowing it here would let any authenticated caller
+// become any other user. This server impersonates on its outbound calls only;
+// no inbound caller needs it.
 func authenticatedOnly() authorizer.Authorizer {
 	return authorizer.AuthorizerFunc(func(_ context.Context, attrs authorizer.Attributes) (authorizer.Decision, string, error) {
+		if attrs.GetVerb() == "impersonate" {
+			return authorizer.DecisionDeny, "impersonation is not supported", nil
+		}
 		u := attrs.GetUser()
 		if u == nil || u.GetName() == "" || u.GetName() == user.Anonymous {
 			return authorizer.DecisionDeny, "authentication required", nil
