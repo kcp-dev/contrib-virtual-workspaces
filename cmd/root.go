@@ -40,8 +40,9 @@ var rootCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(serveCmd)
 
-	klog.InitFlags(goflag.CommandLine)
-	rootCmd.PersistentFlags().AddGoFlagSet(goflag.CommandLine)
+	klogFlags := goflag.NewFlagSet("klog", goflag.ContinueOnError)
+	klog.InitFlags(klogFlags)
+	rootCmd.PersistentFlags().AddGoFlagSet(klogFlags)
 	serverCfg = config.NewServerConfig()
 	serverCfg.AddFlags(rootCmd.PersistentFlags())
 
@@ -56,4 +57,3 @@ func initLog() { // coverage-ignore
 func Execute() { // coverage-ignore
 	cobra.CheckErr(rootCmd.Execute())
 }
-
