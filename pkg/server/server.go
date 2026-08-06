@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
@@ -42,15 +43,22 @@ import (
 
 	"github.com/kcp-dev/virtual-workspace-framework/pkg/rootapiserver"
 
-	accessv1alpha1 "github.com/kcp-dev/contrib-access-virtual-workspace/sdk/apis/access/v1alpha1"
 	generatedopenapi "github.com/kcp-dev/contrib-access-virtual-workspace/pkg/generated/openapi"
 	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/graph"
 	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/rbacprovider"
 	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/virtual"
 	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/virtual/scar"
+	accessv1alpha1 "github.com/kcp-dev/contrib-access-virtual-workspace/sdk/apis/access/v1alpha1"
 )
 
 const debugGraphPath = "/debug/graph"
+
+func retargetHost(host, workspacePath string) string {
+	if i := strings.Index(host, "/clusters/"); i >= 0 {
+		host = host[:i]
+	}
+	return strings.TrimSuffix(host, "/") + "/clusters/" + workspacePath
+}
 
 // Run starts the provider and serves the Access virtual workspace until
 // ctx is cancelled.
@@ -65,6 +73,9 @@ func Run(ctx context.Context, o *Options) error {
 	restConfig, err := clientcmd.BuildConfigFromFlags("", o.Kubeconfig)
 	if err != nil {
 		return fmt.Errorf("load kubeconfig: %w", err)
+	}
+	if o.WorkspacePath != "" {
+		restConfig.Host = retargetHost(restConfig.Host, o.WorkspacePath)
 	}
 	g := graph.New()
 
@@ -81,7 +92,7 @@ func Run(ctx context.Context, o *Options) error {
 	if o.APIExportEndpointSlice != "" {
 		mode = "multi-shard (apiexport=" + o.APIExportEndpointSlice + ")"
 	}
-	klog.InfoS("rbacprovider running", "mode", mode, "kubeconfig", o.Kubeconfig)
+	klog.InfoS("rbacprovider running", "mode", mode, "kubeconfig", o.Kubeconfig, "host", restConfig.Host)
 
 	vws := []rootapiserver.NamedVirtualWorkspace{
 		scar.NewVirtualWorkspace(g),
