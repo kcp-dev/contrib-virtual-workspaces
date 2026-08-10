@@ -1,0 +1,31 @@
+# Impersonation rights for the MCP virtual workspace, applied in every workspace
+# whose resources it should reach on a caller's behalf.
+#
+# The server never holds the caller's credential — the front-proxy consumes it —
+# so it acts through impersonation and kcp authorizes each request as the
+# caller. Granting impersonate is what makes that possible, and is why this
+# identity must not be given resource permissions of its own: everything it can
+# do, it does as somebody else.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: mcp-virtual-workspace-impersonator
+rules:
+  - apiGroups: [""]
+    resources: ["users", "groups", "serviceaccounts", "userextras"]
+    verbs: ["impersonate"]
+---
+# Bind the role to the identity the server presents in its --kubeconfig. Adjust
+# the subject to whatever principal that credential authenticates as.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: mcp-virtual-workspace-impersonator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mcp-virtual-workspace-impersonator
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: mcp-virtual-workspace

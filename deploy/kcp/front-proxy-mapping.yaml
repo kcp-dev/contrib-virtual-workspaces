@@ -1,0 +1,11 @@
+# Path mapping to add to kcp's front-proxy configuration.
+#
+# With this in place the caller is authenticated by the front-proxy and arrives
+# with X-Remote-* identity headers over mTLS, which is the topology the server
+# is configured for by default. Without it, clients must reach the service
+# directly and the server needs its own JWT authenticator instead.
+- path: /services/mcp
+  backend: https://mcp-virtual-workspace.kcp-system.svc:9444
+  backend_server_ca: /etc/kcp/tls/mcp-vw-ca.crt
+  proxy_client_cert: /etc/kcp/tls/requestheader.crt
+  proxy_client_key: /etc/kcp/tls/requestheader.key
