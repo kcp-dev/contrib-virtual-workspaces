@@ -25,6 +25,7 @@ import (
 	"k8s.io/client-go/rest"
 
 	"github.com/kcp-dev/contrib-mcp-virtual-workspace/internal/access"
+	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/tools"
 )
 
 // ClientFactory produces per-workspace clients that act as the caller through
@@ -93,6 +94,15 @@ func (s *Scope) HasAccess(workspace string) bool {
 		}
 	}
 	return false
+}
+
+// Clusters returns the raw workspace access info for the tools package.
+func (s *Scope) Clusters() []tools.ClusterInfo {
+	clusters := make([]tools.ClusterInfo, len(s.Workspaces))
+	for i, w := range s.Workspaces {
+		clusters[i] = tools.ClusterInfo{ClusterName: w.Name, Endpoint: w.Endpoint}
+	}
+	return clusters
 }
 
 // ClientFor returns clients for workspace, or an error when it is out of scope.

@@ -131,8 +131,8 @@ github.com/kcp-dev/apimachinery/v2 v2.32.3 h1:yOPnKrwlPOpM8FcjXZm7UJ5jD482vcdjGP
 github.com/kcp-dev/apimachinery/v2 v2.32.3/go.mod h1:1Rkhiwoq345wlUYtq1/P+3chL2eE1rdoIgBPwb6Y9x8=
 github.com/kcp-dev/client-go v0.32.3 h1:N6CDBHM2tLige8IFzWNsLNyyT5M7wX50sm1VlTA1caY=
 github.com/kcp-dev/client-go v0.32.3/go.mod h1:dCaregBk0w5NhZywu/QRsGB7lfEch5dkBtSS45vNvuU=
-github.com/kcp-dev/contrib-access-virtual-workspace v0.0.0-20260729135058-6921878638a2 h1:zOeseSlfYqv3Dk/87Mz30YLMUJplhz3zos9cQWOS/IY=
-github.com/kcp-dev/contrib-access-virtual-workspace v0.0.0-20260729135058-6921878638a2/go.mod h1:wbGBczXEMQTnpn8SKKxRcM2CxzB1qD4sJbXpSlaEcqk=
+github.com/kcp-dev/contrib-access-virtual-workspace v0.0.1 h1:rEiBNRcTcxRJdyO8pW7ws99vE/Z1luVWuKFDinXBfUE=
+github.com/kcp-dev/contrib-access-virtual-workspace v0.0.1/go.mod h1:EMsTbffi4ZPQeVNT0NkxJN591mKCc2kn9vxxLu5znXw=
 github.com/kcp-dev/kubernetes v1.37.0-alpha.0.0.20260602065202-e006560fc76a h1:mM+5YGM6Xx1nt9VHcKZGEV5mo6XVzlwBvQ5hTz8NGw8=
 github.com/kcp-dev/kubernetes v1.37.0-alpha.0.0.20260602065202-e006560fc76a/go.mod h1:AFa3aeDT60XGwma3vwcqDzXJNx8csQ9u9r+/NmK7aHE=
 github.com/kcp-dev/kubernetes/staging/src/k8s.io/api v0.0.0-20260602065202-e006560fc76a h1:1k49zqcr+54UquOj46hY0yRurpRuEJI8TSHr8iyNKZg=

@@ -31,7 +31,8 @@ explanation.
 | `cmd` | cobra commands: `serve`. |
 | `internal/config` | flag surface. |
 | `internal/access` | client for the access virtual workspace, with the per-caller cache. |
-| `internal/mcp` | the virtual workspace: serving, authentication, per-caller scope, tools. |
+| `internal/mcp` | the virtual workspace: serving, authentication, per-caller scope. |
+| `pkg/tools` | reusable MCP tools over kcp API objects, bound to a per-caller scope. |
 | `deploy/helm` | chart. |
 | `deploy/kcp` | front-proxy path mapping and the RBAC this server's identity needs. |
 | `test/e2e` | deploys the real thing into kind and speaks MCP to it. |
@@ -107,13 +108,15 @@ fails in seconds rather than after kcp has been stood up.
 
 ## Status
 
-Alpha, and depends on an unreleased `SelfClusterAccessReview` API. `go.mod`
-currently resolves the access virtual workspace through a local `replace`; that
-becomes a version once that repository tags one.
+Alpha. Tools over kcp API objects — workspaces, APIExports, APIBindings,
+APIResourceSchemas, WorkspaceTypes, LogicalClusters, Shards, Partitions and
+scheduling resources — plus generic write operations
+(`create/update/patch/delete/scale_resource`) live in `pkg/tools`, exported so
+other MCP servers can reuse them by implementing `tools.Scope`. Writes act as
+the caller through impersonation, so kcp's RBAC decides what is allowed.
 
-Not yet ported from the proof of concept: the tool handlers themselves
-(`internal/mcp/tools`), which supply `list_resources`, `get_resource`, the write
-operations and the kcp-specific workspace tools.
+Not yet ported from the proof of concept: the generic read tools —
+`list_resources`, `get_resource` and API discovery.
 
 ## FAQ
 **Why no local access graph.** This component could run its own RBAC indexer, but

@@ -17,40 +17,14 @@ limitations under the License.
 package mcp
 
 import (
-	"context"
-
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/tools"
 )
 
 // NewServer builds an MCP server whose tools are bound to scope.
-//
-// TODO: register the tool handlers ported from the proof of concept —
-// list/get/create/update/delete over the caller's workspaces, plus the
-// kcp-specific workspace tools. Until then the server advertises only
-// list_workspaces, which is enough to verify the access-VW round trip and the
-// impersonation path end to end.
 func NewServer(scope *Scope) *mcpsdk.Server {
 	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "kcp", Version: "v1alpha1"}, nil)
-
-	type input struct{}
-	type workspace struct {
-		Name     string `json:"name"`
-		Endpoint string `json:"endpoint"`
-	}
-	type output struct {
-		Workspaces []workspace `json:"workspaces"`
-	}
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_workspaces",
-		Description: "Lists the kcp workspaces the calling user can access",
-	}, func(context.Context, *mcpsdk.CallToolRequest, input) (*mcpsdk.CallToolResult, output, error) {
-		out := output{Workspaces: make([]workspace, 0, len(scope.Workspaces))}
-		for _, w := range scope.Workspaces {
-			out.Workspaces = append(out.Workspaces, workspace{Name: w.Name, Endpoint: w.Endpoint})
-		}
-		return nil, out, nil
-	})
-
+	tools.Register(server, scope)
 	return server
 }
