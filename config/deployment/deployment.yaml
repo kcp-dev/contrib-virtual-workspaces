@@ -19,7 +19,7 @@ spec:
       serviceAccountName: access-vw
       initContainers:
         - name: init
-          image: ghcr.io/kcp-dev/contrib-access-vw:latest
+          image: ghcr.io/kcp-dev/contrib-access-virtual-workspace:latest
           imagePullPolicy: IfNotPresent
           command: ["/access-vw-init"]
           args:
@@ -41,7 +41,7 @@ spec:
               memory: 256Mi
       containers:
         - name: server
-          image: ghcr.io/kcp-dev/contrib-access-vw:latest
+          image: ghcr.io/kcp-dev/contrib-access-virtual-workspace:latest
           imagePullPolicy: IfNotPresent
           args:
             - --secure-port=9443

@@ -14,16 +14,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM golang:1.26.4 AS builder
+# Pinned to the build platform so multi-arch builds cross-compile instead of
+# running the toolchain under emulation.
+FROM --platform=$BUILDPLATFORM golang:1.26.4 AS builder
+ARG TARGETOS
+ARG TARGETARCH
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o /access-vw ./cmd/access-vw/
+ENV CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH}
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -o /access-vw ./cmd/access-vw/
 # Shipped in the same image so a Deployment can run it as an init container
 # without pulling a second artifact.
-RUN CGO_ENABLED=0 GOOS=linux go build -o /access-vw-init ./cmd/init/
-RUN CGO_ENABLED=0 GOOS=linux go build -o /scar-to-kubeconfig ./cmd/scar-to-kubeconfig/
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -o /access-vw-init ./cmd/init/
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -o /scar-to-kubeconfig ./cmd/scar-to-kubeconfig/
 
 FROM gcr.io/distroless/static:nonroot
 COPY --from=builder /access-vw /access-vw
