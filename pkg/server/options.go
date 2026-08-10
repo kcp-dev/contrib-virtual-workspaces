@@ -24,6 +24,7 @@ import (
 
 	genericoptions "k8s.io/apiserver/pkg/server/options"
 
+	"github.com/kcp-dev/logicalcluster/v3"
 	vwoptions "github.com/kcp-dev/virtual-workspace-framework/pkg/options"
 )
 
@@ -61,6 +62,13 @@ type Options struct {
 	// runs in multi-shard mode and only indexes workspaces bound to
 	// that APIExport.
 	APIExportEndpointSlice string
+
+	// WorkspacePath is the workspace the kubeconfig is retargeted to,
+	// e.g. "root:access:controllers". The APIExportEndpointSlice lookup
+	// happens in the workspace the kubeconfig points at; operator-minted
+	// admin kubeconfigs point at root, while the bootstrap assets live in
+	// the controllers workspace. Empty means use the kubeconfig as-is.
+	WorkspacePath string
 }
 
 // NewOptions returns options with defaults suitable for running behind
@@ -90,6 +98,10 @@ func (o *Options) AddFlags(fs *pflag.FlagSet) {
 		"Name of the APIExportEndpointSlice for the access VW's system APIExport. "+
 			"When set, the RBAC provider runs in multi-shard mode via multicluster-runtime; "+
 			"only workspaces with an APIBinding to that APIExport are indexed.")
+	fs.StringVar(&o.WorkspacePath, "workspace-path", "",
+		"Workspace path the kubeconfig is retargeted to, e.g. root:access:controllers. "+
+			"Must be the workspace containing the APIExportEndpointSlice. "+
+			"Empty means the kubeconfig's own cluster URL is used unchanged.")
 	if fs.Lookup("kubeconfig") == nil {
 		fs.StringVar(&o.Kubeconfig, "kubeconfig", "", "Path to the kubeconfig for the target kcp (required).")
 	}
@@ -120,6 +132,12 @@ func (o *Options) Validate() error {
 	errs = append(errs, secureServingErrs...)
 	errs = append(errs, authenticationErrs...)
 	errs = append(errs, authorizationErrs...)
+
+	if o.WorkspacePath != "" {
+		if p := logicalcluster.NewPath(o.WorkspacePath); !p.IsValid() {
+			errs = append(errs, fmt.Errorf("--workspace-path %q is not a valid workspace path", o.WorkspacePath))
+		}
+	}
 
 	return errors.Join(errs...)
 }
