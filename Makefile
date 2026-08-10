@@ -14,7 +14,7 @@
 
 GO      ?= go
 BIN_DIR ?= bin
-IMAGE   ?= ghcr.io/kcp-dev/contrib-mcp-vw:latest
+IMAGE   ?= ghcr.io/kcp-dev/contrib-mcp-virtual-workspace:latest
 
 # Local development. ACCESS_URL must reach the access virtual workspace, and the
 # authentication configuration MUST match kcp's: identity is used both to ask the
