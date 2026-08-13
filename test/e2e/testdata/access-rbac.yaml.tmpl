@@ -1,0 +1,50 @@
+# Applied inside kcp, in the workspace holding the APIExport. Grants the access virtual workspace
+# server's certificate identity exactly what it needs there.
+#
+# This is a dependency of the component under test rather than part of it: without these rules the
+# access VW cannot build its graph, every SelfClusterAccessReview comes back empty, and the MCP
+# server correctly reports no workspaces -- a green-looking failure. It mirrors the RBAC the access
+# repository's own e2e applies; keep it in step with that repository's config/controller/rbac.yaml.
+#
+# The `access` rule is the part with no counterpart in a Deployment-based installation: kcp gates
+# every request on `verb=access` against the non-resource URL "/" in the workspace, before any RBAC
+# on the resource is consulted, and exempts only ServiceAccounts declared inside that workspace. A
+# certificate identity is not exempt, so without this rule the server is refused at the door and
+# every other rule below is unreachable.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: access-vw-server
+rules:
+  - verbs: ["access"]
+    nonResourceURLs: ["/"]
+  # Reach the APIExport's virtual workspace, which is how the provider sees RBAC objects in every
+  # workspace that bound the export.
+  - apiGroups: ["apis.kcp.io"]
+    resources: ["apiexports"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apis.kcp.io"]
+    resources: ["apiexports/content"]
+    verbs: ["*"]
+  # Follow the endpoint slice to discover the per-shard URLs to watch.
+  - apiGroups: ["apis.kcp.io"]
+    resources: ["apiexportendpointslices"]
+    verbs: ["get", "list", "watch"]
+  # The bindings the access graph is built from.
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterrolebindings", "rolebindings", "clusterroles", "roles"]
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: access-vw-server
+subjects:
+  - kind: User
+    name: {{ .AccessServerUsername }}
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: access-vw-server
+  apiGroup: rbac.authorization.k8s.io

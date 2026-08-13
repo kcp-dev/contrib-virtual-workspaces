@@ -34,6 +34,7 @@ explanation.
 | `internal/mcp` | the virtual workspace: serving, authentication, per-caller scope, tools. |
 | `deploy/helm` | chart. |
 | `deploy/kcp` | front-proxy path mapping and the RBAC this server's identity needs. |
+| `test/e2e` | deploys the real thing into kind and speaks MCP to it. |
 
 ## Running
 
@@ -56,6 +57,44 @@ The authentication configuration must match kcp's. Prefer
 `--authentication-config` pointing at the same `AuthenticationConfiguration` file
 kcp is started with; the `--oidc-*` flags work too but have to be kept in step by
 hand.
+
+## Testing
+
+`make test` is unit tests. `make test-e2e` is the real thing:
+
+```sh
+make test-e2e          # tears the cluster down afterwards
+make test-e2e-keep     # keeps it for inspection (NO_TEARDOWN=true)
+```
+
+It needs `kind`, `kubectl`, `helm`, `docker`, `go` and `git`. The script creates
+a kind cluster, installs cert-manager and kcp-operator, builds this image from
+the working tree and the access virtual workspace from its main branch, and then
+deploys kcp, both virtual workspaces and two consumer workspaces. The test
+finally connects over MCP as an ordinary user and checks that `list_workspaces`
+reports the workspace that user has rights in and not the one they do not.
+
+That covers the parts no unit test can: kcp-operator rendering a Deployment this
+binary accepts, the front-proxy routing `/services/mcp` and turning a client
+certificate into the identity headers this server trusts, and the impersonated
+round trip to the access virtual workspace.
+
+Both dependencies track a moving branch, so the job can go red without anything
+here having changed — which is the point. Pin them with `KCP_OPERATOR_REF` and
+`ACCESS_VW_REF`, or build the access virtual workspace from a local checkout
+with `ACCESS_VW_SRC=../contrib-access-virtual-workspace`. The script's header
+lists every knob.
+
+One such red is outstanding: the access virtual workspace needs the revision
+where `access-vw-init` merges its assets instead of replacing them. Before it,
+init creates the `APIExportEndpointSlice` and can never re-apply it — kcp
+defaults `spec.export.path` and rejects the update as a changed reference — so
+any restart of that init container is a permanent crash loop and the access VW
+never becomes ready. Until that lands on its main branch, run with
+`ACCESS_VW_SRC` or `ACCESS_VW_REF` pointing at a revision that has it.
+
+`make verify` renders the e2e manifests without a cluster, so a template typo
+fails in seconds rather than after kcp has been stood up.
 
 ## Status
 
