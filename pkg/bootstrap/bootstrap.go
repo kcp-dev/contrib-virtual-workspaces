@@ -36,6 +36,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeyaml "k8s.io/apimachinery/pkg/util/yaml"
@@ -165,10 +166,7 @@ func Bootstrap(ctx context.Context, cfg *rest.Config, opts Options) (*Result, er
 		return nil, fmt.Errorf("apply controller identity: %w", err)
 	}
 
-	urls, err := waitForEndpointSlice(ctx, dynamicClient)
-	if err != nil {
-		return nil, err
-	}
+	urls := waitForEndpointSlice(ctx, dynamicClient)
 
 	exportsRef, err := exportsClusterRef(ctx, dynamicClient)
 	if err != nil {
@@ -412,17 +410,29 @@ func applyResource(ctx context.Context, client dynamic.Interface, mapper meta.RE
 		return create(ctx, resource, u, gvk.Kind)
 	}
 
-	existing, err := resource.Get(ctx, u.GetName(), metav1.GetOptions{})
-	switch {
-	case apierrors.IsNotFound(err):
-		return create(ctx, resource, u, gvk.Kind)
-	case err != nil:
+	if _, err := resource.Get(ctx, u.GetName(), metav1.GetOptions{}); err != nil {
+		if apierrors.IsNotFound(err) {
+			return create(ctx, resource, u, gvk.Kind)
+		}
 		return fmt.Errorf("get %s %s: %w", gvk.Kind, u.GetName(), err)
 	}
 
-	u.SetResourceVersion(existing.GetResourceVersion())
-	if _, err := resource.Update(ctx, u, metav1.UpdateOptions{}); err != nil {
-		return fmt.Errorf("update %s %s: %w", gvk.Kind, u.GetName(), err)
+	// Merged into the stored object rather than replacing it, because replacing it is not
+	// idempotent: kcp defaults fields this manifest deliberately leaves out, and sending the
+	// manifest back whole reads as clearing them.
+	//
+	// APIExportEndpointSlice is the case that bites. Its spec.export.path is omitted here so the
+	// slice resolves to whichever workspace it was installed into; kcp fills the path in on
+	// create, and then rejects an update that would empty it with "APIExport reference must not
+	// be changed". Every re-run then fails — including the retry loop above and, because this runs
+	// as an init container, every pod restart, which turns a restart into a permanent crash loop.
+	patch, err := u.MarshalJSON()
+	if err != nil {
+		return fmt.Errorf("marshal %s %s: %w", gvk.Kind, u.GetName(), err)
+	}
+
+	if _, err := resource.Patch(ctx, u.GetName(), types.MergePatchType, patch, metav1.PatchOptions{}); err != nil {
+		return fmt.Errorf("patch %s %s: %w", gvk.Kind, u.GetName(), err)
 	}
 	logger.V(2).Info("updated", "kind", gvk.Kind, "name", u.GetName())
 	return nil
@@ -444,8 +454,26 @@ func create(ctx context.Context, resource dynamic.ResourceInterface, u *unstruct
 	}
 }
 
-func waitForEndpointSlice(ctx context.Context, client dynamic.Interface) ([]string, error) {
+// waitForEndpointSlice returns the per-shard virtual workspace URLs the endpoint slice resolves to,
+// waiting a while for them to appear but not insisting that they do.
+//
+// kcp only advertises endpoints on a slice once at least one workspace has an APIBinding to the
+// export, so on a fresh installation the slice is legitimately empty: nothing has bound an export
+// that has only just been created. Treating that as a failure deadlocks bootstrapping — the
+// endpoints wait for a binding, the binding waits for a component that never finishes starting —
+// and because this runs as an init container, the deadlock is a pod that never leaves Init.
+//
+// Nothing downstream needs the URLs. The server follows the slice with a watch and engages each
+// cluster as it appears, so an empty slice at this point only means there is nothing to engage yet.
+// They are still reported, because seeing them is the quickest confirmation that the export is
+// being served.
+func waitForEndpointSlice(ctx context.Context, client dynamic.Interface) []string {
 	logger := klog.FromContext(ctx)
+
+	// Short relative to the overall budget: this is worth pausing for, not worth spending the
+	// whole timeout on.
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 
 	var urls []string
 	err := wait.PollUntilContextCancel(ctx, 2*time.Second, true, func(ctx context.Context) (bool, error) {
@@ -476,11 +504,14 @@ func waitForEndpointSlice(ctx context.Context, client dynamic.Interface) ([]stri
 		return len(urls) > 0, nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("APIExportEndpointSlice %q has no virtual workspace endpoints: %w "+
-			"(is the APIExport valid, and is a shard serving it?)", APIExportName, err)
+		logger.Info("APIExportEndpointSlice has no virtual workspace endpoints yet; "+
+			"this is expected until a workspace binds the export, and the server picks them up as they appear",
+			"name", APIExportName)
+
+		return nil
 	}
 
-	return urls, nil
+	return urls
 }
 
 // VerifyAPIBinding reports whether the given workspace has an APIBinding to
