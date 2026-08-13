@@ -46,3 +46,28 @@ jobs:
 
       - name: Test
         run: make test
+
+  # Deploys this component through kcp-operator, the way a user does, and checks that the result
+  # serves. It runs against kcp-operator's main branch on purpose: the support for custom virtual
+  # workspaces with init containers that this deployment depends on lives there, and a change on
+  # either side that breaks the pairing should show up here rather than in someone's cluster.
+  #
+  # Because it tracks a moving branch, this job can go red without anything in this repository
+  # having changed. That is the signal it exists to give.
+  e2e:
+    runs-on: ubuntu-latest
+    # kind, kcp and the operator all have to come up before the first assertion runs.
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # tag=v7.0.1
+
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # tag=v6.5.0
+        with:
+          go-version-file: go.mod
+
+      # On failure the script dumps the operator's logs and the state of the objects it was
+      # reconciling before it tears the cluster down, so the job log is self-contained.
+      - name: Run e2e tests
+        run: make test-e2e

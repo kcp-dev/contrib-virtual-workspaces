@@ -1,0 +1,71 @@
+# The access virtual workspace, deployed the way a user would deploy it: as a VirtualWorkspace
+# object, with access-vw-init as an init container. This mirrors
+# config/samples/operator.kcp.io_v1alpha1_virtualworkspace_custom.yaml in kcp-operator, which uses
+# this component as its example of a server that is not kcp's own.
+apiVersion: operator.kcp.io/v1alpha1
+kind: VirtualWorkspace
+metadata:
+  name: {{ .VirtualWorkspaceName }}
+  namespace: {{ .Namespace }}
+spec:
+  # A singleton connected to the root shard, so it can watch Shard objects.
+  target:
+    rootShardRef:
+      name: root
+
+  # Where clients reach this server. Requests arrive through the front-proxy, so this is the
+  # front-proxy's hostname, not the virtual workspace's own Service.
+  external:
+    hostname: {{ .FrontProxyHostname }}
+    port: 6443
+
+  image:
+    repository: {{ .ImageRepository }}
+    tag: {{ .ImageTag }}
+
+  # Not kcp's own virtual-workspace server. Setting command also tells the operator to leave out
+  # the flags only kcp's server understands, which this binary would reject.
+  command:
+    - /access-vw
+
+  # The graph is held in memory and rebuilt from watches; a second replica would answer from its
+  # own copy.
+  replicas: 1
+
+  kubeconfigSecretRef:
+    name: access-vw-server-kubeconfig
+
+  # Creates the controllers workspace and installs the APIResourceSchema, APIExport, bind RBAC and
+  # APIExportEndpointSlice there before the server starts. It runs as kcp-admin against the
+  # front-proxy: it walks the workspace tree from root down, and creating workspaces is not
+  # something the server's own scoped identity may do.
+  initContainers:
+    - name: init
+      kubeconfigSecretRef:
+        name: admin-kubeconfig
+      command:
+        - /access-vw-init
+      args:
+        - --kubeconfig=/etc/kcp/init-kubeconfig/kubeconfig
+        - --workspace-prefix={{ .WorkspacePrefix }}
+        - --controllers-workspace={{ .ControllersWorkspaceName }}
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+
+  extraArgs:
+    # The APIExportEndpointSlice the init container created, under the APIExport's own name.
+    # Setting it puts the RBAC provider in multi-shard mode.
+    - --apiexport-endpointslice={{ .APIExportName }}
+    # Prefix for the per-cluster endpoints returned in SCAR responses: the front-proxy URL
+    # clients use, not an in-cluster address.
+    - --endpoint-base=https://{{ .FrontProxyHostname }}:6443/clusters/
+    - --v=4
+    # No --workspace-path: the minted kubeconfig already points at the controllers workspace, and
+    # retargeting it again would append a second /clusters/ segment.
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi

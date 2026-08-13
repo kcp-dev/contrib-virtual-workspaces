@@ -39,17 +39,30 @@ build: ## Build all binaries into bin/
 test: ## Run unit tests
 	go test ./...
 
+.PHONY: test-e2e
+test-e2e: ## Deploy into a throwaway kind cluster via kcp-operator and run the e2e tests
+	./hack/ci/run-e2e-tests.sh
+
+.PHONY: test-e2e-keep
+test-e2e-keep: ## Same, but keep the cluster and namespaces afterwards for inspection
+	NO_TEARDOWN=true ./hack/ci/run-e2e-tests.sh
+
 .PHONY: vet
 vet: ## Run go vet
 	go vet ./...
+	go vet -tags e2e ./test/...
 
 .PHONY: tidy
 tidy: ## Sync go.mod / go.sum
 	go mod tidy
 
 .PHONY: verify
-verify: vet verify-fork-pin ## Run all verification checks
+verify: vet verify-fork-pin verify-e2e-manifests ## Run all verification checks
 	go mod tidy -diff
+
+.PHONY: verify-e2e-manifests
+verify-e2e-manifests: ## Render the e2e manifests without a cluster, so template errors fail here
+	go test -tags e2e -run TestManifestsRender -count=1 ./test/e2e/
 
 .PHONY: verify-fork-pin
 verify-fork-pin: ## Check the kcp Kubernetes fork pin matches virtual-workspace-framework
@@ -167,18 +180,9 @@ mcp-demo: build ## Generate scoped alice.kubeconfig for MCP demo
 	@echo "Or add to ~/.copilot/mcp-config.json:"
 	@echo '  {"mcpServers":{"kcp-access":{"type":"local","command":"kubernetes-mcp-server","args":["--kubeconfig","$(CURDIR)/alice.kubeconfig","--cluster-provider=kcp","--toolsets=core,kcp"]}}}'
 
-#Kind-based setup
-.PHONY: kind-setup
-kind-setup: ## Create Kind cluster with full kcp + MCP stack
-	$(MAKE) -C hack/kind setup
-
-.PHONY: kind-teardown
-kind-teardown: ## Delete the Kind cluster
-	$(MAKE) -C hack/kind teardown
-
-.PHONY: kind-build
-kind-build: docker-build ## Build access-vw image and load into Kind
-	kind load docker-image localhost/access-vw:local --name kcp-access-vw
+#Container image
+# For a cluster-based run, prefer `make test-e2e`: it builds this image, loads it into kind and
+# deploys it through kcp-operator the way a user would.
 
 .PHONY: docker-build
 docker-build: ## Build access-vw Docker image
