@@ -83,6 +83,18 @@ const (
 	// reports for this identity is the test's main functional assertion.
 	consumerUsername = "alice"
 
+	// The agent: a bearer-token identity from the front-proxy's static token file, holding rights
+	// in the workspace alice does not have and none in the one she does.
+	//
+	// Deliberately the mirror image of alice rather than a copy. Both identities ask the same
+	// server the same question through the same path, so if the answer followed anything other than
+	// the caller -- a cached list, the server's own rights, the last caller seen -- the two would
+	// agree, and the test would notice. The uid is only there because kcp's token CSV format has a
+	// column for it.
+	agentUsername = "agent"
+	agentUID      = "e2e-agent"
+	agentToken    = "e2e-static-token-not-a-secret"
+
 	// mcpPath is where the front-proxy's additionalPathMappings entry sends requests, and the path
 	// this server registers as a raw handler.
 	mcpPath = "/services/mcp"
@@ -116,6 +128,9 @@ type templateData struct {
 	AccessServerUsername       string
 	MCPServerUsername          string
 	ConsumerUsername           string
+	AgentUsername              string
+	AgentUID                   string
+	AgentToken                 string
 }
 
 // workspaceEntry is one element of the list_workspaces tool's structured output, mirroring the
@@ -165,6 +180,9 @@ func TestMCPVirtualWorkspace(t *testing.T) {
 		AccessServerUsername:       accessServerUsername,
 		MCPServerUsername:          mcpServerUsername,
 		ConsumerUsername:           consumerUsername,
+		AgentUsername:              agentUsername,
+		AgentUID:                   agentUID,
+		AgentToken:                 agentToken,
 	}
 
 	t.Log("Deploying etcd...")
@@ -223,14 +241,15 @@ func TestMCPVirtualWorkspace(t *testing.T) {
 	workload.apply(t, ctx, "mcp-virtualworkspace.yaml.tmpl", data)
 	waitForPods(t, ctx, workload, namespace, mcpPodSelector, 10*time.Minute)
 
-	// Two consumer workspaces, both bound to the export, differing only in whether the consumer has
-	// any rights there. A server that reported every workspace it knows about -- rather than the
-	// ones this identity can reach -- would return both.
+	// Two consumer workspaces, both bound to the export, with the two caller identities granted in
+	// one each. A server that reported every workspace it knows about -- rather than the ones the
+	// caller can reach -- would return both to both.
 	t.Log("Creating the consumer workspaces...")
-	granted := createConsumerWorkspace(t, ctx, adminConfig, data, "granted", true)
-	withheld := createConsumerWorkspace(t, ctx, adminConfig, data, "withheld", false)
+	granted := createConsumerWorkspace(t, ctx, adminConfig, data, "granted", consumerUsername)
+	withheld := createConsumerWorkspace(t, ctx, adminConfig, data, "withheld", agentUsername)
 
-	t.Logf("Consumer workspaces: granted=%s withheld=%s", granted, withheld)
+	t.Logf("Consumer workspaces: granted=%s (%s) withheld=%s (%s)",
+		granted, consumerUsername, withheld, agentUsername)
 
 	waitForEndpoints(t, ctx, controllers)
 
@@ -251,7 +270,16 @@ func TestMCPVirtualWorkspace(t *testing.T) {
 	})
 
 	t.Run("ListWorkspaces", func(t *testing.T) {
-		assertListWorkspaces(t, ctx, workload, namespace, consumerConfig, frontProxyPort, data, granted, withheld)
+		assertListWorkspaces(t, ctx, workload, namespace, consumerConfig, frontProxyPort, data,
+			consumerUsername, granted, withheld)
+	})
+
+	// The same question over the same path with a bearer token instead of a client certificate,
+	// which is what an MCP client actually holds. The expectations are the mirror image of alice's,
+	// so this only passes if the answer really followed the credential.
+	t.Run("BearerToken", func(t *testing.T) {
+		assertListWorkspaces(t, ctx, workload, namespace, tokenConfig(t, adminConfig, agentToken), frontProxyPort, data,
+			agentUsername, withheld, granted)
 	})
 
 	t.Run("Unauthenticated", func(t *testing.T) {
@@ -499,14 +527,17 @@ func assertToolsAdvertised(t *testing.T, ctx context.Context, workload *cluster,
 	}
 }
 
-// assertListWorkspaces is the functional half of the test: an agent asks which workspaces the human
-// it acts for can work on, and the answer has to match what RBAC actually says.
+// assertListWorkspaces is the functional half of the test: a client asks which workspaces the
+// person it acts for can work on, and the answer has to match what RBAC actually says.
 //
 // Everything else here could pass with a server that starts and answers nothing. This is the only
 // assertion that requires the whole path -- the front-proxy routing MCP, the server trusting the
 // forwarded identity, the impersonated SelfClusterAccessReview, and the answer being the caller's
 // rather than the server's own.
-func assertListWorkspaces(t *testing.T, ctx context.Context, workload *cluster, namespace string, consumerConfig *rest.Config, frontProxyPort int, data templateData, granted, withheld string) {
+//
+// Run once per credential. want and unwanted are swapped between them, so an answer that ignored
+// the caller could not satisfy both.
+func assertListWorkspaces(t *testing.T, ctx context.Context, workload *cluster, namespace string, callerConfig *rest.Config, frontProxyPort int, data templateData, who, want, unwanted string) {
 	t.Helper()
 
 	var (
@@ -515,7 +546,7 @@ func assertListWorkspaces(t *testing.T, ctx context.Context, workload *cluster, 
 	)
 
 	err := wait.PollUntilContextTimeout(ctx, 3*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
-		session, err := mcpSession(ctx, consumerConfig, frontProxyPort)
+		session, err := mcpSession(ctx, callerConfig, frontProxyPort)
 		if err != nil {
 			lastNote = fmt.Sprintf("connecting: %v", err)
 
@@ -548,12 +579,12 @@ func assertListWorkspaces(t *testing.T, ctx context.Context, workload *cluster, 
 		}
 
 		return slices.ContainsFunc(result.Workspaces, func(w workspaceEntry) bool {
-			return w.Name == granted
+			return w.Name == want
 		}), nil
 	})
 	if err != nil {
 		dumpMCPLogs(t, ctx, workload, namespace)
-		t.Fatalf("%s never reported the workspace %s can reach: %v (last: %s)", listWorkspacesTool, consumerUsername, err, lastNote)
+		t.Fatalf("%s never reported the workspace %s can reach: %v (last: %s)", listWorkspacesTool, who, err, lastNote)
 	}
 
 	names := make([]string, 0, len(result.Workspaces))
@@ -561,11 +592,11 @@ func assertListWorkspaces(t *testing.T, ctx context.Context, workload *cluster, 
 		names = append(names, workspace.Name)
 	}
 
-	t.Logf("%s reports %v for %s.", listWorkspacesTool, names, consumerUsername)
+	t.Logf("%s reports %v for %s.", listWorkspacesTool, names, who)
 
-	if slices.Contains(names, withheld) {
+	if slices.Contains(names, unwanted) {
 		t.Errorf("%s reported %s, which %s has no rights in; the answer is not scoped to the caller.",
-			listWorkspacesTool, withheld, consumerUsername)
+			listWorkspacesTool, unwanted, who)
 	}
 
 	// The endpoint is what the agent's next call would go to, so an empty or in-cluster one would
@@ -640,6 +671,26 @@ func mcpSession(ctx context.Context, config *rest.Config, frontProxyPort int) (*
 		HTTPClient:           &http.Client{Transport: transport, Timeout: 60 * time.Second},
 		DisableStandaloneSSE: true,
 	}, nil)
+}
+
+// tokenConfig builds a credential that authenticates with nothing but a bearer token: no client
+// certificate, only the CA needed to verify the front-proxy.
+//
+// That absence is the point. The front-proxy has to resolve this token against its static token
+// file and forward the identity itself, so a server that quietly depended on certificate identity
+// -- or on the caller's credential reaching it at all -- fails here and nowhere else.
+func tokenConfig(t *testing.T, adminConfig *rest.Config, token string) *rest.Config {
+	t.Helper()
+
+	if len(adminConfig.TLSClientConfig.CAData) == 0 {
+		t.Fatal("The admin kubeconfig holds no CA bundle to verify the front-proxy with.")
+	}
+
+	return &rest.Config{
+		BearerToken:     token,
+		TLSClientConfig: rest.TLSClientConfig{CAData: adminConfig.TLSClientConfig.CAData},
+		Timeout:         30 * time.Second,
+	}
 }
 
 // errorToolMessage calls the "error" tool, which is what the server advertises instead of its real
@@ -752,10 +803,10 @@ func waitForEndpoints(t *testing.T, ctx context.Context, controllers *cluster) {
 }
 
 // createConsumerWorkspace creates a workspace under the controllers workspace, binds the exported
-// API in it, applies the impersonation RBAC this server is documented to need, and optionally
-// grants the consumer rights there. It returns the logical cluster name, which is what both
+// API in it, applies the impersonation RBAC this server is documented to need, and grants each
+// named user rights there. It returns the logical cluster name, which is what both
 // SelfClusterAccessReview and list_workspaces answer with.
-func createConsumerWorkspace(t *testing.T, ctx context.Context, adminConfig *rest.Config, data templateData, name string, grant bool) string {
+func createConsumerWorkspace(t *testing.T, ctx context.Context, adminConfig *rest.Config, data templateData, name string, grantees ...string) string {
 	t.Helper()
 
 	controllers := inWorkspace(t, adminConfig, controllersWorkspace)
@@ -765,14 +816,16 @@ func createConsumerWorkspace(t *testing.T, ctx context.Context, adminConfig *res
 	workspace.apply(t, ctx, "consumer.yaml.tmpl", data)
 	waitForAPIBinding(t, ctx, workspace)
 
-	if grant {
+	gvr := schemaGVR("rbac.authorization.k8s.io", "v1", "clusterrolebindings")
+
+	for _, grantee := range grantees {
 		binding := &unstructured.Unstructured{Object: map[string]any{
 			"apiVersion": "rbac.authorization.k8s.io/v1",
 			"kind":       "ClusterRoleBinding",
-			"metadata":   map[string]any{"name": consumerUsername + "-admin"},
+			"metadata":   map[string]any{"name": grantee + "-admin"},
 			"subjects": []any{map[string]any{
 				"kind":     "User",
-				"name":     consumerUsername,
+				"name":     grantee,
 				"apiGroup": "rbac.authorization.k8s.io",
 			}},
 			"roleRef": map[string]any{
@@ -782,9 +835,8 @@ func createConsumerWorkspace(t *testing.T, ctx context.Context, adminConfig *res
 			},
 		}}
 
-		gvr := schemaGVR("rbac.authorization.k8s.io", "v1", "clusterrolebindings")
 		if err := createErr(workspace.dynamic.Resource(gvr).Create(ctx, binding, metav1.CreateOptions{})); err != nil {
-			t.Fatalf("Failed to grant %s access to %s: %v", consumerUsername, name, err)
+			t.Fatalf("Failed to grant %s access to %s: %v", grantee, name, err)
 		}
 	}
 

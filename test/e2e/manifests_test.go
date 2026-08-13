@@ -48,6 +48,9 @@ func TestManifestsRender(t *testing.T) {
 		AccessServerUsername:       accessServerUsername,
 		MCPServerUsername:          mcpServerUsername,
 		ConsumerUsername:           consumerUsername,
+		AgentUsername:              agentUsername,
+		AgentUID:                   agentUID,
+		AgentToken:                 agentToken,
 	}
 
 	manifests := []string{

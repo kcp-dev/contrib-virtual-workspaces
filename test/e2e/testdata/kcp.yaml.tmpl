@@ -4,6 +4,26 @@
 # Both the shard's and the front-proxy's serving certificates carry "localhost" so the test can
 # reach them through `kubectl port-forward` without disabling verification: everything this test
 # asserts about identity depends on TLS actually being checked.
+
+# The static token an agent authenticates with, in the CSV format kcp's --token-auth-file takes:
+# token,user,uid.
+#
+# A bearer token rather than another client certificate, because that is what an MCP client
+# actually holds. The front-proxy validates it and forwards the resulting identity as X-Remote-*
+# headers, so this is also the only credential in the test whose username is decided by kcp rather
+# than by a certificate subject.
+#
+# Applied before the FrontProxy that mounts it: the pod does not start without the Secret.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: front-proxy-tokens
+  namespace: {{ .Namespace }}
+stringData:
+  token.csv: |
+    {{ .AgentToken }},{{ .AgentUsername }},{{ .AgentUID }}
+
+---
 apiVersion: operator.kcp.io/v1alpha1
 kind: RootShard
 metadata:
@@ -75,6 +95,12 @@ spec:
     # caller only sees their own workspaces would pass for the wrong reason.
     dropGroups:
       - ""
+    # Lets a client authenticate with `Authorization: Bearer`, which is how an agent connects. The
+    # MCP server itself never sees the token -- the front-proxy consumes it and forwards the
+    # identity -- which is precisely the property that makes this server impersonate rather than
+    # replay a credential.
+    tokenAuthFile:
+      secretName: front-proxy-tokens
   certificateTemplates:
     server:
       spec:

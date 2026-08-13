@@ -70,14 +70,23 @@ make test-e2e-keep     # keeps it for inspection (NO_TEARDOWN=true)
 It needs `kind`, `kubectl`, `helm`, `docker`, `go` and `git`. The script creates
 a kind cluster, installs cert-manager and kcp-operator, builds this image from
 the working tree and the access virtual workspace from its main branch, and then
-deploys kcp, both virtual workspaces and two consumer workspaces. The test
-finally connects over MCP as an ordinary user and checks that `list_workspaces`
-reports the workspace that user has rights in and not the one they do not.
+deploys kcp, both virtual workspaces and two consumer workspaces.
+
+It then asks `list_workspaces` over MCP twice, with two credentials that have
+opposite rights: a client certificate for `alice`, and a bearer token for
+`agent` from the front-proxy's static token file. Each must see its own
+workspace and not the other's — expectations that only both hold if the answer
+followed the caller.
 
 That covers the parts no unit test can: kcp-operator rendering a Deployment this
-binary accepts, the front-proxy routing `/services/mcp` and turning a client
-certificate into the identity headers this server trusts, and the impersonated
+binary accepts, the front-proxy routing `/services/mcp` and turning either
+credential into the identity headers this server trusts, and the impersonated
 round trip to the access virtual workspace.
+
+Not covered: callers that reach this server directly with a JWT, i.e.
+`--authentication-config` and the `--oidc-*` flags. In e2e the front-proxy is
+always the one validating credentials, and this server only ever authenticates
+`X-Remote-*` headers.
 
 Both dependencies track a moving branch, so the job can go red without anything
 here having changed — which is the point. Pin them with `KCP_OPERATOR_REF` and
