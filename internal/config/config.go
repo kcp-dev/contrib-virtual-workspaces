@@ -18,9 +18,12 @@ package config
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spf13/pflag"
+
+	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/toolsets"
 
 	genericoptions "k8s.io/apiserver/pkg/server/options"
 	kubeoptions "k8s.io/kubernetes/pkg/kubeapiserver/options"
@@ -59,7 +62,8 @@ type AccessConfig struct {
 // The credential is the server's own ServiceAccount, not the caller's: behind
 // the front-proxy the caller's bearer token is consumed by the proxy and never
 // arrives here. Per-workspace calls therefore impersonate the caller, which
-// means this identity needs impersonate on users, groups and userextras.
+// means this identity needs impersonate on users, groups and
+// userextras.authentication.k8s.io.
 type KcpConfig struct {
 	// Kubeconfig is the server's own credential, used as the base for
 	// impersonated per-workspace requests.
@@ -70,6 +74,11 @@ type KcpConfig struct {
 type ServerConfig struct {
 	Access AccessConfig
 	Kcp    KcpConfig
+
+	// Toolsets names the tool groups this server exposes. The selection is
+	// enforced here, server-side, so it is policy rather than a client
+	// preference: a toolset that is not enabled never exists for any caller.
+	Toolsets []string
 
 	// SecureServing is TLS-only on purpose: behind the front-proxy the proxy
 	// verifies this server's certificate, and this server verifies the proxy's
@@ -98,6 +107,7 @@ func NewServerConfig() ServerConfig {
 		Access: AccessConfig{
 			CacheTTL: 30 * time.Second,
 		},
+		Toolsets:      toolsets.Default(),
 		SecureServing: secure,
 		Authentication: kubeoptions.NewBuiltInAuthenticationOptions().
 			WithAnonymous().
@@ -120,17 +130,18 @@ func (c *ServerConfig) AddFlags(fs *pflag.FlagSet) {
 	fs.DurationVar(&c.Access.CacheTTL, "access-cache-ttl", c.Access.CacheTTL,
 		"How long a caller's workspace list is reused before asking the access "+
 			"virtual workspace again.")
-
 	fs.StringVar(&c.Kcp.Kubeconfig, "kubeconfig", c.Kcp.Kubeconfig,
 		"Kubeconfig for this server's own identity, used to impersonate callers "+
 			"on per-workspace requests.")
-
 	fs.StringVar(&c.shardExternalURL, "shard-external-url", "",
 		"Accepted for compatibility with kcp's own virtual-workspace server and ignored. "+
 			"Workspaces come from --access-url.")
 	fs.StringVar(&c.cacheKubeconfig, "cache-kubeconfig", "",
 		"Accepted for compatibility with kcp's own virtual-workspace server and ignored. "+
 			"All kcp reads go through --kubeconfig.")
+	fs.StringSliceVar(&c.Toolsets, "toolsets", c.Toolsets,
+		"Comma-separated toolsets to expose. Valid toolsets: "+
+			strings.Join(toolsets.Names(), ", ")+".")
 }
 
 // Validate reports configuration that cannot work.
@@ -141,10 +152,14 @@ func (c *ServerConfig) Validate() error {
 	if c.Kcp.Kubeconfig == "" {
 		return fmt.Errorf("--kubeconfig is required")
 	}
+	if len(c.Toolsets) == 0 {
+		return fmt.Errorf("--toolsets must name at least one toolset; valid toolsets are %s",
+			strings.Join(toolsets.Names(), ", "))
+	}
+	if err := toolsets.Validate(c.Toolsets); err != nil {
+		return err
+	}
 
-	// Refuse to start with no way to identify callers: every request would be
-	// anonymous, and the symptom is an empty tool list rather than an error
-	// pointing at the cause.
 	oidc := c.Authentication.AuthenticationConfigFile != "" ||
 		(c.Authentication.OIDC != nil && c.Authentication.OIDC.IssuerURL != "")
 	requestHeader := c.Authentication.RequestHeader != nil &&

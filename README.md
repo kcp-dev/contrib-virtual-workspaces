@@ -32,7 +32,8 @@ explanation.
 | `internal/config` | flag surface. |
 | `internal/access` | client for the access virtual workspace, with the per-caller cache. |
 | `internal/mcp` | the virtual workspace: serving, authentication, per-caller scope. |
-| `pkg/tools` | reusable MCP tools over kcp API objects, bound to a per-caller scope. |
+| `pkg/tools` | the shared kit MCP tools, one package per toolset, each exposing `Register`.  |
+| `pkg/toolsets` | maps toolset names to `Register` functions; owns validation and the default selection. |
 | `deploy/helm` | chart. |
 | `deploy/kcp` | front-proxy path mapping and the RBAC this server's identity needs. |
 | `test/e2e` | deploys the real thing into kind and speaks MCP to it. |
@@ -106,17 +107,33 @@ never becomes ready. Until that lands on its main branch, run with
 `make verify` renders the e2e manifests without a cluster, so a template typo
 fails in seconds rather than after kcp has been stood up.
 
+## Toolsets
+
+Tools are grouped into toolsets, enabled with `--toolsets` (default: `core`).
+The selection is enforced server-side — a toolset that is not enabled is never
+registered, so no client, model or prompt can reach it. That makes the flag
+operator policy over what AI agents may do, not a client preference.
+
+| Toolset | Default | Tools |
+|---------|---------|-------|
+| `core` | yes | `list_kcp_workspaces`, `list/get_kcp_apibindings`, `list/get_kcp_apiexports`, `list/get_kcp_workspacetypes`, `list_kcp_initializingworkspaces`, `list_kcp_terminatingworkspaces`, `list_kcp_child_workspaces`, `list_resources`, `get_resource` |
+| `apis` | no | `list/get_kcp_apiresourceschemas`, `list_kcp_apiconversions`, `list_kcp_apiexportendpointslices` |
+| `admin` | no | `list_kcp_logicalclusters`, `list_kcp_shards`, `list_kcp_partitions`, `list_kcp_partitionsets` |
+| `write` | no | `create_resource`, `update_resource`, `patch_resource`, `delete_resource`, `scale_resource` |
+
+`core` is everything an agent needs to navigate its workspaces and read any
+resource in them, including CRDs and bound APIs, via the generic
+`list_resources`/`get_resource`. `apis` is API provider machinery, `admin` is
+kcp operator internals (shards and topology exist only in the root workspace),
+and `write` is free-form mutation — all opt-in because they are noise or risk
+for ordinary callers. Every tool remains subject to the caller's scope and to
+kcp's authorization through impersonation regardless of toolset selection.
+
 ## Status
 
-Alpha. Tools over kcp API objects — workspaces, APIExports, APIBindings,
-APIResourceSchemas, WorkspaceTypes, LogicalClusters, Shards, Partitions and
-scheduling resources — plus generic write operations
-(`create/update/patch/delete/scale_resource`) live in `pkg/tools`, exported so
-other MCP servers can reuse them by implementing `tools.Scope`. Writes act as
-the caller through impersonation, so kcp's RBAC decides what is allowed.
-
-Not yet ported from the proof of concept: the generic read tools —
-`list_resources`, `get_resource` and API discovery.
+Alpha. The tools live in `pkg/tools/*` subpackages, exported so other MCP
+servers can reuse them by implementing `tools.Scope`. Writes act as the caller
+through impersonation, so kcp's RBAC decides what is allowed.
 
 ## FAQ
 **Why no local access graph.** This component could run its own RBAC indexer, but
@@ -133,4 +150,5 @@ caller's bearer token is consumed by the proxy, which forwards identity as
 `X-Remote-*` headers instead. There is no token left to replay, so this server
 acts through impersonation: kcp authorizes every per-workspace request as the
 caller, and the audit log records both identities. That requires `impersonate` on
-`users`, `groups` and `userextras`.
+`users` and `groups` in the core group, and on `userextras/*` in
+`authentication.k8s.io`.

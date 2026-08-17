@@ -14,7 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package tools
+// Package write provides generic mutation tools — create, update, patch,
+// delete and scale by GVR. It is opt-in: mutations through free-form
+// manifests are for operators who accept that risk, not the default surface.
+package write
 
 import (
 	"context"
@@ -25,9 +28,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/yaml"
+
+	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/tools"
 )
 
 // CreateResourceInput is the input for create_resource.
@@ -58,11 +62,9 @@ type UpdateResourceOutput struct {
 type PatchResourceInput struct {
 	Workspace string `json:"workspace"`
 
-	APIVersion string `json:"apiVersion,omitempty"`
-	Kind       string `json:"kind,omitempty"`
-	Group      string `json:"group,omitempty"`
-	Version    string `json:"version,omitempty"`
-	Resource   string `json:"resource,omitempty"`
+	Group    string `json:"group,omitempty"`
+	Version  string `json:"version"`
+	Resource string `json:"resource"`
 
 	Name      string `json:"name"`
 	Namespace string `json:"namespace,omitempty"`
@@ -80,11 +82,9 @@ type PatchResourceOutput struct {
 type DeleteResourceInput struct {
 	Workspace string `json:"workspace"`
 
-	APIVersion string `json:"apiVersion,omitempty"`
-	Kind       string `json:"kind,omitempty"`
-	Group      string `json:"group,omitempty"`
-	Version    string `json:"version,omitempty"`
-	Resource   string `json:"resource,omitempty"`
+	Group    string `json:"group,omitempty"`
+	Version  string `json:"version"`
+	Resource string `json:"resource"`
 
 	Name               string `json:"name"`
 	Namespace          string `json:"namespace,omitempty"`
@@ -100,11 +100,9 @@ type DeleteResourceOutput struct {
 type ScaleResourceInput struct {
 	Workspace string `json:"workspace"`
 
-	APIVersion string `json:"apiVersion,omitempty"`
-	Kind       string `json:"kind,omitempty"`
-	Group      string `json:"group,omitempty"`
-	Version    string `json:"version,omitempty"`
-	Resource   string `json:"resource,omitempty"`
+	Group    string `json:"group,omitempty"`
+	Version  string `json:"version"`
+	Resource string `json:"resource"`
 
 	Name      string `json:"name"`
 	Namespace string `json:"namespace,omitempty"`
@@ -120,7 +118,8 @@ type ScaleResourceOutput struct {
 	Message         string `json:"message"`
 }
 
-func registerWriteOperations(server *mcp.Server, scope Scope) {
+// Register adds the write toolset to server, bound to scope.
+func Register(server *mcp.Server, scope tools.Scope) {
 	registerCreateResource(server, scope)
 	registerUpdateResource(server, scope)
 	registerPatchResource(server, scope)
@@ -128,9 +127,13 @@ func registerWriteOperations(server *mcp.Server, scope Scope) {
 	registerScaleResource(server, scope)
 }
 
-func registerCreateResource(server *mcp.Server, scope Scope) {
+func registerCreateResource(server *mcp.Server, scope tools.Scope) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "create_resource",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Create resource",
+			DestructiveHint: new(false),
+		},
 		Description: `Create a Kubernetes resource in a workspace.
 
 Provide the resource as YAML or JSON with apiVersion, kind, metadata, and spec.
@@ -161,17 +164,22 @@ The resource will be created in the specified workspace.`,
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input CreateResourceInput) (*mcp.CallToolResult, CreateResourceOutput, error) {
 		if !scope.HasAccess(input.Workspace) {
-			return nil, CreateResourceOutput{}, NewScopeError(input.Workspace, scope)
+			return nil, CreateResourceOutput{}, tools.NewScopeError(input.Workspace, scope)
 		}
 
-		_, dynClient, err := scope.ClientFor(input.Workspace)
+		kubeClient, dynClient, err := scope.ClientFor(input.Workspace)
 		if err != nil {
 			return nil, CreateResourceOutput{}, fmt.Errorf("getting client: %w", err)
 		}
 
-		obj, gvr, err := parseResource(input.Resource)
+		obj, err := parseManifest(input.Resource)
 		if err != nil {
 			return nil, CreateResourceOutput{}, fmt.Errorf("parsing resource: %w", err)
+		}
+
+		gvr, err := tools.ResolveGVR(kubeClient.Discovery(), obj.GetAPIVersion(), obj.GetKind())
+		if err != nil {
+			return nil, CreateResourceOutput{}, err
 		}
 
 		var created *unstructured.Unstructured
@@ -192,9 +200,13 @@ The resource will be created in the specified workspace.`,
 	})
 }
 
-func registerUpdateResource(server *mcp.Server, scope Scope) {
+func registerUpdateResource(server *mcp.Server, scope tools.Scope) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "update_resource",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Update resource",
+			DestructiveHint: new(true),
+		},
 		Description: `Update (replace) a Kubernetes resource in a workspace.
 
 Provide the full resource as YAML or JSON. The resource must include:
@@ -219,17 +231,22 @@ For partial updates, use patch_resource instead.`,
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input UpdateResourceInput) (*mcp.CallToolResult, UpdateResourceOutput, error) {
 		if !scope.HasAccess(input.Workspace) {
-			return nil, UpdateResourceOutput{}, NewScopeError(input.Workspace, scope)
+			return nil, UpdateResourceOutput{}, tools.NewScopeError(input.Workspace, scope)
 		}
 
-		_, dynClient, err := scope.ClientFor(input.Workspace)
+		kubeClient, dynClient, err := scope.ClientFor(input.Workspace)
 		if err != nil {
 			return nil, UpdateResourceOutput{}, fmt.Errorf("getting client: %w", err)
 		}
 
-		obj, gvr, err := parseResource(input.Resource)
+		obj, err := parseManifest(input.Resource)
 		if err != nil {
 			return nil, UpdateResourceOutput{}, fmt.Errorf("parsing resource: %w", err)
+		}
+
+		gvr, err := tools.ResolveGVR(kubeClient.Discovery(), obj.GetAPIVersion(), obj.GetKind())
+		if err != nil {
+			return nil, UpdateResourceOutput{}, err
 		}
 
 		var updated *unstructured.Unstructured
@@ -250,9 +267,14 @@ For partial updates, use patch_resource instead.`,
 	})
 }
 
-func registerPatchResource(server *mcp.Server, scope Scope) {
+func registerPatchResource(server *mcp.Server, scope tools.Scope) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "patch_resource",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Patch resource",
+			DestructiveHint: new(true),
+			IdempotentHint:  true,
+		},
 		Description: `Patch a Kubernetes resource with a JSON merge patch.
 
 Use this for partial updates without needing the full resource.
@@ -270,25 +292,17 @@ Example patch to update a ConfigMap data field:
 					"type":        "string",
 					"description": "Workspace ID (from list_kcp_workspaces)",
 				},
-				"apiVersion": map[string]any{
-					"type":        "string",
-					"description": "API version (e.g., 'v1', 'apps/v1')",
-				},
-				"kind": map[string]any{
-					"type":        "string",
-					"description": "Resource kind (e.g., 'ConfigMap', 'Deployment')",
-				},
 				"group": map[string]any{
 					"type":        "string",
-					"description": "API group (alternative to apiVersion+kind)",
+					"description": "API group (empty for the core group)",
 				},
 				"version": map[string]any{
 					"type":        "string",
-					"description": "API version (alternative to apiVersion)",
+					"description": "API version (e.g. 'v1', 'v1alpha1')",
 				},
 				"resource": map[string]any{
 					"type":        "string",
-					"description": "Resource name plural (alternative to kind)",
+					"description": "Plural resource name (e.g. 'configmaps', 'deployments')",
 				},
 				"name": map[string]any{
 					"type":        "string",
@@ -303,11 +317,11 @@ Example patch to update a ConfigMap data field:
 					"description": "JSON merge patch content",
 				},
 			},
-			"required": []string{"workspace", "name", "patch"},
+			"required": []string{"workspace", "version", "resource", "name", "patch"},
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input PatchResourceInput) (*mcp.CallToolResult, PatchResourceOutput, error) {
 		if !scope.HasAccess(input.Workspace) {
-			return nil, PatchResourceOutput{}, NewScopeError(input.Workspace, scope)
+			return nil, PatchResourceOutput{}, tools.NewScopeError(input.Workspace, scope)
 		}
 
 		_, dynClient, err := scope.ClientFor(input.Workspace)
@@ -315,7 +329,7 @@ Example patch to update a ConfigMap data field:
 			return nil, PatchResourceOutput{}, fmt.Errorf("getting client: %w", err)
 		}
 
-		gvr, err := parseGVR(input.APIVersion, input.Kind, input.Group, input.Version, input.Resource)
+		gvr, err := tools.ParseGVR(input.Group, input.Version, input.Resource)
 		if err != nil {
 			return nil, PatchResourceOutput{}, err
 		}
@@ -344,12 +358,16 @@ Example patch to update a ConfigMap data field:
 	})
 }
 
-func registerDeleteResource(server *mcp.Server, scope Scope) {
+func registerDeleteResource(server *mcp.Server, scope tools.Scope) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "delete_resource",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Delete resource",
+			DestructiveHint: new(true),
+		},
 		Description: `Delete a Kubernetes resource from a workspace.
 
-Specify the resource by apiVersion+kind or group+version+resource, plus name.
+Specify the resource type as group+version+resource, plus name.
 Optionally set gracePeriodSeconds for controlled termination (0 = immediate).`,
 		InputSchema: map[string]any{
 			"type": "object",
@@ -358,25 +376,17 @@ Optionally set gracePeriodSeconds for controlled termination (0 = immediate).`,
 					"type":        "string",
 					"description": "Workspace ID (from list_kcp_workspaces)",
 				},
-				"apiVersion": map[string]any{
-					"type":        "string",
-					"description": "API version (e.g., 'v1', 'apps/v1')",
-				},
-				"kind": map[string]any{
-					"type":        "string",
-					"description": "Resource kind (e.g., 'Pod', 'ConfigMap')",
-				},
 				"group": map[string]any{
 					"type":        "string",
-					"description": "API group (alternative to apiVersion+kind)",
+					"description": "API group (empty for the core group)",
 				},
 				"version": map[string]any{
 					"type":        "string",
-					"description": "API version (alternative to apiVersion)",
+					"description": "API version (e.g. 'v1', 'v1alpha1')",
 				},
 				"resource": map[string]any{
 					"type":        "string",
-					"description": "Resource name plural (alternative to kind)",
+					"description": "Plural resource name (e.g. 'configmaps', 'deployments')",
 				},
 				"name": map[string]any{
 					"type":        "string",
@@ -391,11 +401,11 @@ Optionally set gracePeriodSeconds for controlled termination (0 = immediate).`,
 					"description": "Seconds before deletion (0 = immediate, omit for default)",
 				},
 			},
-			"required": []string{"workspace", "name"},
+			"required": []string{"workspace", "version", "resource", "name"},
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input DeleteResourceInput) (*mcp.CallToolResult, DeleteResourceOutput, error) {
 		if !scope.HasAccess(input.Workspace) {
-			return nil, DeleteResourceOutput{}, NewScopeError(input.Workspace, scope)
+			return nil, DeleteResourceOutput{}, tools.NewScopeError(input.Workspace, scope)
 		}
 
 		_, dynClient, err := scope.ClientFor(input.Workspace)
@@ -403,7 +413,7 @@ Optionally set gracePeriodSeconds for controlled termination (0 = immediate).`,
 			return nil, DeleteResourceOutput{}, fmt.Errorf("getting client: %w", err)
 		}
 
-		gvr, err := parseGVR(input.APIVersion, input.Kind, input.Group, input.Version, input.Resource)
+		gvr, err := tools.ParseGVR(input.Group, input.Version, input.Resource)
 		if err != nil {
 			return nil, DeleteResourceOutput{}, err
 		}
@@ -423,14 +433,19 @@ Optionally set gracePeriodSeconds for controlled termination (0 = immediate).`,
 		}
 
 		return nil, DeleteResourceOutput{
-			Message: fmt.Sprintf("Deleted %s %s", resourceLabel(input.Kind, gvr.Resource), input.Name),
+			Message: fmt.Sprintf("Deleted %s %s", gvr.Resource, input.Name),
 		}, nil
 	})
 }
 
-func registerScaleResource(server *mcp.Server, scope Scope) {
+func registerScaleResource(server *mcp.Server, scope tools.Scope) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "scale_resource",
+		Annotations: &mcp.ToolAnnotations{
+			Title:           "Scale resource",
+			DestructiveHint: new(false),
+			IdempotentHint:  true,
+		},
 		Description: `Get or set the scale (replicas) of a Kubernetes resource.
 
 Works with Deployments, StatefulSets, ReplicaSets, and other scalable resources.
@@ -443,25 +458,17 @@ If replicas is provided, scales the resource to that number.`,
 					"type":        "string",
 					"description": "Workspace ID (from list_kcp_workspaces)",
 				},
-				"apiVersion": map[string]any{
-					"type":        "string",
-					"description": "API version (e.g., 'apps/v1')",
-				},
-				"kind": map[string]any{
-					"type":        "string",
-					"description": "Resource kind (e.g., 'Deployment', 'StatefulSet')",
-				},
 				"group": map[string]any{
 					"type":        "string",
-					"description": "API group (alternative to apiVersion+kind)",
+					"description": "API group (e.g. 'apps')",
 				},
 				"version": map[string]any{
 					"type":        "string",
-					"description": "API version (alternative to apiVersion)",
+					"description": "API version (e.g. 'v1')",
 				},
 				"resource": map[string]any{
 					"type":        "string",
-					"description": "Resource name plural (alternative to kind)",
+					"description": "Plural resource name (e.g. 'deployments', 'statefulsets')",
 				},
 				"name": map[string]any{
 					"type":        "string",
@@ -476,11 +483,11 @@ If replicas is provided, scales the resource to that number.`,
 					"description": "Desired replica count (omit to just get current scale)",
 				},
 			},
-			"required": []string{"workspace", "name"},
+			"required": []string{"workspace", "version", "resource", "name"},
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input ScaleResourceInput) (*mcp.CallToolResult, ScaleResourceOutput, error) {
 		if !scope.HasAccess(input.Workspace) {
-			return nil, ScaleResourceOutput{}, NewScopeError(input.Workspace, scope)
+			return nil, ScaleResourceOutput{}, tools.NewScopeError(input.Workspace, scope)
 		}
 
 		_, dynClient, err := scope.ClientFor(input.Workspace)
@@ -488,22 +495,16 @@ If replicas is provided, scales the resource to that number.`,
 			return nil, ScaleResourceOutput{}, fmt.Errorf("getting client: %w", err)
 		}
 
-		gvr, err := parseGVR(input.APIVersion, input.Kind, input.Group, input.Version, input.Resource)
+		gvr, err := tools.ParseGVR(input.Group, input.Version, input.Resource)
 		if err != nil {
 			return nil, ScaleResourceOutput{}, err
 		}
 
 		var scaleObj *unstructured.Unstructured
-		scaleGVR := schema.GroupVersionResource{
-			Group:    gvr.Group,
-			Version:  gvr.Version,
-			Resource: gvr.Resource,
-		}
-
 		if input.Namespace != "" {
-			scaleObj, err = dynClient.Resource(scaleGVR).Namespace(input.Namespace).Get(ctx, input.Name, metav1.GetOptions{}, "scale")
+			scaleObj, err = dynClient.Resource(gvr).Namespace(input.Namespace).Get(ctx, input.Name, metav1.GetOptions{}, "scale")
 		} else {
-			scaleObj, err = dynClient.Resource(scaleGVR).Get(ctx, input.Name, metav1.GetOptions{}, "scale")
+			scaleObj, err = dynClient.Resource(gvr).Get(ctx, input.Name, metav1.GetOptions{}, "scale")
 		}
 		if err != nil {
 			return nil, ScaleResourceOutput{}, fmt.Errorf("getting scale: %w", err)
@@ -527,9 +528,9 @@ If replicas is provided, scales the resource to that number.`,
 			}
 
 			if input.Namespace != "" {
-				scaleObj, err = dynClient.Resource(scaleGVR).Namespace(input.Namespace).Update(ctx, scaleObj, metav1.UpdateOptions{}, "scale")
+				scaleObj, err = dynClient.Resource(gvr).Namespace(input.Namespace).Update(ctx, scaleObj, metav1.UpdateOptions{}, "scale")
 			} else {
-				scaleObj, err = dynClient.Resource(scaleGVR).Update(ctx, scaleObj, metav1.UpdateOptions{}, "scale")
+				scaleObj, err = dynClient.Resource(gvr).Update(ctx, scaleObj, metav1.UpdateOptions{}, "scale")
 			}
 			if err != nil {
 				return nil, ScaleResourceOutput{}, fmt.Errorf("updating scale: %w", err)
@@ -548,37 +549,29 @@ If replicas is provided, scales the resource to that number.`,
 	})
 }
 
-func parseResource(data string) (*unstructured.Unstructured, schema.GroupVersionResource, error) {
+func parseManifest(data string) (*unstructured.Unstructured, error) {
 	var rawObj map[string]any
 
 	data = strings.TrimSpace(data)
 	if strings.HasPrefix(data, "{") {
 		if err := json.Unmarshal([]byte(data), &rawObj); err != nil {
-			return nil, schema.GroupVersionResource{}, fmt.Errorf("invalid JSON: %w", err)
+			return nil, fmt.Errorf("invalid JSON: %w", err)
 		}
 	} else {
 		jsonData, err := yaml.YAMLToJSON([]byte(data))
 		if err != nil {
-			return nil, schema.GroupVersionResource{}, fmt.Errorf("invalid YAML: %w", err)
+			return nil, fmt.Errorf("invalid YAML: %w", err)
 		}
 		if err := json.Unmarshal(jsonData, &rawObj); err != nil {
-			return nil, schema.GroupVersionResource{}, fmt.Errorf("converting YAML to object: %w", err)
+			return nil, fmt.Errorf("converting YAML to object: %w", err)
 		}
 	}
 
 	obj := &unstructured.Unstructured{Object: rawObj}
 
-	apiVersion := obj.GetAPIVersion()
-	kind := obj.GetKind()
-
-	if apiVersion == "" || kind == "" {
-		return nil, schema.GroupVersionResource{}, fmt.Errorf("resource must have apiVersion and kind")
+	if obj.GetAPIVersion() == "" || obj.GetKind() == "" {
+		return nil, fmt.Errorf("resource must have apiVersion and kind")
 	}
 
-	gvr, err := parseGVR(apiVersion, kind, "", "", "")
-	if err != nil {
-		return nil, schema.GroupVersionResource{}, err
-	}
-
-	return obj, gvr, nil
+	return obj, nil
 }

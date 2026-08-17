@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package tools
+package core
 
 import (
 	"context"
@@ -23,6 +23,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/tools"
 )
 
 var (
@@ -62,9 +64,10 @@ type GetAPIExportOutput struct {
 	Object map[string]any `json:"object"`
 }
 
-func registerAPIExportTools(server *mcp.Server, scope Scope) {
+func registerAPIExportTools(server *mcp.Server, scope tools.Scope) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "list_kcp_apiexports",
+		Annotations: tools.ReadOnly("List APIExports"),
+		Name:        "list_kcp_apiexports",
 		Description: `List APIExports in a kcp workspace.
 APIExports define APIs that can be consumed by other workspaces via APIBindings.
 They are the foundation of kcp's multi-tenant API sharing model.`,
@@ -80,7 +83,7 @@ They are the foundation of kcp's multi-tenant API sharing model.`,
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input ListAPIExportsInput) (*mcp.CallToolResult, ListAPIExportsOutput, error) {
 		if !scope.HasAccess(input.Workspace) {
-			return nil, ListAPIExportsOutput{}, NewScopeError(input.Workspace, scope)
+			return nil, ListAPIExportsOutput{}, tools.NewScopeError(input.Workspace, scope)
 		}
 
 		_, dynClient, err := scope.ClientFor(input.Workspace)
@@ -93,7 +96,7 @@ They are the foundation of kcp's multi-tenant API sharing model.`,
 			return nil, ListAPIExportsOutput{}, fmt.Errorf("listing APIExports: %w", err)
 		}
 
-		items := extractListItems(list)
+		items := tools.ExtractListItems(list)
 		exports := make([]APIExportInfo, 0, len(items))
 		for _, item := range items {
 			info := APIExportInfo{}
@@ -117,6 +120,7 @@ They are the foundation of kcp's multi-tenant API sharing model.`,
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
+		Annotations: tools.ReadOnly("Get APIExport"),
 		Name:        "get_kcp_apiexport",
 		Description: `Get a specific APIExport by name from a workspace.`,
 		InputSchema: map[string]any{
@@ -135,7 +139,7 @@ They are the foundation of kcp's multi-tenant API sharing model.`,
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input GetAPIExportInput) (*mcp.CallToolResult, GetAPIExportOutput, error) {
 		if !scope.HasAccess(input.Workspace) {
-			return nil, GetAPIExportOutput{}, NewScopeError(input.Workspace, scope)
+			return nil, GetAPIExportOutput{}, tools.NewScopeError(input.Workspace, scope)
 		}
 
 		_, dynClient, err := scope.ClientFor(input.Workspace)
@@ -148,6 +152,6 @@ They are the foundation of kcp's multi-tenant API sharing model.`,
 			return nil, GetAPIExportOutput{}, fmt.Errorf("getting APIExport: %w", err)
 		}
 
-		return nil, GetAPIExportOutput{Object: extractObject(obj)}, nil
+		return nil, GetAPIExportOutput{Object: tools.ExtractObject(obj)}, nil
 	})
 }

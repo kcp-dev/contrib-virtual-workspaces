@@ -14,13 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package tools provides MCP tools for reading kcp API objects — workspaces,
-// APIExports, APIBindings, APIResourceSchemas, WorkspaceTypes, LogicalClusters,
-// Shards, Partitions, and scheduling resources — scoped to the workspaces the
-// calling user can access.
-//
-// The package is intentionally self-contained so other MCP servers can reuse
-// it: implement Scope and call Register on an mcp.Server.
+// Package tools is the shared kit for kcp MCP tools: the Scope authorization
+// contract every tool operates within, plus helpers for GVR parsing and
+// unstructured object handling.
 package tools
 
 import (
@@ -28,6 +24,13 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 )
+
+// ReadOnly returns tool annotations with a human-readable title marking a
+// tool as read-only, so MCP clients can distinguish safe reads from mutations
+// (e.g. for auto-approval).
+func ReadOnly(title string) *mcp.ToolAnnotations {
+	return &mcp.ToolAnnotations{Title: title, ReadOnlyHint: true}
+}
 
 // Scope is the per-caller authorization context the tools operate within: the
 // set of workspaces the caller may reach and how to obtain clients for them.
@@ -72,25 +75,8 @@ func NewScopeError(workspace string, scope Scope) *ScopeError {
 	}
 }
 
-// Register adds all kcp object tools to server, bound to scope.
-func Register(server *mcp.Server, scope Scope) {
-	registerListWorkspaces(server, scope)
-
-	registerAPIExportTools(server, scope)
-	registerAPIResourceSchemaTools(server, scope)
-	registerAPIBindingTools(server, scope)
-
-	registerTenancyTools(server, scope)
-	registerWorkspaceStatusTools(server, scope)
-
-	registerCoreTools(server, scope)
-
-	registerReplicationTools(server, scope)
-
-	registerWriteOperations(server, scope)
-}
-
-func extractListItems(list any) []map[string]any {
+// ExtractListItems returns the items of an unstructured list as raw maps.
+func ExtractListItems(list any) []map[string]any {
 	if ul, ok := list.(interface{ UnstructuredContent() map[string]any }); ok {
 		content := ul.UnstructuredContent()
 		if items, ok := content["items"].([]any); ok {
@@ -106,7 +92,8 @@ func extractListItems(list any) []map[string]any {
 	return nil
 }
 
-func extractObject(obj any) map[string]any {
+// ExtractObject returns an unstructured object's content as a raw map.
+func ExtractObject(obj any) map[string]any {
 	if u, ok := obj.(interface{ UnstructuredContent() map[string]any }); ok {
 		return u.UnstructuredContent()
 	}

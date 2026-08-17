@@ -21,53 +21,42 @@ import (
 	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/discovery"
 )
 
-func parseGVR(apiVersion, kind, group, version, resource string) (schema.GroupVersionResource, error) {
-	if apiVersion != "" && kind != "" {
-		gv, err := schema.ParseGroupVersion(apiVersion)
-		if err != nil {
-			return schema.GroupVersionResource{}, fmt.Errorf("invalid apiVersion %q: %w", apiVersion, err)
-		}
-		res := strings.ToLower(kind)
-		if !strings.HasSuffix(res, "s") {
-			res += "s"
-		}
-		switch kind {
-		case "Ingress":
-			res = "ingresses"
-		case "NetworkPolicy":
-			res = "networkpolicies"
-		case "PodSecurityPolicy":
-			res = "podsecuritypolicies"
-		case "StorageClass":
-			res = "storageclasses"
-		case "IngressClass":
-			res = "ingressclasses"
-		case "Endpoints":
-			res = "endpoints"
-		}
-		return schema.GroupVersionResource{
-			Group:    gv.Group,
-			Version:  gv.Version,
-			Resource: res,
-		}, nil
+// ParseGVR builds a GroupVersionResource from explicit tool input. Group is
+// empty for the core API group; version and resource are required.
+func ParseGVR(group, version, resource string) (schema.GroupVersionResource, error) {
+	if version == "" || resource == "" {
+		return schema.GroupVersionResource{}, fmt.Errorf("version and resource are required (group is empty for the core API group)")
 	}
-
-	if version != "" && resource != "" {
-		return schema.GroupVersionResource{
-			Group:    group,
-			Version:  version,
-			Resource: resource,
-		}, nil
-	}
-
-	return schema.GroupVersionResource{}, fmt.Errorf("provide either apiVersion+kind or group+version+resource")
+	return schema.GroupVersionResource{
+		Group:    group,
+		Version:  version,
+		Resource: resource,
+	}, nil
 }
 
-func resourceLabel(kind, resource string) string {
-	if kind != "" {
-		return kind
+// ResolveGVR maps a manifest's apiVersion and kind to a resource using the
+// workspace's own discovery. Guessing the plural from the kind would silently
+// produce a wrong resource for CRDs with irregular plurals; discovery is exact
+// and reflects exactly the APIs bound into that workspace.
+func ResolveGVR(disc discovery.DiscoveryInterface, apiVersion, kind string) (schema.GroupVersionResource, error) {
+	gv, err := schema.ParseGroupVersion(apiVersion)
+	if err != nil {
+		return schema.GroupVersionResource{}, fmt.Errorf("invalid apiVersion %q: %w", apiVersion, err)
 	}
-	return resource
+
+	resources, err := disc.ServerResourcesForGroupVersion(apiVersion)
+	if err != nil {
+		return schema.GroupVersionResource{}, fmt.Errorf("discovering resources for %q: %w", apiVersion, err)
+	}
+
+	for _, r := range resources.APIResources {
+		if r.Kind == kind && !strings.Contains(r.Name, "/") {
+			return gv.WithResource(r.Name), nil
+		}
+	}
+
+	return schema.GroupVersionResource{}, fmt.Errorf("no resource for kind %q in %q", kind, apiVersion)
 }

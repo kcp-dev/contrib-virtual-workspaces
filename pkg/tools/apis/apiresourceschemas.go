@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package tools
+package apis
 
 import (
 	"context"
@@ -23,6 +23,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/tools"
 )
 
 var (
@@ -64,9 +66,10 @@ type GetAPIResourceSchemaOutput struct {
 	Object map[string]any `json:"object"`
 }
 
-func registerAPIResourceSchemaTools(server *mcp.Server, scope Scope) {
+func registerAPIResourceSchemaTools(server *mcp.Server, scope tools.Scope) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "list_kcp_apiresourceschemas",
+		Annotations: tools.ReadOnly("List APIResourceSchemas"),
+		Name:        "list_kcp_apiresourceschemas",
 		Description: `List APIResourceSchemas in a kcp workspace.
 APIResourceSchemas define the schema (CRD-like) for custom resources that can be exported via APIExports.
 They contain the OpenAPI schema, validation rules, and other metadata for custom resources.`,
@@ -82,7 +85,7 @@ They contain the OpenAPI schema, validation rules, and other metadata for custom
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input ListAPIResourceSchemasInput) (*mcp.CallToolResult, ListAPIResourceSchemasOutput, error) {
 		if !scope.HasAccess(input.Workspace) {
-			return nil, ListAPIResourceSchemasOutput{}, NewScopeError(input.Workspace, scope)
+			return nil, ListAPIResourceSchemasOutput{}, tools.NewScopeError(input.Workspace, scope)
 		}
 
 		_, dynClient, err := scope.ClientFor(input.Workspace)
@@ -95,7 +98,7 @@ They contain the OpenAPI schema, validation rules, and other metadata for custom
 			return nil, ListAPIResourceSchemasOutput{}, fmt.Errorf("listing APIResourceSchemas: %w", err)
 		}
 
-		items := extractListItems(list)
+		items := tools.ExtractListItems(list)
 		schemas := make([]APIResourceSchemaInfo, 0, len(items))
 		for _, item := range items {
 			info := APIResourceSchemaInfo{}
@@ -134,6 +137,7 @@ They contain the OpenAPI schema, validation rules, and other metadata for custom
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
+		Annotations: tools.ReadOnly("Get APIResourceSchema"),
 		Name:        "get_kcp_apiresourceschema",
 		Description: `Get a specific APIResourceSchema by name from a workspace.`,
 		InputSchema: map[string]any{
@@ -152,7 +156,7 @@ They contain the OpenAPI schema, validation rules, and other metadata for custom
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input GetAPIResourceSchemaInput) (*mcp.CallToolResult, GetAPIResourceSchemaOutput, error) {
 		if !scope.HasAccess(input.Workspace) {
-			return nil, GetAPIResourceSchemaOutput{}, NewScopeError(input.Workspace, scope)
+			return nil, GetAPIResourceSchemaOutput{}, tools.NewScopeError(input.Workspace, scope)
 		}
 
 		_, dynClient, err := scope.ClientFor(input.Workspace)
@@ -165,6 +169,6 @@ They contain the OpenAPI schema, validation rules, and other metadata for custom
 			return nil, GetAPIResourceSchemaOutput{}, fmt.Errorf("getting APIResourceSchema: %w", err)
 		}
 
-		return nil, GetAPIResourceSchemaOutput{Object: extractObject(obj)}, nil
+		return nil, GetAPIResourceSchemaOutput{Object: tools.ExtractObject(obj)}, nil
 	})
 }

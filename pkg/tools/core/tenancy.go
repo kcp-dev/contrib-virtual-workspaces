@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package tools
+package core
 
 import (
 	"context"
@@ -23,6 +23,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/tools"
 )
 
 var (
@@ -63,9 +65,10 @@ type GetWorkspaceTypeOutput struct {
 	Object map[string]any `json:"object"`
 }
 
-func registerTenancyTools(server *mcp.Server, scope Scope) {
+func registerTenancyTools(server *mcp.Server, scope tools.Scope) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "list_kcp_workspacetypes",
+		Annotations: tools.ReadOnly("List WorkspaceTypes"),
+		Name:        "list_kcp_workspacetypes",
 		Description: `List WorkspaceTypes in a kcp workspace.
 WorkspaceTypes define templates for creating new workspaces, including:
 - Which initializers run when a workspace is created
@@ -83,7 +86,7 @@ WorkspaceTypes define templates for creating new workspaces, including:
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input ListWorkspaceTypesInput) (*mcp.CallToolResult, ListWorkspaceTypesOutput, error) {
 		if !scope.HasAccess(input.Workspace) {
-			return nil, ListWorkspaceTypesOutput{}, NewScopeError(input.Workspace, scope)
+			return nil, ListWorkspaceTypesOutput{}, tools.NewScopeError(input.Workspace, scope)
 		}
 
 		_, dynClient, err := scope.ClientFor(input.Workspace)
@@ -96,7 +99,7 @@ WorkspaceTypes define templates for creating new workspaces, including:
 			return nil, ListWorkspaceTypesOutput{}, fmt.Errorf("listing WorkspaceTypes: %w", err)
 		}
 
-		items := extractListItems(list)
+		items := tools.ExtractListItems(list)
 		types := make([]WorkspaceTypeInfo, 0, len(items))
 		for _, item := range items {
 			info := WorkspaceTypeInfo{}
@@ -128,6 +131,7 @@ WorkspaceTypes define templates for creating new workspaces, including:
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
+		Annotations: tools.ReadOnly("Get WorkspaceType"),
 		Name:        "get_kcp_workspacetype",
 		Description: `Get a specific WorkspaceType by name from a workspace.`,
 		InputSchema: map[string]any{
@@ -146,7 +150,7 @@ WorkspaceTypes define templates for creating new workspaces, including:
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input GetWorkspaceTypeInput) (*mcp.CallToolResult, GetWorkspaceTypeOutput, error) {
 		if !scope.HasAccess(input.Workspace) {
-			return nil, GetWorkspaceTypeOutput{}, NewScopeError(input.Workspace, scope)
+			return nil, GetWorkspaceTypeOutput{}, tools.NewScopeError(input.Workspace, scope)
 		}
 
 		_, dynClient, err := scope.ClientFor(input.Workspace)
@@ -159,6 +163,6 @@ WorkspaceTypes define templates for creating new workspaces, including:
 			return nil, GetWorkspaceTypeOutput{}, fmt.Errorf("getting WorkspaceType: %w", err)
 		}
 
-		return nil, GetWorkspaceTypeOutput{Object: extractObject(obj)}, nil
+		return nil, GetWorkspaceTypeOutput{Object: tools.ExtractObject(obj)}, nil
 	})
 }

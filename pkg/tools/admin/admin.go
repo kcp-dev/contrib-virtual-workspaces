@@ -14,7 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package tools
+// Package admin provides read tools for kcp operator internals —
+// LogicalClusters, Shards, Partitions and PartitionSets. Shards and topology
+// objects exist only in the root workspace, so these tools are noise for
+// ordinary users and the toolset is opt-in.
+package admin
 
 import (
 	"context"
@@ -23,6 +27,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/tools"
 )
 
 var (
@@ -121,9 +127,11 @@ type ListPartitionSetsOutput struct {
 	Count         int                `json:"count"`
 }
 
-func registerCoreTools(server *mcp.Server, scope Scope) {
+// Register adds the admin toolset to server, bound to scope.
+func Register(server *mcp.Server, scope tools.Scope) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "list_kcp_logicalclusters",
+		Annotations: tools.ReadOnly("List LogicalClusters"),
+		Name:        "list_kcp_logicalclusters",
 		Description: `List LogicalClusters visible from a kcp workspace.
 LogicalClusters represent the internal cluster identity within kcp.
 Each workspace has an associated LogicalCluster.`,
@@ -139,7 +147,7 @@ Each workspace has an associated LogicalCluster.`,
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input ListLogicalClustersInput) (*mcp.CallToolResult, ListLogicalClustersOutput, error) {
 		if !scope.HasAccess(input.Workspace) {
-			return nil, ListLogicalClustersOutput{}, NewScopeError(input.Workspace, scope)
+			return nil, ListLogicalClustersOutput{}, tools.NewScopeError(input.Workspace, scope)
 		}
 
 		_, dynClient, err := scope.ClientFor(input.Workspace)
@@ -152,7 +160,7 @@ Each workspace has an associated LogicalCluster.`,
 			return nil, ListLogicalClustersOutput{}, fmt.Errorf("listing LogicalClusters: %w", err)
 		}
 
-		items := extractListItems(list)
+		items := tools.ExtractListItems(list)
 		clusters := make([]LogicalClusterInfo, 0, len(items))
 		for _, item := range items {
 			info := LogicalClusterInfo{}
@@ -179,7 +187,8 @@ Each workspace has an associated LogicalCluster.`,
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "list_kcp_shards",
+		Annotations: tools.ReadOnly("List shards"),
+		Name:        "list_kcp_shards",
 		Description: `List Shards visible from a kcp workspace.
 Shards are the physical kcp server instances that host workspaces.
 This is typically only visible from the root workspace.`,
@@ -195,7 +204,7 @@ This is typically only visible from the root workspace.`,
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input ListShardsInput) (*mcp.CallToolResult, ListShardsOutput, error) {
 		if !scope.HasAccess(input.Workspace) {
-			return nil, ListShardsOutput{}, NewScopeError(input.Workspace, scope)
+			return nil, ListShardsOutput{}, tools.NewScopeError(input.Workspace, scope)
 		}
 
 		_, dynClient, err := scope.ClientFor(input.Workspace)
@@ -208,7 +217,7 @@ This is typically only visible from the root workspace.`,
 			return nil, ListShardsOutput{}, fmt.Errorf("listing Shards: %w", err)
 		}
 
-		items := extractListItems(list)
+		items := tools.ExtractListItems(list)
 		shards := make([]ShardInfo, 0, len(items))
 		for _, item := range items {
 			info := ShardInfo{}
@@ -235,7 +244,8 @@ This is typically only visible from the root workspace.`,
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "list_kcp_partitions",
+		Annotations: tools.ReadOnly("List partitions"),
+		Name:        "list_kcp_partitions",
 		Description: `List Partitions visible from a kcp workspace.
 Partitions define how workspaces are distributed across shards for scalability.`,
 		InputSchema: map[string]any{
@@ -250,7 +260,7 @@ Partitions define how workspaces are distributed across shards for scalability.`
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input ListPartitionsInput) (*mcp.CallToolResult, ListPartitionsOutput, error) {
 		if !scope.HasAccess(input.Workspace) {
-			return nil, ListPartitionsOutput{}, NewScopeError(input.Workspace, scope)
+			return nil, ListPartitionsOutput{}, tools.NewScopeError(input.Workspace, scope)
 		}
 
 		_, dynClient, err := scope.ClientFor(input.Workspace)
@@ -263,7 +273,7 @@ Partitions define how workspaces are distributed across shards for scalability.`
 			return nil, ListPartitionsOutput{}, fmt.Errorf("listing Partitions: %w", err)
 		}
 
-		items := extractListItems(list)
+		items := tools.ExtractListItems(list)
 		partitions := make([]PartitionInfo, 0, len(items))
 		for _, item := range items {
 			info := PartitionInfo{}
@@ -292,7 +302,8 @@ Partitions define how workspaces are distributed across shards for scalability.`
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "list_kcp_partitionsets",
+		Annotations: tools.ReadOnly("List PartitionSets"),
+		Name:        "list_kcp_partitionsets",
 		Description: `List PartitionSets visible from a kcp workspace.
 PartitionSets group partitions together for management.`,
 		InputSchema: map[string]any{
@@ -307,7 +318,7 @@ PartitionSets group partitions together for management.`,
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input ListPartitionSetsInput) (*mcp.CallToolResult, ListPartitionSetsOutput, error) {
 		if !scope.HasAccess(input.Workspace) {
-			return nil, ListPartitionSetsOutput{}, NewScopeError(input.Workspace, scope)
+			return nil, ListPartitionSetsOutput{}, tools.NewScopeError(input.Workspace, scope)
 		}
 
 		_, dynClient, err := scope.ClientFor(input.Workspace)
@@ -320,7 +331,7 @@ PartitionSets group partitions together for management.`,
 			return nil, ListPartitionSetsOutput{}, fmt.Errorf("listing PartitionSets: %w", err)
 		}
 
-		items := extractListItems(list)
+		items := tools.ExtractListItems(list)
 		sets := make([]PartitionSetInfo, 0, len(items))
 		for _, item := range items {
 			info := PartitionSetInfo{}

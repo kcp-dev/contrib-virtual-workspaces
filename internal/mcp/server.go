@@ -19,12 +19,14 @@ package mcp
 import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/tools"
+	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/toolsets"
 )
 
-// NewServer builds an MCP server whose tools are bound to scope.
-func NewServer(scope *Scope) *mcpsdk.Server {
+// NewServer builds an MCP server exposing the named toolsets, bound to scope.
+func NewServer(scope *Scope, enabledToolsets []string) (*mcpsdk.Server, error) {
 	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "kcp", Version: "v1alpha1"}, nil)
-	tools.Register(server, scope)
-	return server
+	if err := toolsets.Register(server, scope, enabledToolsets); err != nil {
+		return nil, err
+	}
+	return server, nil
 }

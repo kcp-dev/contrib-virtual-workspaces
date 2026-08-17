@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package tools
+package core
 
 import (
 	"context"
@@ -23,6 +23,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/tools"
 )
 
 var (
@@ -88,9 +90,10 @@ type ListTerminatingWorkspacesOutput struct {
 	Count      int                   `json:"count"`
 }
 
-func registerWorkspaceStatusTools(server *mcp.Server, scope Scope) {
+func registerWorkspaceStatusTools(server *mcp.Server, scope tools.Scope) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "list_kcp_initializingworkspaces",
+		Annotations: tools.ReadOnly("List initializing workspaces"),
+		Name:        "list_kcp_initializingworkspaces",
 		Description: `List InitializingWorkspaces in a kcp workspace.
 InitializingWorkspaces are child workspaces that are still being set up.
 They appear during workspace creation and disappear once initialization is complete.`,
@@ -106,7 +109,7 @@ They appear during workspace creation and disappear once initialization is compl
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input ListInitializingWorkspacesInput) (*mcp.CallToolResult, ListInitializingWorkspacesOutput, error) {
 		if !scope.HasAccess(input.Workspace) {
-			return nil, ListInitializingWorkspacesOutput{}, NewScopeError(input.Workspace, scope)
+			return nil, ListInitializingWorkspacesOutput{}, tools.NewScopeError(input.Workspace, scope)
 		}
 
 		_, dynClient, err := scope.ClientFor(input.Workspace)
@@ -119,7 +122,7 @@ They appear during workspace creation and disappear once initialization is compl
 			return nil, ListInitializingWorkspacesOutput{}, fmt.Errorf("listing InitializingWorkspaces: %w", err)
 		}
 
-		items := extractListItems(list)
+		items := tools.ExtractListItems(list)
 		workspaces := extractWorkspaceStatusInfos(items)
 
 		return nil, ListInitializingWorkspacesOutput{
@@ -129,7 +132,8 @@ They appear during workspace creation and disappear once initialization is compl
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "list_kcp_terminatingworkspaces",
+		Annotations: tools.ReadOnly("List terminating workspaces"),
+		Name:        "list_kcp_terminatingworkspaces",
 		Description: `List TerminatingWorkspaces in a kcp workspace.
 TerminatingWorkspaces are child workspaces that are being deleted.
 They appear during workspace deletion and disappear once termination is complete.`,
@@ -145,7 +149,7 @@ They appear during workspace deletion and disappear once termination is complete
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input ListTerminatingWorkspacesInput) (*mcp.CallToolResult, ListTerminatingWorkspacesOutput, error) {
 		if !scope.HasAccess(input.Workspace) {
-			return nil, ListTerminatingWorkspacesOutput{}, NewScopeError(input.Workspace, scope)
+			return nil, ListTerminatingWorkspacesOutput{}, tools.NewScopeError(input.Workspace, scope)
 		}
 
 		_, dynClient, err := scope.ClientFor(input.Workspace)
@@ -158,7 +162,7 @@ They appear during workspace deletion and disappear once termination is complete
 			return nil, ListTerminatingWorkspacesOutput{}, fmt.Errorf("listing TerminatingWorkspaces: %w", err)
 		}
 
-		items := extractListItems(list)
+		items := tools.ExtractListItems(list)
 		workspaces := extractWorkspaceStatusInfos(items)
 
 		return nil, ListTerminatingWorkspacesOutput{
@@ -168,7 +172,8 @@ They appear during workspace deletion and disappear once termination is complete
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "list_kcp_child_workspaces",
+		Annotations: tools.ReadOnly("List child workspaces"),
+		Name:        "list_kcp_child_workspaces",
 		Description: `List child Workspaces within a parent kcp workspace.
 Returns all child workspaces visible from the given parent workspace.`,
 		InputSchema: map[string]any{
@@ -183,7 +188,7 @@ Returns all child workspaces visible from the given parent workspace.`,
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input ListWorkspacesStatusInput) (*mcp.CallToolResult, ListWorkspacesStatusOutput, error) {
 		if !scope.HasAccess(input.Workspace) {
-			return nil, ListWorkspacesStatusOutput{}, NewScopeError(input.Workspace, scope)
+			return nil, ListWorkspacesStatusOutput{}, tools.NewScopeError(input.Workspace, scope)
 		}
 
 		_, dynClient, err := scope.ClientFor(input.Workspace)
@@ -196,7 +201,7 @@ Returns all child workspaces visible from the given parent workspace.`,
 			return nil, ListWorkspacesStatusOutput{}, fmt.Errorf("listing Workspaces: %w", err)
 		}
 
-		items := extractListItems(list)
+		items := tools.ExtractListItems(list)
 		workspaces := extractWorkspaceStatusInfos(items)
 
 		return nil, ListWorkspacesStatusOutput{

@@ -14,12 +14,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package tools
+package core
 
 import (
 	"context"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/tools"
 )
 
 // WorkspaceInfo represents a single workspace in the list_kcp_workspaces output.
@@ -36,8 +38,9 @@ type ListWorkspacesOutput struct {
 	Workspaces []WorkspaceInfo `json:"workspaces"`
 }
 
-func registerListWorkspaces(server *mcp.Server, scope Scope) {
+func registerListWorkspaces(server *mcp.Server, scope tools.Scope) {
 	mcp.AddTool(server, &mcp.Tool{
+		Annotations: tools.ReadOnly("List workspaces"),
 		Name:        "list_kcp_workspaces",
 		Description: "List kcp workspaces the authenticated user has access to. Returns workspace IDs and their API endpoints.",
 		InputSchema: map[string]any{

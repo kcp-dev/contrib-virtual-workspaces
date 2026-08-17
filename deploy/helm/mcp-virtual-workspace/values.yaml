@@ -10,6 +10,11 @@ replicaCount: 1
 
 securePort: 9444
 
+# Toolsets to expose (core, apis, admin, write). Empty uses the binary's
+# default, core only. Enforced server-side: a toolset not listed here does not
+# exist for any caller.
+toolsets: []
+
 access:
   # Address of the access virtual workspace, through the front-proxy or direct.
   url: ""
