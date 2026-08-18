@@ -1,1 +1,5 @@
 bin/
+
+# Working directory of hack/ci/run-e2e-tests.sh: the kind kubeconfig, the kcp-operator checkout it
+# deploys from and the access virtual workspace checkout it builds.
+.e2e-*/

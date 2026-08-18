@@ -39,17 +39,30 @@ build: ## Build the binary into bin/
 test: ## Run unit tests
 	$(GO) test -race ./...
 
+.PHONY: test-e2e
+test-e2e: ## Deploy into a throwaway kind cluster via kcp-operator and run the e2e tests
+	./hack/ci/run-e2e-tests.sh
+
+.PHONY: test-e2e-keep
+test-e2e-keep: ## Same, but keep the cluster and namespaces afterwards for inspection
+	NO_TEARDOWN=true ./hack/ci/run-e2e-tests.sh
+
 .PHONY: vet
 vet: ## Run go vet
 	$(GO) vet ./...
+	$(GO) vet -tags e2e ./test/...
 
 .PHONY: tidy
 tidy: ## Sync go.mod / go.sum
 	$(GO) mod tidy
 
 .PHONY: verify
-verify: vet verify-fork-pin ## Run every verification check
+verify: vet verify-fork-pin verify-e2e-manifests ## Run every verification check
 	$(GO) mod tidy -diff
+
+.PHONY: verify-e2e-manifests
+verify-e2e-manifests: ## Render the e2e manifests without a cluster, so template errors fail here
+	$(GO) test -tags e2e -run TestManifestsRender -count=1 ./test/e2e/
 
 .PHONY: verify-fork-pin
 verify-fork-pin: ## Check the kcp Kubernetes fork pin matches virtual-workspace-framework
