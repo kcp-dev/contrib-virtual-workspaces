@@ -80,6 +80,12 @@ type ServerConfig struct {
 	// Identity is only used to ask the access VW and to impersonate, both of
 	// which compare names verbatim.
 	Authentication *kubeoptions.BuiltInAuthenticationOptions
+
+	// shardExternalURL and cacheKubeconfig are accepted and ignored. kcp's
+	// own virtual-workspace server takes them, so deployments templated for
+	// that server pass them through.
+	shardExternalURL string
+	cacheKubeconfig  string
 }
 
 // NewServerConfig returns the defaults for running behind kcp's front-proxy.
@@ -119,12 +125,12 @@ func (c *ServerConfig) AddFlags(fs *pflag.FlagSet) {
 		"Kubeconfig for this server's own identity, used to impersonate callers "+
 			"on per-workspace requests.")
 
-	// TODO: kcp-operator >= v0.9 passes these to every VirtualWorkspace deployment
-	// regardless of spec.command (kcp-operator#292)
-	for _, name := range []string{"shard-external-url", "cache-kubeconfig"} {
-		fs.String(name, "", "Accepted for kcp-operator compatibility; unused.")
-		_ = fs.MarkHidden(name)
-	}
+	fs.StringVar(&c.shardExternalURL, "shard-external-url", "",
+		"Accepted for compatibility with kcp's own virtual-workspace server and ignored. "+
+			"Workspaces come from --access-url.")
+	fs.StringVar(&c.cacheKubeconfig, "cache-kubeconfig", "",
+		"Accepted for compatibility with kcp's own virtual-workspace server and ignored. "+
+			"All kcp reads go through --kubeconfig.")
 }
 
 // Validate reports configuration that cannot work.

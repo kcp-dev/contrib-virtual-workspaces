@@ -23,10 +23,9 @@
 # Two components are built from source rather than pulled from a registry. This one, obviously; and
 # the access virtual workspace, because this server answers nothing without it -- the workspaces a
 # caller may use come from SelfClusterAccessReview, and neither repository publishes an image
-# outside release tags. The access VW defaults to its main branch on purpose: what this test covers
-# is the pairing of three moving parts (kcp-operator, the access virtual workspace and this
-# server), and a change on any side that breaks it should surface here rather than in someone's
-# cluster. kcp-operator is the exception -- see the KCP_OPERATOR_REF pin below.
+# outside release tags. Both default to their main branch on purpose: what this test covers is the
+# pairing of three moving parts (kcp-operator, the access virtual workspace and this server), and a
+# change on any side that breaks it should surface here rather than in someone's cluster.
 #
 # The access virtual workspace must be at a revision whose access-vw-init merges its assets rather
 # than replacing them. Without that fix, init creates the APIExportEndpointSlice on its first pass
@@ -38,7 +37,7 @@
 #   KIND_CLUSTER_NAME    name of the kind cluster to create (default: mcp-vw-e2e)
 #   USE_EXISTING_CLUSTER use $KUBECONFIG instead of creating a cluster (default: false)
 #   NO_TEARDOWN          keep the cluster and the test namespaces afterwards (default: false)
-#   KCP_OPERATOR_REF     git ref of kcp-operator to deploy (default: pinned, see below)
+#   KCP_OPERATOR_REF     git ref of kcp-operator to deploy (default: main)
 #   KCP_OPERATOR_IMG     kcp-operator image (default: ghcr.io/kcp-dev/kcp-operator:$KCP_OPERATOR_REF)
 #   MCP_VW_IMG           image to build from this checkout and test (default: localhost/mcp-vw:e2e)
 #   SKIP_IMAGE_BUILD     reuse an MCP_VW_IMG that is already loaded (default: false)
@@ -59,8 +58,8 @@ cd "${REPO_ROOT}"
 KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-mcp-vw-e2e}"
 USE_EXISTING_CLUSTER="${USE_EXISTING_CLUSTER:-false}"
 NO_TEARDOWN="${NO_TEARDOWN:-false}"
-KCP_OPERATOR_REF="${KCP_OPERATOR_REF:-30972fd6b4d0fd675faab20fa1b41089e2744abd}"
-KCP_OPERATOR_IMG="${KCP_OPERATOR_IMG:-ghcr.io/kcp-dev/kcp-operator:${KCP_OPERATOR_REF:0:7}}"
+KCP_OPERATOR_REF="${KCP_OPERATOR_REF:-main}"
+KCP_OPERATOR_IMG="${KCP_OPERATOR_IMG:-ghcr.io/kcp-dev/kcp-operator:${KCP_OPERATOR_REF}}"
 MCP_VW_IMG="${MCP_VW_IMG:-localhost/mcp-vw:e2e}"
 SKIP_IMAGE_BUILD="${SKIP_IMAGE_BUILD:-false}"
 ACCESS_VW_REF="${ACCESS_VW_REF:-main}"
@@ -184,15 +183,13 @@ OPERATOR_DIR="${DATA_DIR}/kcp-operator"
 
 if [[ -d "${OPERATOR_DIR}/.git" ]]; then
 	echo "Updating the kcp-operator checkout to ${KCP_OPERATOR_REF}..."
+	git -C "${OPERATOR_DIR}" fetch --depth 1 origin "${KCP_OPERATOR_REF}"
+	git -C "${OPERATOR_DIR}" checkout --quiet FETCH_HEAD
 else
-	# init+fetch rather than clone --branch, which accepts branches and tags but not commits.
 	echo "Cloning kcp-operator at ${KCP_OPERATOR_REF}..."
-	git init --quiet "${OPERATOR_DIR}"
-	git -C "${OPERATOR_DIR}" remote add origin https://github.com/kcp-dev/kcp-operator
+	git clone --quiet --depth 1 --branch "${KCP_OPERATOR_REF}" \
+		https://github.com/kcp-dev/kcp-operator "${OPERATOR_DIR}"
 fi
-
-git -C "${OPERATOR_DIR}" fetch --depth 1 origin "${KCP_OPERATOR_REF}"
-git -C "${OPERATOR_DIR}" checkout --quiet FETCH_HEAD
 
 echo "kcp-operator is at $(git -C "${OPERATOR_DIR}" rev-parse --short HEAD)."
 
