@@ -258,17 +258,6 @@ func assertDeploymentShape(t *testing.T, ctx context.Context, workload *cluster,
 		t.Errorf("Server runs %v, expected the image's own entrypoint /access-vw.", got)
 	}
 
-	// Flags only kcp's own virtual-workspace server understands must never be generated for a
-	// custom server: access-vw exits on an unknown flag, so this would have shown up as a pod
-	// that never starts. Asserting it directly names the cause.
-	for _, arg := range server.Args {
-		for _, forbidden := range []string{"--shard-external-url", "--cache-kubeconfig"} {
-			if strings.HasPrefix(arg, forbidden) {
-				t.Errorf("Server was passed %q, which only kcp's own virtual-workspace server accepts.", arg)
-			}
-		}
-	}
-
 	// The flags access-vw does need in order to run behind the front-proxy. Without the
 	// requestheader CA it refuses to start at all; without a serving certificate the front-proxy
 	// would not trust it.

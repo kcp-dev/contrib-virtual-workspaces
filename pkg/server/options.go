@@ -69,6 +69,14 @@ type Options struct {
 	// admin kubeconfigs point at root, while the bootstrap assets live in
 	// the controllers workspace. Empty means use the kubeconfig as-is.
 	WorkspacePath string
+
+	// shardExternalURL and cacheKubeconfig are accepted and ignored. kcp's
+	// own virtual-workspace server takes them, so deployments templated for
+	// that server pass them through; accepting them keeps this server from
+	// exiting on an unknown flag. Endpoints here come from --endpoint-base,
+	// and all reads go through --kubeconfig rather than kcp's cache server.
+	shardExternalURL string
+	cacheKubeconfig  string
 }
 
 // NewOptions returns options with defaults suitable for running behind
@@ -102,6 +110,12 @@ func (o *Options) AddFlags(fs *pflag.FlagSet) {
 		"Workspace path the kubeconfig is retargeted to, e.g. root:access:controllers. "+
 			"Must be the workspace containing the APIExportEndpointSlice. "+
 			"Empty means the kubeconfig's own cluster URL is used unchanged.")
+	fs.StringVar(&o.shardExternalURL, "shard-external-url", "",
+		"Accepted for compatibility with kcp's own virtual-workspace server and ignored. "+
+			"Cluster endpoints are derived from --endpoint-base.")
+	fs.StringVar(&o.cacheKubeconfig, "cache-kubeconfig", "",
+		"Accepted for compatibility with kcp's own virtual-workspace server and ignored. "+
+			"All reads go through --kubeconfig.")
 	if fs.Lookup("kubeconfig") == nil {
 		fs.StringVar(&o.Kubeconfig, "kubeconfig", "", "Path to the kubeconfig for the target kcp (required).")
 	}
