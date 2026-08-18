@@ -116,8 +116,8 @@ operator policy over what AI agents may do, not a client preference.
 
 | Toolset | Default | Tools |
 |---------|---------|-------|
-| `core` | yes | `list_kcp_workspaces`, `list/get_kcp_apibindings`, `list/get_kcp_apiexports`, `list/get_kcp_workspacetypes`, `list_kcp_initializingworkspaces`, `list_kcp_terminatingworkspaces`, `list_kcp_child_workspaces`, `list_resources`, `get_resource` |
-| `apis` | no | `list/get_kcp_apiresourceschemas`, `list_kcp_apiconversions`, `list_kcp_apiexportendpointslices` |
+| `core` | yes | `list_kcp_workspaces`, `list/get_kcp_apibindings`, `list/get_kcp_apiexports`, `list_kcp_apiexportendpointslices`, `list/get_kcp_workspacetypes`, `list_kcp_initializingworkspaces`, `list_kcp_terminatingworkspaces`, `list_resources`, `get_resource` |
+| `apis` | no | `list/get_kcp_apiresourceschemas`, `list_kcp_apiconversions` |
 | `admin` | no | `list_kcp_logicalclusters`, `list_kcp_shards`, `list_kcp_partitions`, `list_kcp_partitionsets` |
 | `write` | no | `create_resource`, `update_resource`, `patch_resource`, `delete_resource`, `scale_resource` |
 

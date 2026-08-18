@@ -15,9 +15,9 @@ limitations under the License.
 */
 
 // Package apis provides read tools for the machinery of kcp's API sharing
-// model — APIResourceSchemas, APIConversions and APIExportEndpointSlices.
-// These matter to API providers, not to API consumers, so the toolset is
-// opt-in rather than part of core.
+// model — APIResourceSchemas and APIConversions. These matter to API
+// providers, not to API consumers, so the toolset is opt-in rather than part
+// of core.
 package apis
 
 import (
@@ -30,5 +30,4 @@ import (
 func Register(server *mcp.Server, scope tools.Scope) {
 	registerAPIResourceSchemaTools(server, scope)
 	registerAPIConversionTools(server, scope)
-	registerAPIExportEndpointSliceTools(server, scope)
 }

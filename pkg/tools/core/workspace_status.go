@@ -39,12 +39,6 @@ var (
 		Version:  "v1alpha1",
 		Resource: "terminatingworkspaces",
 	}
-
-	workspaceGVR = schema.GroupVersionResource{
-		Group:    "tenancy.kcp.io",
-		Version:  "v1alpha1",
-		Resource: "workspaces",
-	}
 )
 
 // WorkspaceStatusInfo represents workspace status in list output.
@@ -54,18 +48,6 @@ type WorkspaceStatusInfo struct {
 	Type   string `json:"type,omitempty"`
 	URL    string `json:"url,omitempty"`
 	Reason string `json:"reason,omitempty"`
-}
-
-// ListWorkspacesStatusInput is the input for list_kcp_workspaces_status.
-type ListWorkspacesStatusInput struct {
-	Workspace string `json:"workspace"`
-	Filter    string `json:"filter,omitempty"` // "all", "initializing", "terminating"
-}
-
-// ListWorkspacesStatusOutput is the output for list_kcp_workspaces_status.
-type ListWorkspacesStatusOutput struct {
-	Workspaces []WorkspaceStatusInfo `json:"workspaces"`
-	Count      int                   `json:"count"`
 }
 
 // ListInitializingWorkspacesInput is the input for list_kcp_initializingworkspaces.
@@ -166,45 +148,6 @@ They appear during workspace deletion and disappear once termination is complete
 		workspaces := extractWorkspaceStatusInfos(items)
 
 		return nil, ListTerminatingWorkspacesOutput{
-			Workspaces: workspaces,
-			Count:      len(workspaces),
-		}, nil
-	})
-
-	mcp.AddTool(server, &mcp.Tool{
-		Annotations: tools.ReadOnly("List child workspaces"),
-		Name:        "list_kcp_child_workspaces",
-		Description: `List child Workspaces within a parent kcp workspace.
-Returns all child workspaces visible from the given parent workspace.`,
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"workspace": map[string]any{
-					"type":        "string",
-					"description": "Parent workspace ID (from list_kcp_workspaces)",
-				},
-			},
-			"required": []string{"workspace"},
-		},
-	}, func(ctx context.Context, req *mcp.CallToolRequest, input ListWorkspacesStatusInput) (*mcp.CallToolResult, ListWorkspacesStatusOutput, error) {
-		if !scope.HasAccess(input.Workspace) {
-			return nil, ListWorkspacesStatusOutput{}, tools.NewScopeError(input.Workspace, scope)
-		}
-
-		_, dynClient, err := scope.ClientFor(input.Workspace)
-		if err != nil {
-			return nil, ListWorkspacesStatusOutput{}, fmt.Errorf("getting client: %w", err)
-		}
-
-		list, err := dynClient.Resource(workspaceGVR).List(ctx, metav1.ListOptions{})
-		if err != nil {
-			return nil, ListWorkspacesStatusOutput{}, fmt.Errorf("listing Workspaces: %w", err)
-		}
-
-		items := tools.ExtractListItems(list)
-		workspaces := extractWorkspaceStatusInfos(items)
-
-		return nil, ListWorkspacesStatusOutput{
 			Workspaces: workspaces,
 			Count:      len(workspaces),
 		}, nil

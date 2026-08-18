@@ -30,16 +30,15 @@ import (
 var (
 	apiExportGVR = schema.GroupVersionResource{
 		Group:    "apis.kcp.io",
-		Version:  "v1alpha1",
+		Version:  "v1alpha2",
 		Resource: "apiexports",
 	}
 )
 
 // APIExportInfo represents an APIExport in list output.
 type APIExportInfo struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
-	Resources   []string `json:"resources,omitempty"`
+	Name      string   `json:"name"`
+	Resources []string `json:"resources,omitempty"`
 }
 
 // ListAPIExportsInput is the input for list_kcp_apiexports.
@@ -106,8 +105,18 @@ They are the foundation of kcp's multi-tenant API sharing model.`,
 				}
 			}
 			if spec, ok := item["spec"].(map[string]any); ok {
-				if desc, ok := spec["description"].(string); ok {
-					info.Description = desc
+				if resources, ok := spec["resources"].([]any); ok {
+					for _, r := range resources {
+						res, ok := r.(map[string]any)
+						if !ok {
+							continue
+						}
+						name, _ := res["name"].(string)
+						if group, _ := res["group"].(string); group != "" {
+							name = name + "." + group
+						}
+						info.Resources = append(info.Resources, name)
+					}
 				}
 			}
 			exports = append(exports, info)

@@ -54,7 +54,7 @@ import (
 	// not the access repository's working tree. The image under test there is built from its main
 	// branch, so asserting against the pinned types is what checks that the wire contract this
 	// server compiles against still matches the server that answers.
-	accessv1alpha1 "github.com/kcp-dev/contrib-access-virtual-workspace/pkg/apis/access/v1alpha1"
+	accessv1alpha1 "github.com/kcp-dev/contrib-access-virtual-workspace/sdk/apis/access/v1alpha1"
 )
 
 const (

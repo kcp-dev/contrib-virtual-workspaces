@@ -31,6 +31,7 @@ func Register(server *mcp.Server, scope tools.Scope) {
 	registerListWorkspaces(server, scope)
 	registerAPIBindingTools(server, scope)
 	registerAPIExportTools(server, scope)
+	registerAPIExportEndpointSliceTools(server, scope)
 	registerTenancyTools(server, scope)
 	registerWorkspaceStatusTools(server, scope)
 	registerResourceTools(server, scope)

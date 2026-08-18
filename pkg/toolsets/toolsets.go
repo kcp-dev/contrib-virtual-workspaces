@@ -51,7 +51,7 @@ func AllToolsets() []Toolset {
 		},
 		{
 			Name:        "apis",
-			Description: "Read-only API provider machinery: APIResourceSchemas, APIConversions, APIExportEndpointSlices",
+			Description: "Read-only API provider machinery: APIResourceSchemas, APIConversions",
 			Register:    apis.Register,
 		},
 		{

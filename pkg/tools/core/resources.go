@@ -73,7 +73,7 @@ func registerResourceTools(server *mcp.Server, scope tools.Scope) {
 The type is group + version + plural resource name, e.g.:
 - group "" (core), version "v1", resource "configmaps"
 - group "apps", version "v1", resource "deployments"
-- group "apis.kcp.io", version "v1alpha1", resource "apibindings"
+- group "apis.kcp.io", version "v1alpha2", resource "apibindings"
 
 Use this for any resource type without a dedicated tool, including CRDs and
 APIs bound into the workspace. Use labelSelector (e.g. "app=nginx") and

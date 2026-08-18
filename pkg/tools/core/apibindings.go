@@ -30,7 +30,7 @@ import (
 var (
 	apiBindingGVR = schema.GroupVersionResource{
 		Group:    "apis.kcp.io",
-		Version:  "v1alpha1",
+		Version:  "v1alpha2",
 		Resource: "apibindings",
 	}
 )

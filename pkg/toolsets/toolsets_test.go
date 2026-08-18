@@ -70,7 +70,7 @@ var toolsByToolset = map[string][]string{
 		"get_kcp_workspacetype",
 		"list_kcp_initializingworkspaces",
 		"list_kcp_terminatingworkspaces",
-		"list_kcp_child_workspaces",
+		"list_kcp_apiexportendpointslices",
 		"list_resources",
 		"get_resource",
 	},
@@ -78,7 +78,6 @@ var toolsByToolset = map[string][]string{
 		"list_kcp_apiresourceschemas",
 		"get_kcp_apiresourceschema",
 		"list_kcp_apiconversions",
-		"list_kcp_apiexportendpointslices",
 	},
 	"admin": {
 		"list_kcp_logicalclusters",
