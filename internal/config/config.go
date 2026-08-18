@@ -118,6 +118,13 @@ func (c *ServerConfig) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&c.Kcp.Kubeconfig, "kubeconfig", c.Kcp.Kubeconfig,
 		"Kubeconfig for this server's own identity, used to impersonate callers "+
 			"on per-workspace requests.")
+
+	// TODO: kcp-operator >= v0.9 passes these to every VirtualWorkspace deployment
+	// regardless of spec.command (kcp-operator#292)
+	for _, name := range []string{"shard-external-url", "cache-kubeconfig"} {
+		fs.String(name, "", "Accepted for kcp-operator compatibility; unused.")
+		_ = fs.MarkHidden(name)
+	}
 }
 
 // Validate reports configuration that cannot work.
