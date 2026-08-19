@@ -74,7 +74,7 @@ a kind cluster, installs cert-manager and kcp-operator, builds this image from
 the working tree and the access virtual workspace from its main branch, and then
 deploys kcp, both virtual workspaces and two consumer workspaces.
 
-It then asks `list_workspaces` over MCP twice, with two credentials that have
+It then asks `list_kcp_workspaces` over MCP twice, with two credentials that have
 opposite rights: a client certificate for `alice`, and a bearer token for
 `agent` from the front-proxy's static token file. Each must see its own
 workspace and not the other's — expectations that only both hold if the answer

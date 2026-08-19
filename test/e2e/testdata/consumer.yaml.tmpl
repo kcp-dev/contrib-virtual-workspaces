@@ -46,9 +46,9 @@ spec:
 # the MCP server does in a workspace, it does as the caller, and kcp authorizes each of those
 # requests against the caller's own rights rather than the server's.
 #
-# Applied even though today's only tool, list_workspaces, never reaches into a workspace: it is the
-# manifest users are told to apply, so a rule kcp would reject should fail here rather than in
-# their cluster. The tools that exercise it are still to be ported -- see internal/mcp/server.go.
+# Applied even though list_kcp_workspaces, the tool the e2e test exercises, never reaches into a
+# workspace: it is the manifest users are told to apply, so a rule kcp would reject should fail
+# here rather than in their cluster.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

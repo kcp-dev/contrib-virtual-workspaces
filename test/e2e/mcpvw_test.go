@@ -103,10 +103,9 @@ const (
 	// directly so that a broken dependency is reported as one.
 	scarPath = "/services/access/apis/access.contrib.kcp.io/v1alpha1/selfclusteraccessreviews"
 
-	// listWorkspacesTool is the only tool this server advertises today. When the handlers from the
-	// proof of concept land (see internal/mcp/server.go), this test is where they get their
-	// end-to-end coverage.
-	listWorkspacesTool = "list_workspaces"
+	// listWorkspacesTool is the entry-point tool of the core toolset: it is what an agent calls
+	// first, and its answer is scoped to the caller, so it is the tool the assertions build on.
+	listWorkspacesTool = "list_kcp_workspaces"
 
 	mcpPodSelector = "app.kubernetes.io/component=virtual-workspace,app.kubernetes.io/instance=" + mcpVirtualWorkspaceName
 )
@@ -133,10 +132,10 @@ type templateData struct {
 	AgentToken                 string
 }
 
-// workspaceEntry is one element of the list_workspaces tool's structured output, mirroring the
-// anonymous type internal/mcp/server.go returns.
+// workspaceEntry is one element of the list_kcp_workspaces tool's structured output, mirroring
+// pkg/tools/core.WorkspaceInfo.
 type workspaceEntry struct {
-	Name     string `json:"name"`
+	ID       string `json:"id"`
 	Endpoint string `json:"endpoint"`
 }
 
@@ -470,8 +469,8 @@ func postSCAR(ctx context.Context, client *http.Client, url string) ([]byte, int
 // This is already an end-to-end assertion rather than a formality: the handler resolves the
 // caller's workspaces on every request, including this one, so a server that could not reach the
 // access VW as the caller replaces its whole tool set with a single "error" tool. Getting
-// list_workspaces back means the front-proxy routed, the identity headers were trusted, and the
-// impersonated round trip to the access VW succeeded.
+// list_kcp_workspaces back means the front-proxy routed, the identity headers were trusted, and
+// the impersonated round trip to the access VW succeeded.
 func assertToolsAdvertised(t *testing.T, ctx context.Context, workload *cluster, namespace string, consumerConfig *rest.Config, frontProxyPort int) {
 	t.Helper()
 
@@ -568,7 +567,7 @@ func assertListWorkspaces(t *testing.T, ctx context.Context, workload *cluster, 
 		}
 
 		return slices.ContainsFunc(result.Workspaces, func(w workspaceEntry) bool {
-			return w.Name == want
+			return w.ID == want
 		}), nil
 	})
 	if err != nil {
@@ -578,7 +577,7 @@ func assertListWorkspaces(t *testing.T, ctx context.Context, workload *cluster, 
 
 	names := make([]string, 0, len(result.Workspaces))
 	for _, workspace := range result.Workspaces {
-		names = append(names, workspace.Name)
+		names = append(names, workspace.ID)
 	}
 
 	t.Logf("%s reports %v for %s.", listWorkspacesTool, names, who)
@@ -593,7 +592,7 @@ func assertListWorkspaces(t *testing.T, ctx context.Context, workload *cluster, 
 	wantPrefix := fmt.Sprintf("https://%s:6443/clusters/", data.FrontProxyHostname)
 	for _, workspace := range result.Workspaces {
 		if !strings.HasPrefix(workspace.Endpoint, wantPrefix) {
-			t.Errorf("Workspace %s has endpoint %q, expected it to start with %q.", workspace.Name, workspace.Endpoint, wantPrefix)
+			t.Errorf("Workspace %s has endpoint %q, expected it to start with %q.", workspace.ID, workspace.Endpoint, wantPrefix)
 		}
 	}
 }
@@ -794,7 +793,7 @@ func waitForEndpoints(t *testing.T, ctx context.Context, controllers *cluster) {
 // createConsumerWorkspace creates a workspace under the controllers workspace, binds the exported
 // API in it, applies the impersonation RBAC this server is documented to need, and grants each
 // named user rights there. It returns the logical cluster name, which is what both
-// SelfClusterAccessReview and list_workspaces answer with.
+// SelfClusterAccessReview and list_kcp_workspaces answer with.
 func createConsumerWorkspace(t *testing.T, ctx context.Context, adminConfig *rest.Config, data templateData, name string, grantees ...string) string {
 	t.Helper()
 

@@ -3,9 +3,9 @@ module github.com/kcp-dev/contrib-mcp-virtual-workspace
 go 1.26.4
 
 require (
-	github.com/kcp-dev/contrib-access-virtual-workspace v0.0.1
+	github.com/kcp-dev/contrib-access-virtual-workspace v0.0.2
 	github.com/kcp-dev/virtual-workspace-framework v0.32.3
-	github.com/modelcontextprotocol/go-sdk v1.6.1
+	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	k8s.io/api v0.36.3
