@@ -53,26 +53,24 @@ jobs:
   # provider published, that the answer came from a webhook and was never
   # stored, and that the consumer's identity survived the proxy hop.
   #
-  # It needs a kcp built from source, because this component depends on changes
-  # that are in no kcp release: reference-driven replication, the endpoint
-  # shards selector, and identity forwarding. The checkout below therefore
-  # tracks a branch, and this job can go red without anything in this repository
-  # having changed. That is the signal it exists to give.
+  # kcp comes from the image built off its main branch, because this component
+  # depends on changes that are in no kcp release: the APIExport reference
+  # controller, the endpoint shards selector, and identity forwarding. Tracking
+  # a moving image means this job can go red without anything in this repository
+  # having changed. That is the signal it exists to give -- it has already
+  # caught one upstream regression on the day it landed.
+  #
+  # Set the KCP_IMAGE repository variable to pin a tag when main is broken and
+  # the noise is not useful.
   e2e:
     runs-on: ubuntu-latest
     # kcp, the virtual workspace and the webhook all have to come up, and the
-    # endpoint slice has to reach the cache server, before the first assertion.
+    # referenced endpoint slice has to reach the cache server, before the first
+    # assertion runs.
     timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Checkout kcp
-        uses: actions/checkout@v4
-        with:
-          repository: kcp-dev/kcp
-          ref: ${{ vars.KCP_REF || 'main' }}
-          path: kcp-checkout
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -85,4 +83,4 @@ jobs:
       - name: Run e2e tests
         run: make test-e2e
         env:
-          KCP_DIR: ${{ github.workspace }}/kcp-checkout
+          KCP_IMAGE: ${{ vars.KCP_IMAGE || 'ghcr.io/kcp-dev/kcp:main' }}

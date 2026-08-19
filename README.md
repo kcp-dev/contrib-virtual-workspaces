@@ -630,8 +630,13 @@ objects and assertions. They apply the manifests from
 walkthrough above and the test cannot drift apart.
 
 The tests are behind a `//go:build e2e` tag, so `go test ./...` will not run
-them. They need a kcp built from a checkout (`KCP_DIR`, default `../kcp`)
-carrying the changes in [Against an existing kcp](#against-an-existing-kcp);
+them. They need a kcp carrying the changes in
+[Against an existing kcp](#against-an-existing-kcp) — none of which are in a
+release, so it comes either from a checkout (`KCP_DIR`, default `../kcp`) or,
+on Linux, straight out of the image built off main
+(`KCP_IMAGE=ghcr.io/kcp-dev/kcp:main`, which is what CI uses and what saves it
+several minutes of compiling). The image holds a Linux binary, so a macOS
+workstation builds from the checkout;
 against a kcp without them the run stops at *"bucketinfos never became
 servable"*, which is the shard being unable to resolve the endpoint slice.
 

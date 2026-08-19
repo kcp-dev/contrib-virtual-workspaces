@@ -28,6 +28,8 @@
 # is the piece to reconsider.
 #
 #   hack/ci/run-e2e-tests.sh              run everything, then tear it down
+#   KCP_IMAGE=ghcr.io/kcp-dev/kcp:main    take kcp from an image (Linux only)
+#   KCP_DIR=/path/to/kcp hack/ci/...      build kcp from a checkout instead
 #   NO_TEARDOWN=true hack/ci/...          leave it running for inspection
 #   WHAT=./test/e2e/... hack/ci/...       narrow what is run
 #   TEST_ARGS="-run Identity -v" hack/...
@@ -39,6 +41,15 @@ cd "${REPO_ROOT}"
 
 KCP_DIR="${KCP_DIR:-$(cd "${REPO_ROOT}/.." && pwd)/kcp}"
 KCP_BIN="${KCP_BIN:-${REPO_ROOT}/bin/kcp}"
+
+# Where kcp comes from. With KCP_IMAGE set the binary is lifted out of a
+# published image instead of compiled, which is what CI wants: kcp takes minutes
+# to build and the image is already there.
+#
+# Linux only, and not an oversight -- the image carries a Linux binary, so
+# extracting it on a macOS workstation produces something that cannot run. Local
+# development builds from KCP_DIR.
+KCP_IMAGE="${KCP_IMAGE:-}"
 
 WORK_DIR="${WORK_DIR:-${REPO_ROOT}/.e2e}"
 PKI_DIR="${WORK_DIR}/pki"
@@ -157,13 +168,30 @@ if [[ "${SKIP_BUILD}" != "true" ]]; then
   make --no-print-directory build
 
   # kcp is a separate module, and the e2e needs one carrying the changes this
-  # component depends on -- reference-driven replication, the endpoint shards
-  # selector, and identity forwarding. None of them are released, so the binary
-  # has to come from a checkout.
+  # component depends on: the APIExport reference controller, the endpoint
+  # shards selector, and identity forwarding. They are on main but in no
+  # release, so the binary comes from an image built off main or from a
+  # checkout -- never from a tagged version.
   if [[ ! -x "${KCP_BIN}" ]]; then
-    [[ -d "${KCP_DIR}" ]] || die "no kcp checkout at ${KCP_DIR}; set KCP_DIR=/path/to/kcp"
-    log "building kcp from ${KCP_DIR}"
-    make --no-print-directory kcp KCP_DIR="${KCP_DIR}"
+    if [[ -n "${KCP_IMAGE}" ]]; then
+      [[ "$(uname -s)" == "Linux" ]] || die "KCP_IMAGE only works on Linux; the image holds a Linux binary. Use KCP_DIR to build from a checkout."
+      command -v docker >/dev/null 2>&1 || die "docker is required to extract kcp from ${KCP_IMAGE}"
+
+      log "extracting kcp from ${KCP_IMAGE}"
+      docker pull --quiet "${KCP_IMAGE}" >/dev/null
+      container="$(docker create "${KCP_IMAGE}")"
+      mkdir -p "$(dirname "${KCP_BIN}")"
+      # /kcp is where the Dockerfile puts it.
+      docker cp "${container}:/kcp" "${KCP_BIN}" >/dev/null
+      docker rm --force "${container}" >/dev/null
+      chmod +x "${KCP_BIN}"
+
+      log "kcp is $("${KCP_BIN}" --version 2>&1 | head -n 1 || echo "of unknown version")"
+    else
+      [[ -d "${KCP_DIR}" ]] || die "no kcp checkout at ${KCP_DIR}; set KCP_DIR=/path/to/kcp, or KCP_IMAGE on Linux"
+      log "building kcp from ${KCP_DIR}"
+      make --no-print-directory kcp KCP_DIR="${KCP_DIR}"
+    fi
   fi
 fi
 
