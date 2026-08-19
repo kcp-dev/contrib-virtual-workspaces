@@ -615,6 +615,23 @@ real etcd objects.
   in the target cluster. Without this, anyone reaching the endpoint could call a
   provider's webhook on behalf of any workspace name in the URL.
 
+## Images
+
+Published to `ghcr.io/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace`
+by [`.github/workflows/images.yaml`](.github/workflows/images.yaml), on `v*`
+tags only. Every other trigger builds both architectures without pushing, so a
+Dockerfile that has stopped compiling fails on the pull request rather than at
+release time.
+
+One image carries all three binaries, because a deployment needs two of them in
+different places and pulling two artifacts to get them helps nobody:
+
+| Binary | |
+| --- | --- |
+| `/ephemeral-virtual-workspace` | the server, and the image's entrypoint |
+| `/endpointslice-controller` | publishes the server's address, and runs in the provider's workspace rather than beside the server |
+| `/example-webhook` | not part of a deployment — the provider's side of the contract, shipped so the request path can be demonstrated from the image alone |
+
 ## Testing
 
 ```bash
