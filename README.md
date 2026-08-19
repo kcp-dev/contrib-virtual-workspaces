@@ -455,7 +455,7 @@ Empty is expected here: no kcp controller fills this one in. That is
 `endpointslice-controller`'s job — a separate process running against this
 workspace — and it writes a single endpoint with an empty `shards` selector,
 meaning one virtual workspace for every shard. See
-[Publishing this server's address](#publishing-this-servers-address).
+[APIExportEndpointSlice controller](#apiexportendpointslice-controller-publishing-this-servers-address).
 
 **4. RBAC in the provider workspace.** Unlike the consumer-side grant in step 8,
 this one does not go away with identity forwarding — only its *subject* changes.
@@ -615,6 +615,41 @@ real etcd objects.
   in the target cluster. Without this, anyone reaching the endpoint could call a
   provider's webhook on behalf of any workspace name in the URL.
 
+## Testing
+
+```bash
+make test            # unit tests
+make test-e2e        # stand the whole stack up, run the e2e tests, tear it down
+make test-e2e-keep   # same, but leave it running to poke at
+```
+
+[`hack/ci/run-e2e-tests.sh`](hack/ci/run-e2e-tests.sh) owns processes,
+certificates and ports; the tests in [test/e2e/](test/e2e/) own workspaces,
+objects and assertions. They apply the manifests from
+[docs/example/](docs/example/) directly rather than copies of them, so the
+walkthrough above and the test cannot drift apart.
+
+The tests are behind a `//go:build e2e` tag, so `go test ./...` will not run
+them. They need a kcp carrying the changes in
+[Against an existing kcp](#against-an-existing-kcp) — none of which are in a
+release, so it comes either from a checkout (`KCP_DIR`, default `../kcp`) or,
+on Linux, straight out of the image built off main
+(`KCP_IMAGE=ghcr.io/kcp-dev/kcp:main`, which is what CI uses and what saves it
+several minutes of compiling). The image holds a Linux binary, so a macOS
+workstation builds from the checkout;
+against a kcp without them the run stops at *"bucketinfos never became
+servable"*, which is the shard being unable to resolve the endpoint slice.
+
+The point is the assertions a unit test cannot make. That `bucketinfos`
+advertises `create` and nothing else while `buckets` in the same export is
+stored and listable. That the URL the shard dialled was the one the controller
+published, with `shards.matchAll`, while `shard.spec.virtualWorkspaceURL` was
+never set. That the same question twice returns the same answer and no
+`resourceVersion`. That a webhook denial arrives as a `NotFound` rather than a
+`500`. And that the webhook was told the consumer's identity rather than
+`kcp-shard` — the one thing that regresses silently, because everything still
+works when it is wrong.
+
 ## Known gaps
 
 1. **Identity forwarding works, but rests on how the shard is issued its
@@ -641,11 +676,15 @@ real etcd objects.
      pointing it at consumers asks a provider-shaped question about them. See
      [RBAC, and what identity forwarding removes](#rbac-and-what-identity-forwarding-removes).
 
-2. **Not tested against a sharded kcp.** Cross-shard resolution should work —
-   reference-driven replication puts the slice in the cache server, the cache
-   client reads across shards, and a `matchAll` endpoint is picked by every
-   one of them — but it has not been exercised. The multi-shard case is also the
-   only one where the endpoint selector earns its keep.
+2. **Barely tested against a sharded kcp.** One two-shard deployment has been
+   run, via kcp-operator behind a `kcp-front-proxy`, and it works — but with both
+   the provider and the consumer workspace on the same shard. The case the
+   endpoint selector actually exists for, a consumer on a *different* shard from
+   the provider, has still not been exercised. That run did surface two failure
+   modes worth reading before attempting your own, both in
+   [docs/deployment.md](docs/deployment.md): an APIExport created before its
+   referenced kind is `Established` wedges silently, and a proxy between the
+   shard and this server discards the forwarded identity.
 
 3. **Nothing here has been run against the kcp changes it now depends on.**
    The deployable shape — a provider-owned endpoint slice kind, this server
@@ -663,6 +702,15 @@ real etcd objects.
    identity forwarding that router becomes the party this server believes about
    who is asking, and it has to be trusted to pass the `X-Remote-*` headers
    through unaltered rather than setting them itself.
+
+   This one is no longer hypothetical. Routing the hop through kcp's own
+   `kcp-front-proxy` does exactly the wrong half of it: the proxy strips the
+   shard's `X-Remote-*` and re-stamps its own assessment, so this server is told
+   the request came from `root` — the shard's certificate common name — and the
+   create fails with `User "root" cannot create resource "bucketinfos"`. Which
+   is correct behaviour for an edge proxy and fatal for this hop. Worked through,
+   with the three ways out and what each costs, in
+   [docs/deployment.md](docs/deployment.md#a-proxy-between-the-shard-and-this-server-eats-the-forwarded-identity).
 
 5. **Providers cannot self-register.** Adding a webhook means editing the config
    file and restarting. Closing this gap needs the in-tree change: one CRD kind,

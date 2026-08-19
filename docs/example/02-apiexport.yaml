@@ -49,4 +49,3 @@ spec:
           apiGroup: ephemeral.contrib.kcp.io
           kind: EphemeralResourceEndpointSlice
           name: s3.example.com
-        identityHash: bucketinfos.s3.example.com

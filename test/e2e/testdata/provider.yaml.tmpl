@@ -1,0 +1,374 @@
+# Rendered by the e2e tests. Derived from docs/example, because a walkthrough
+# that drifts from what is tested is worse than no walkthrough: keep the two in
+# step by changing docs/example and re-running `make test-e2e`.
+#
+# Applied in the provider workspace, e.g. root:providers:s3.
+#
+# The kind an APIExport points at to say where its ephemeral resources are
+# served. It exists because the alternative -- referencing an
+# APIExportEndpointSlice -- means accepting a URL kcp composes from
+# shard.spec.virtualWorkspaceURL, and that setting is shard-global: aiming it at
+# this server redirects every virtual workspace on the shard.
+#
+# A provider owns this object because a provider is the only party that knows
+# where their virtual workspace runs. The ephemeral virtual workspace fills in
+# status.endpoints itself, from its --external-url.
+#
+# For the shard to resolve a reference to this kind, kcp has to replicate the
+# object to the cache server. That is what the reference-driven replication
+# controller does: it replicates what an APIExport names, rather than a fixed
+# list of kinds.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: ephemeralresourceendpointslices.ephemeral.contrib.kcp.io
+spec:
+  group: ephemeral.contrib.kcp.io
+  scope: Cluster
+  names:
+    kind: EphemeralResourceEndpointSlice
+    listKind: EphemeralResourceEndpointSliceList
+    plural: ephemeralresourceendpointslices
+    singular: ephemeralresourceendpointslice
+    categories:
+    - kcp
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    subresources:
+      status: {}
+    additionalPrinterColumns:
+    - name: URL
+      type: string
+      jsonPath: .status.endpoints[0].url
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+    schema:
+      openAPIV3Schema:
+        description: |-
+          EphemeralResourceEndpointSlice tells kcp where the virtual workspace
+          serving an APIExport's ephemeral resources can be reached.
+        type: object
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            type: object
+            required:
+            - export
+            properties:
+              export:
+                description: |-
+                  export names the APIExport whose ephemeral resources this
+                  virtual workspace serves, in this same workspace.
+                type: object
+                required:
+                - name
+                properties:
+                  name:
+                    type: string
+                    minLength: 1
+          status:
+            type: object
+            properties:
+              endpoints:
+                description: |-
+                  endpoints are the URLs the resources are served on, written by
+                  the virtual workspace itself.
+                type: array
+                items:
+                  type: object
+                  required:
+                  - url
+                  properties:
+                    url:
+                      type: string
+                      minLength: 1
+                    shards:
+                      description: |-
+                        shards says which shards should use this URL. matchAll is
+                        the whole installation; selector is a subset of it, by
+                        shard labels. Saying neither leaves the URL to be matched
+                        by prefix against the shard's own address, which is not
+                        what a provider-run virtual workspace wants.
+                      type: object
+                      x-kubernetes-validations:
+                      - rule: "!(has(self.matchAll) && self.matchAll && has(self.selector))"
+                        message: matchAll and selector are mutually exclusive
+                      properties:
+                        matchAll:
+                          description: |-
+                            matchAll says this URL serves every shard, which is
+                            what one virtual workspace publishes.
+                          type: boolean
+                        selector:
+                          description: |-
+                            selector picks shards by label. Every shard labels
+                            itself with its own name, so one shard is
+                            matchLabels: {name: <shard>}.
+                          type: object
+                          properties:
+                            matchLabels:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            matchExpressions:
+                              type: array
+                              items:
+                                type: object
+                                required:
+                                - key
+                                - operator
+                                properties:
+                                  key:
+                                    type: string
+                                  operator:
+                                    type: string
+                                  values:
+                                    type: array
+                                    items:
+                                      type: string
+                          x-kubernetes-map-type: atomic
+              conditions:
+                type: array
+                items:
+                  type: object
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  properties:
+                    lastTransitionTime:
+                      type: string
+                      format: date-time
+                    message:
+                      type: string
+                    observedGeneration:
+                      type: integer
+                      format: int64
+                    reason:
+                      type: string
+                    status:
+                      type: string
+                    type:
+                      type: string
+
+---
+# Applied in the provider workspace, e.g. root:providers:s3.
+#
+# Two schemas, and nothing in either says how it will be served -- that is the
+# APIExport's decision, in 02-apiexport.yaml:
+#
+#   Bucket      a record. Stored in etcd, all the usual verbs, exactly like any
+#               other resource a provider exports.
+#   BucketInfo  a question. Answered by the provider's webhook and never stored.
+#
+# They are deliberately in one export, because that is the realistic shape: the
+# thing you own, and a live question about it. Only the second one is unusual.
+---
+# The ordinary half. Nothing about this resource involves this project: it is
+# here to show that a virtual-storage resource sits next to CRD-backed ones in
+# the same APIExport, and that the shard keeps serving those from its own
+# storage rather than forwarding them anywhere.
+apiVersion: apis.kcp.io/v1alpha1
+kind: APIResourceSchema
+metadata:
+  name: v1alpha1.buckets.s3.example.com
+spec:
+  group: s3.example.com
+  scope: Cluster
+  names:
+    kind: Bucket
+    listKind: BucketList
+    plural: buckets
+    singular: bucket
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    # A status subresource, which the ephemeral resource below cannot have:
+    # /status needs a stored, named object to address.
+    subresources:
+      status: {}
+    schema:
+      description: Bucket is a bucket this provider manages.
+      type: object
+      properties:
+        apiVersion:
+          type: string
+        kind:
+          type: string
+        metadata:
+          type: object
+        spec:
+          type: object
+          required:
+          - region
+          properties:
+            region:
+              description: region is where the bucket lives.
+              type: string
+              minLength: 1
+            versioning:
+              description: versioning enables object versioning.
+              type: boolean
+              default: false
+        status:
+          type: object
+          properties:
+            phase:
+              description: phase is where the bucket is in its lifecycle.
+              type: string
+              enum:
+              - Pending
+              - Ready
+              - Deleting
+---
+# The ephemeral half.
+#
+# Note there is no `status` subresource: only create is served, there is no
+# named object to hang /status off, and the status of an ephemeral object is
+# part of the single response -- the way SelfSubjectReview returns its status
+# inline.
+apiVersion: apis.kcp.io/v1alpha1
+kind: APIResourceSchema
+metadata:
+  name: v1alpha1.bucketinfos.s3.example.com
+spec:
+  group: s3.example.com
+  scope: Cluster
+  names:
+    kind: BucketInfo
+    listKind: BucketInfoList
+    plural: bucketinfos
+    singular: bucketinfo
+  versions:
+  - name: v1alpha1
+    served: true
+    # Nothing is ever stored, but kcp's admission requires exactly one version
+    # marked as the storage version, and this flag is inert for virtual storage:
+    # the apibinding reconciler only tracks storage versions for resources whose
+    # APIExport entry uses `storage: crd`. A virtual resource ends up with zero
+    # storage versions on the binding regardless, which is the signal the shard
+    # looks for.
+    storage: true
+    schema:
+      description: BucketInfo answers a question about a bucket with live numbers.
+      type: object
+      properties:
+        apiVersion:
+          type: string
+        kind:
+          type: string
+        metadata:
+          type: object
+        spec:
+          type: object
+          required:
+          - bucketName
+          properties:
+            bucketName:
+              description: bucketName is the bucket to report on.
+              type: string
+              minLength: 1
+        status:
+          type: object
+          properties:
+            sizeBytes:
+              description: sizeBytes is the total size of the bucket right now.
+              type: integer
+              format: int64
+            objectCount:
+              description: objectCount is the number of objects in the bucket right now.
+              type: integer
+              format: int64
+
+---
+# Applied in the provider workspace, e.g. root:providers:s3.
+#
+# This is the whole trick: the resource is declared with `storage: virtual`,
+# referencing an APIExportEndpointSlice. kcp needs NO changes for this.
+#
+#   * ResourceSchemaStorageVirtual.Reference is a TypedLocalObjectReference and
+#     its doc comment says the target "can be of any kind" as long as it has a
+#     URL in status. The shard resolves that reference through the cache server,
+#     so the object has to be there -- which is what kcp's reference-driven
+#     replication does: it replicates what an APIExport names.
+#
+#   * The URL comes from the provider's own virtual workspace, published into
+#     the slice's status by the server itself, rather than composed by kcp from
+#     shard.spec.virtualWorkspaceURL. That setting is shard-global, and aiming
+#     it at one virtual workspace redirects all of them.
+#
+# This export mixes both storage kinds, which the request path handles by
+# itself: the shard forwards only the resources declared `storage: virtual` and
+# serves the rest from its own storage.
+#
+# Routing is where mixing costs something. The built-in APIExport virtual
+# workspace lives on the same path this server answers on, so a router that
+# sends the whole export there takes the provider's own access to `buckets`
+# with it. Either route by API group, or keep ephemeral resources in a
+# single-purpose export -- see docs/routing.md.
+apiVersion: apis.kcp.io/v1alpha2
+kind: APIExport
+metadata:
+  name: {{ .ExportName }}
+spec:
+  resources:
+  # The ordinary one. `storage: crd` is what every APIExport has always used:
+  # kcp creates a bound CRD in the consumer's workspace and serves it from the
+  # shard's own storage. Nothing is forwarded, this server never sees it, and
+  # the consumer gets the full verb set.
+  - name: buckets
+    group: s3.example.com
+    schema: v1alpha1.buckets.s3.example.com
+    storage:
+      crd: {}
+
+  # The ephemeral one. Same export, same group, different storage.
+  - name: bucketinfos
+    group: s3.example.com
+    schema: v1alpha1.bucketinfos.s3.example.com
+    storage:
+      virtual:
+        reference:
+          apiGroup: ephemeral.contrib.kcp.io
+          kind: EphemeralResourceEndpointSlice
+          name: s3.example.com
+        identityHash: bucketinfos.s3.example.com
+
+---
+# Applied in the provider workspace, e.g. root:providers:s3.
+#
+# The object the APIExport references. Its spec says nothing but which export it
+# belongs to -- the URL is not the provider's to type, because it is wherever
+# the virtual workspace happens to be running.
+#
+# The ephemeral virtual workspace fills status.endpoints in from its
+# --external-url:
+#
+#   status:
+#     endpoints:
+#     - url: https://ephemeral.example.com:6454/services/ephemeral-buckets/<cluster>/s3.example.com
+#       shards:
+#         matchAll: true
+#
+# matchAll means every shard uses that URL: there is nothing shard-local about
+# asking a provider's webhook a question. A provider running one virtual
+# workspace per shard would publish several endpoints instead, each with a
+# shards.selector naming the shard it serves.
+apiVersion: ephemeral.contrib.kcp.io/v1alpha1
+kind: EphemeralResourceEndpointSlice
+metadata:
+  name: {{ .ExportName }}
+spec:
+  export:
+    name: {{ .ExportName }}

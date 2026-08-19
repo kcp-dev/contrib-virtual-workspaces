@@ -47,6 +47,14 @@ kubectl-ws: ## Build the kubectl ws plugin from $(KCP_DIR) into bin/.
 test: ## Run unit tests.
 	$(GO) test ./...
 
+.PHONY: test-e2e
+test-e2e: ## Stand the stack up locally and run the e2e tests against it.
+	./hack/ci/run-e2e-tests.sh
+
+.PHONY: test-e2e-keep
+test-e2e-keep: ## Same, but leave everything running afterwards for inspection.
+	NO_TEARDOWN=true ./hack/ci/run-e2e-tests.sh
+
 .PHONY: verify
 verify: verify-gofmt vet ## Run all static checks.
 
@@ -58,6 +66,7 @@ verify-gofmt:
 .PHONY: vet
 vet:
 	$(GO) vet ./...
+	$(GO) vet -tags e2e ./test/...
 
 .PHONY: tidy
 tidy:

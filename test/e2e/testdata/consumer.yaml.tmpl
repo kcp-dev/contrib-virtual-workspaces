@@ -1,0 +1,29 @@
+# Rendered by the e2e tests. Derived from docs/example, because a walkthrough
+# that drifts from what is tested is worse than no walkthrough: keep the two in
+# step by changing docs/example and re-running `make test-e2e`.
+#
+# Applied in the consumer workspace.
+#
+# An ordinary APIBinding. Because the exported resource uses virtual storage,
+# kcp's apibinding reconciler records it with zero storage versions, which is
+# what makes the shard's virtual-resources proxy take over the request instead
+# of the CRD storage. No consumer-visible difference from binding any other
+# export.
+#
+# After this, in the consumer workspace:
+#
+#   kubectl create -f bucketinfo.yaml -o yaml   # prints the answer
+#   kubectl get bucketinfos                     # the verb does not exist
+#
+# The missing verb is not a restriction applied on top: discovery is forwarded
+# to the ephemeral virtual workspace, whose storage implements only
+# rest.Creater, so create is the only verb that was ever advertised.
+apiVersion: apis.kcp.io/v1alpha2
+kind: APIBinding
+metadata:
+  name: {{ .ExportName }}
+spec:
+  reference:
+    export:
+      path: {{ .ProviderWorkspace }}
+      name: {{ .ExportName }}
