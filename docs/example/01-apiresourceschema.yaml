@@ -126,3 +126,11 @@ spec:
               description: objectCount is the number of objects in the bucket right now.
               type: integer
               format: int64
+            observedUser:
+              description: |-
+                observedUser is the caller the webhook was told about. A real
+                provider would not echo this back; it is here so that "did the
+                consumer's identity survive the proxy hop, or did the shard's
+                own certificate arrive instead" is a question the API can
+                answer, rather than one that needs a log.
+              type: string

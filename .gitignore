@@ -2,6 +2,7 @@
 *.test
 .kcp/
 .local/
+.e2e/
 pki/
 
 # Binaries built into the repo root by `go build ./cmd/...`. They shadow bin/ on

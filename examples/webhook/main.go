@@ -166,6 +166,13 @@ func handleBucketInfo(w http.ResponseWriter, r *http.Request) {
 			// Stable fake numbers, so a demo is reproducible.
 			"sizeBytes":   int64(hashOf(submitted.Spec.BucketName)%1_000_000) * 1024,
 			"objectCount": int64(hashOf(submitted.Spec.BucketName) % 5000),
+
+			// Echoed so that a test can ask the API who the webhook was told
+			// about. A real provider authorizes on this and returns nothing
+			// derived from it; here it is the only way to distinguish a
+			// forwarded caller from the shard's own certificate identity
+			// without reading this process's log.
+			"observedUser": review.Request.UserInfo.Username,
 		},
 	})
 	if err != nil {

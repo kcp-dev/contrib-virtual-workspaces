@@ -329,6 +329,104 @@ not be the CA used for unrelated clients of this server. In
 `hack/local-up.sh` it is the same `pki/ca.crt` for both, which is fine for a
 single-purpose dev stack and would not be in a deployment.
 
+### A proxy between the shard and this server eats the forwarded identity
+
+Identity forwarding survives exactly one hop. If the URL published into the
+endpoint slice points at a proxy rather than at this server — kcp's own
+`kcp-front-proxy`, an ingress, anything that terminates TLS and re-originates —
+then the `X-Remote-*` headers the shard set are not what arrives here.
+
+kcp's front-proxy is the instructive case, because routing through it is the
+natural thing to do when this server runs behind the same hostname as kcp:
+
+```
+$ kubectl create -f docs/example/bucketinfo.yaml
+Error from server (Forbidden): bucketinfos.s3.example.com is forbidden:
+User "root" cannot create resource "bucketinfos" in API group "s3.example.com"
+at the cluster scope: access denied
+```
+
+`root` is nobody's user account. It is the common name on the shard's client
+certificate — proof that the hop discarded the caller and fell back to the
+shard, which is the failure mode
+[the identity section above](#identity-who-the-request-arrives-as) describes,
+arriving by a route that looks like it should have worked.
+
+The shard did its part: kcp stamps `X-Remote-User` with the caller before
+proxying. The front-proxy then undid it. Its whole job is to *terminate* client
+identity and re-originate — `SetAuthHeaders` strips any inbound `X-Remote-*`
+and re-stamps whoever it authenticated, which is the correct and necessary
+behaviour for an internet-facing edge proxy. It preserves a forwarded identity
+only for callers that pass **request-header** authentication:
+
+- a client certificate signed by its `--requestheader-client-ca-file`, and
+- a common name listed in `--requestheader-allowed-names`.
+
+A shard satisfies neither by default. kcp dials virtual workspaces with
+`--shard-client-cert-file`, which is issued from the ordinary *client* CA, and
+its common name is the shard's (`root`, `shard-alpha`, …) — not the proxy
+identity the front-proxy is configured to trust. So the shard authenticates as
+an ordinary client called `root`, its headers are stripped, and this server is
+told the request came from `root`.
+
+Three ways out, worst to best:
+
+**Trust the shard at the proxy.** Give the front-proxy a request-header CA
+bundle that also contains the CA signing the shard client certificates, and add
+the shard common names to the allowed names. With kcp-operator:
+
+```yaml
+apiVersion: operator.kcp.io/v1alpha1
+kind: FrontProxy
+spec:
+  extraArgs:
+    # Bundle of the request-header CA and the client CA. extraArgs are appended
+    # after the operator's own flags, and this one is a plain string flag, so
+    # the later value wins.
+    - --requestheader-client-ca-file=/etc/kcp-front-proxy/shard-requestheader-ca/tls.crt
+    # Pass the full list: pflag appends on repeat, so naming only the additions
+    # would be fragile if that ever changed.
+    - --requestheader-allowed-names=kcp-front-proxy,kcp-mounts-proxy,root,shard-alpha
+  extraVolumes:
+    - name: shard-requestheader-ca
+      secret:
+        secretName: frontproxy-shard-requestheader-ca
+  extraVolumeMounts:
+    - name: shard-requestheader-ca
+      mountPath: /etc/kcp-front-proxy/shard-requestheader-ca
+      readOnly: true
+```
+
+This works — the webhook then reports `observedUser: kcp-admin` rather than
+`root`, which is the whole point of that field — and ordinary users are
+unaffected, because their common names are not in the allowed list and they fall
+through to normal client-certificate authentication.
+
+The cost is real and belongs in the same breath: **the client CA is now also an
+impersonation CA** for those common names. Anyone who can get a certificate
+issued from it with `CN=root` can set `X-Remote-User` at the edge and become any
+user. The client CA also signs every ordinary user certificate, so the two roles
+are no longer separated. That is known gap 1's "it moves trust onto certificate
+provisioning", in its sharpest form. Acceptable in a development stack; do not
+ship it.
+
+**Take the proxy out of the hop.** Publish this server's in-cluster address
+in the endpoint slice — `--external-url=https://ephemeral-virtual-workspace.<ns>.svc.cluster.local:6443`
+— so the shard reaches it directly, and put the shard common names in *this*
+server's `--requestheader-allowed-names` instead. The same trust widening
+applies, but scoped to one virtual workspace rather than to the proxy that
+fronts everything. Consumers still reach kcp through the front-proxy; only the
+shard's internal hop changes.
+
+**Fix the certificate, upstream.** The clean answer is for a shard to hold a
+dedicated request-header-signed identity for dialling virtual workspaces,
+separate from the client certificate that is its own identity. kcp-operator
+already issues exactly that shape for the root-shard proxy
+(`CN=kcp-root-shard-proxy`, request-header CA — and already present in this
+server's default allowed names). kcp reuses `--shard-client-cert-file` for the
+virtual workspace hop instead, so there is nothing to point at yet. Until that
+exists, the first two options are what there is.
+
 ### RBAC, for a shard that does not forward identity
 
 For a shard authenticating as user `kcp-shard`:
@@ -372,27 +470,31 @@ required — never runs at all.
 Every object below has a commented example in [`../docs/example`](../docs/example),
 numbered in this order.
 
-1. [`01-apiresourceschema.yaml`](example/01-apiresourceschema.yaml) in the
+1. [`00-endpointslice-crd.yaml`](example/00-endpointslice-crd.yaml), the kind
+   the reference points at. **This has to be served before the APIExport that
+   names it exists** — see [the ordering
+   trap](#the-apiexport-must-not-overtake-the-kind-it-references) below, which is
+   why the file is numbered `00` and why `hack/local-up.sh` waits here rather
+   than applying straight through.
+2. [`01-apiresourceschema.yaml`](example/01-apiresourceschema.yaml) in the
    provider workspace — two schemas, a CRD-backed `Bucket` and the ephemeral
    `BucketInfo`. Exactly one version of each must be marked `storage: true`;
    kcp's admission rejects the schema otherwise. The flag is inert for virtual
    storage.
-2. [`02-apiexport.yaml`](example/02-apiexport.yaml), which is where the two are
+3. [`02-apiexport.yaml`](example/02-apiexport.yaml), which is where the two are
    told apart: `storage.crd` for `buckets`, `storage.virtual` for
    `bucketinfos`. Patch `storage.virtual.identityHash` with the export's
    `status.identityHash` once admitted. Mixing both in one export is fine for
    the request path, and costs something only in routing — see
    [routing.md](routing.md).
-3. [`00-endpointslice-crd.yaml`](example/00-endpointslice-crd.yaml), the kind
-   the reference points at, and
-   [`03-endpointslice.yaml`](example/03-endpointslice.yaml), the object itself.
+4. [`03-endpointslice.yaml`](example/03-endpointslice.yaml), the object itself.
    Its status is left empty: this server fills it in.
-4. An entry in this server's config file for `(export, group, resource)` —
+5. An entry in this server's config file for `(export, group, resource)` —
    `hack/gen-pki.sh` already wrote `pki/ephemeral-config.yaml` from
    [`example/ephemeral-config.yaml`](example/ephemeral-config.yaml), so this is
    filling in `webhook.url` and the export it applies to — then start or restart
    the server. The file is read once, at startup.
-5. [`04-apibinding.yaml`](example/04-apibinding.yaml) in a consumer workspace.
+6. [`04-apibinding.yaml`](example/04-apibinding.yaml) in a consumer workspace.
 
 **`status.endpoints` fills in when this server starts**, not when a consumer
 binds. Nothing in kcp writes it — that is the difference from an
@@ -429,13 +531,24 @@ kubectl get bucketinfos
 | `404` from a request that should reach this server | the routing rule did not match and kcp's built-in virtual workspace answered |
 | `access denied` with no further detail | a missing `verb=access` on `/` rule, in whichever workspace the check runs against |
 | `User "<shard>" cannot create ...` | the RBAC above is missing in the consumer's workspace |
+| `no matches for kind "BucketInfo"` in the consumer's workspace, plus `Some resources are temporarily unavailable`, plus `failed to retrieve virtual workspace URL: the server could not find the requested resource` in the shard log every ten seconds — while `buckets` from the same export still works | the APIExport was created before its referenced kind was `Established`, so no `ClusterCachedResource` exists and the endpoint slice never reached the cache server. `kubectl get clustercachedresources` in the provider workspace is empty. See [the ordering trap](#the-apiexport-must-not-overtake-the-kind-it-references) |
+| `User "root" cannot create resource "bucketinfos"` — a name that is no user account, only a shard's certificate | a proxy sits between the shard and this server and re-originated the identity. See [a proxy between the shard and this server](#a-proxy-between-the-shard-and-this-server-eats-the-forwarded-identity) |
 | `tls: bad certificate`, or an `EOF` calling the webhook | the trust table above, or something else already listening on the webhook's port |
 | Informers log `cannot list ... at the cluster scope` | `--kubeconfig` identity is not privileged enough for wildcard list/watch |
 
 ## What is still untested
 
-Everything here has been exercised against a single-shard kcp. Cross-shard
+Most of this has been exercised against a single-shard kcp. Cross-shard
 resolution should work — `APIExportEndpointSlice` is replicated to the cache
 server and the cache client reads across shards — but it has not been run, and
 the routing story in particular gets harder with one router in front of several
 shards' virtual workspace URLs.
+
+One two-shard deployment has now been run, via kcp-operator with a
+`kcp-front-proxy` in front (root and alpha shards, both provider and consumer
+workspaces landing on root). It produced the two failure modes documented above
+— the ordering trap and the re-originated identity — and served requests
+correctly once both were addressed, with the webhook reporting the consumer's
+identity rather than the shard's. That is one topology, not coverage: the case
+that still has not been run is a consumer workspace on a *different* shard from
+the provider, which is the one the endpoint selector exists for.
