@@ -12,7 +12,13 @@ metadata:
   name: mcp-virtual-workspace-impersonator
 rules:
   - apiGroups: [""]
-    resources: ["users", "groups", "serviceaccounts", "userextras"]
+    resources: ["users", "groups", "serviceaccounts"]
+    verbs: ["impersonate"]
+  # Extras are authorized as userextras/<key> and UIDs as uids, both in
+  # authentication.k8s.io; RBAC has no subresource wildcard, so grant the
+  # whole group.
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["*"]
     verbs: ["impersonate"]
 ---
 # Bind the role to the identity the server presents in its --kubeconfig. Adjust

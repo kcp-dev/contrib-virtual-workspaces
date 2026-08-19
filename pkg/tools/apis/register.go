@@ -14,19 +14,20 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package mcp
+// Package apis provides read tools for the machinery of kcp's API sharing
+// model — APIResourceSchemas and APIConversions. These matter to API
+// providers, not to API consumers, so the toolset is opt-in rather than part
+// of core.
+package apis
 
 import (
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/toolsets"
+	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/tools"
 )
 
-// NewServer builds an MCP server exposing the named toolsets, bound to scope.
-func NewServer(scope *Scope, enabledToolsets []string) (*mcpsdk.Server, error) {
-	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "kcp", Version: "v1alpha1"}, nil)
-	if err := toolsets.Register(server, scope, enabledToolsets); err != nil {
-		return nil, err
-	}
-	return server, nil
+// Register adds the apis toolset to server, bound to scope.
+func Register(server *mcp.Server, scope tools.Scope) {
+	registerAPIResourceSchemaTools(server, scope)
+	registerAPIConversionTools(server, scope)
 }

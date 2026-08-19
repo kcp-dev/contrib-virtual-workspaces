@@ -131,8 +131,8 @@ github.com/kcp-dev/apimachinery/v2 v2.32.3 h1:yOPnKrwlPOpM8FcjXZm7UJ5jD482vcdjGP
 github.com/kcp-dev/apimachinery/v2 v2.32.3/go.mod h1:1Rkhiwoq345wlUYtq1/P+3chL2eE1rdoIgBPwb6Y9x8=
 github.com/kcp-dev/client-go v0.32.3 h1:N6CDBHM2tLige8IFzWNsLNyyT5M7wX50sm1VlTA1caY=
 github.com/kcp-dev/client-go v0.32.3/go.mod h1:dCaregBk0w5NhZywu/QRsGB7lfEch5dkBtSS45vNvuU=
-github.com/kcp-dev/contrib-access-virtual-workspace v0.0.0-20260729135058-6921878638a2 h1:zOeseSlfYqv3Dk/87Mz30YLMUJplhz3zos9cQWOS/IY=
-github.com/kcp-dev/contrib-access-virtual-workspace v0.0.0-20260729135058-6921878638a2/go.mod h1:wbGBczXEMQTnpn8SKKxRcM2CxzB1qD4sJbXpSlaEcqk=
+github.com/kcp-dev/contrib-access-virtual-workspace v0.0.2 h1:zB5ZmNM36Ouz54T+CErKaTNby8HXhQqrJEFeJr0YRjg=
+github.com/kcp-dev/contrib-access-virtual-workspace v0.0.2/go.mod h1:EMsTbffi4ZPQeVNT0NkxJN591mKCc2kn9vxxLu5znXw=
 github.com/kcp-dev/kubernetes v1.37.0-alpha.0.0.20260602065202-e006560fc76a h1:mM+5YGM6Xx1nt9VHcKZGEV5mo6XVzlwBvQ5hTz8NGw8=
 github.com/kcp-dev/kubernetes v1.37.0-alpha.0.0.20260602065202-e006560fc76a/go.mod h1:AFa3aeDT60XGwma3vwcqDzXJNx8csQ9u9r+/NmK7aHE=
 github.com/kcp-dev/kubernetes/staging/src/k8s.io/api v0.0.0-20260602065202-e006560fc76a h1:1k49zqcr+54UquOj46hY0yRurpRuEJI8TSHr8iyNKZg=
@@ -191,8 +191,8 @@ github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0
 github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
 github.com/moby/sys/mountinfo v0.7.2 h1:1shs6aH5s4o5H2zQLn796ADW1wMrIwHsyJ2v9KouLrg=
 github.com/moby/sys/mountinfo v0.7.2/go.mod h1:1YOa8w8Ih7uW0wALDUgT1dTTSBrZ+HiBLGws92L2RU4=
-github.com/modelcontextprotocol/go-sdk v1.6.1 h1:0zOSupjKUxPKSocPT1Wtago+mUHU2/uZ4xSOY0FGReU=
-github.com/modelcontextprotocol/go-sdk v1.6.1/go.mod h1:kzm3kzFL1/+AziGOE0nUs3gvPoNxMCvkxokMkuFapXQ=
+github.com/modelcontextprotocol/go-sdk v1.7.0 h1:yqjY2dsbKAC0LSuWZVBMrHgiG8ukXv6NRo0JiALay44=
+github.com/modelcontextprotocol/go-sdk v1.7.0/go.mod h1:dL7u98E/zjJTGzEq+j30jQ8K2k1mb6LeAH4inEcSGts=
 github.com/modern-go/concurrent v0.0.0-20180228061459-e0a39a4cb421/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
 github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd h1:TRLaZ9cD/w8PVh93nsPXa1VrQ6jlwL5oN8l14QlcNfg=
 github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=

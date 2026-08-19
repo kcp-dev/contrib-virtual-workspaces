@@ -1,0 +1,356 @@
+/*
+Copyright 2026 The kcp Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+// Package admin provides read tools for kcp operator internals —
+// LogicalClusters, Shards, Partitions and PartitionSets. Shards and topology
+// objects exist only in the root workspace, so these tools are noise for
+// ordinary users and the toolset is opt-in.
+package admin
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/tools"
+)
+
+var (
+	logicalClusterGVR = schema.GroupVersionResource{
+		Group:    "core.kcp.io",
+		Version:  "v1alpha1",
+		Resource: "logicalclusters",
+	}
+
+	shardGVR = schema.GroupVersionResource{
+		Group:    "core.kcp.io",
+		Version:  "v1alpha1",
+		Resource: "shards",
+	}
+
+	partitionGVR = schema.GroupVersionResource{
+		Group:    "topology.kcp.io",
+		Version:  "v1alpha1",
+		Resource: "partitions",
+	}
+
+	partitionSetGVR = schema.GroupVersionResource{
+		Group:    "topology.kcp.io",
+		Version:  "v1alpha1",
+		Resource: "partitionsets",
+	}
+)
+
+// LogicalClusterInfo represents a LogicalCluster in list output.
+type LogicalClusterInfo struct {
+	Name  string `json:"name"`
+	Phase string `json:"phase,omitempty"`
+	URL   string `json:"url,omitempty"`
+}
+
+// ListLogicalClustersInput is the input for list_kcp_logicalclusters.
+type ListLogicalClustersInput struct {
+	Workspace string `json:"workspace"`
+}
+
+// ListLogicalClustersOutput is the output for list_kcp_logicalclusters.
+type ListLogicalClustersOutput struct {
+	LogicalClusters []LogicalClusterInfo `json:"logicalClusters"`
+	Count           int                  `json:"count"`
+}
+
+// ShardInfo represents a Shard in list output.
+type ShardInfo struct {
+	Name        string `json:"name"`
+	BaseURL     string `json:"baseURL,omitempty"`
+	ExternalURL string `json:"externalURL,omitempty"`
+}
+
+// ListShardsInput is the input for list_kcp_shards.
+type ListShardsInput struct {
+	Workspace string `json:"workspace"`
+}
+
+// ListShardsOutput is the output for list_kcp_shards.
+type ListShardsOutput struct {
+	Shards []ShardInfo `json:"shards"`
+	Count  int         `json:"count"`
+}
+
+// PartitionInfo represents a Partition in list output.
+type PartitionInfo struct {
+	Name     string            `json:"name"`
+	Selector map[string]string `json:"selector,omitempty"`
+}
+
+// ListPartitionsInput is the input for list_kcp_partitions.
+type ListPartitionsInput struct {
+	Workspace string `json:"workspace"`
+}
+
+// ListPartitionsOutput is the output for list_kcp_partitions.
+type ListPartitionsOutput struct {
+	Partitions []PartitionInfo `json:"partitions"`
+	Count      int             `json:"count"`
+}
+
+// PartitionSetInfo represents a PartitionSet in list output.
+type PartitionSetInfo struct {
+	Name       string `json:"name"`
+	Dimensions int    `json:"dimensions,omitempty"`
+}
+
+// ListPartitionSetsInput is the input for list_kcp_partitionsets.
+type ListPartitionSetsInput struct {
+	Workspace string `json:"workspace"`
+}
+
+// ListPartitionSetsOutput is the output for list_kcp_partitionsets.
+type ListPartitionSetsOutput struct {
+	PartitionSets []PartitionSetInfo `json:"partitionSets"`
+	Count         int                `json:"count"`
+}
+
+// Register adds the admin toolset to server, bound to scope.
+func Register(server *mcp.Server, scope tools.Scope) {
+	mcp.AddTool(server, &mcp.Tool{
+		Annotations: tools.ReadOnly("List LogicalClusters"),
+		Name:        "list_kcp_logicalclusters",
+		Description: `List LogicalClusters visible from a kcp workspace.
+LogicalClusters represent the internal cluster identity within kcp.
+Each workspace has an associated LogicalCluster.`,
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"workspace": map[string]any{
+					"type":        "string",
+					"description": "Workspace ID (from list_kcp_workspaces)",
+				},
+			},
+			"required": []string{"workspace"},
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input ListLogicalClustersInput) (*mcp.CallToolResult, ListLogicalClustersOutput, error) {
+		if !scope.HasAccess(input.Workspace) {
+			return nil, ListLogicalClustersOutput{}, tools.NewScopeError(input.Workspace, scope)
+		}
+
+		_, dynClient, err := scope.ClientFor(input.Workspace)
+		if err != nil {
+			return nil, ListLogicalClustersOutput{}, fmt.Errorf("getting client: %w", err)
+		}
+
+		list, err := dynClient.Resource(logicalClusterGVR).List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return nil, ListLogicalClustersOutput{}, fmt.Errorf("listing LogicalClusters: %w", err)
+		}
+
+		items := tools.ExtractListItems(list)
+		clusters := make([]LogicalClusterInfo, 0, len(items))
+		for _, item := range items {
+			info := LogicalClusterInfo{}
+			if meta, ok := item["metadata"].(map[string]any); ok {
+				if name, ok := meta["name"].(string); ok {
+					info.Name = name
+				}
+			}
+			if status, ok := item["status"].(map[string]any); ok {
+				if phase, ok := status["phase"].(string); ok {
+					info.Phase = phase
+				}
+				if url, ok := status["URL"].(string); ok {
+					info.URL = url
+				}
+			}
+			clusters = append(clusters, info)
+		}
+
+		return nil, ListLogicalClustersOutput{
+			LogicalClusters: clusters,
+			Count:           len(clusters),
+		}, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Annotations: tools.ReadOnly("List shards"),
+		Name:        "list_kcp_shards",
+		Description: `List Shards visible from a kcp workspace.
+Shards are the physical kcp server instances that host workspaces.
+This is typically only visible from the root workspace.`,
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"workspace": map[string]any{
+					"type":        "string",
+					"description": "Workspace ID (from list_kcp_workspaces)",
+				},
+			},
+			"required": []string{"workspace"},
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input ListShardsInput) (*mcp.CallToolResult, ListShardsOutput, error) {
+		if !scope.HasAccess(input.Workspace) {
+			return nil, ListShardsOutput{}, tools.NewScopeError(input.Workspace, scope)
+		}
+
+		_, dynClient, err := scope.ClientFor(input.Workspace)
+		if err != nil {
+			return nil, ListShardsOutput{}, fmt.Errorf("getting client: %w", err)
+		}
+
+		list, err := dynClient.Resource(shardGVR).List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return nil, ListShardsOutput{}, fmt.Errorf("listing Shards: %w", err)
+		}
+
+		items := tools.ExtractListItems(list)
+		shards := make([]ShardInfo, 0, len(items))
+		for _, item := range items {
+			info := ShardInfo{}
+			if meta, ok := item["metadata"].(map[string]any); ok {
+				if name, ok := meta["name"].(string); ok {
+					info.Name = name
+				}
+			}
+			if spec, ok := item["spec"].(map[string]any); ok {
+				if url, ok := spec["baseURL"].(string); ok {
+					info.BaseURL = url
+				}
+				if url, ok := spec["externalURL"].(string); ok {
+					info.ExternalURL = url
+				}
+			}
+			shards = append(shards, info)
+		}
+
+		return nil, ListShardsOutput{
+			Shards: shards,
+			Count:  len(shards),
+		}, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Annotations: tools.ReadOnly("List partitions"),
+		Name:        "list_kcp_partitions",
+		Description: `List Partitions visible from a kcp workspace.
+Partitions define how workspaces are distributed across shards for scalability.`,
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"workspace": map[string]any{
+					"type":        "string",
+					"description": "Workspace ID (from list_kcp_workspaces)",
+				},
+			},
+			"required": []string{"workspace"},
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input ListPartitionsInput) (*mcp.CallToolResult, ListPartitionsOutput, error) {
+		if !scope.HasAccess(input.Workspace) {
+			return nil, ListPartitionsOutput{}, tools.NewScopeError(input.Workspace, scope)
+		}
+
+		_, dynClient, err := scope.ClientFor(input.Workspace)
+		if err != nil {
+			return nil, ListPartitionsOutput{}, fmt.Errorf("getting client: %w", err)
+		}
+
+		list, err := dynClient.Resource(partitionGVR).List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return nil, ListPartitionsOutput{}, fmt.Errorf("listing Partitions: %w", err)
+		}
+
+		items := tools.ExtractListItems(list)
+		partitions := make([]PartitionInfo, 0, len(items))
+		for _, item := range items {
+			info := PartitionInfo{}
+			if meta, ok := item["metadata"].(map[string]any); ok {
+				if name, ok := meta["name"].(string); ok {
+					info.Name = name
+				}
+			}
+			if spec, ok := item["spec"].(map[string]any); ok {
+				if sel, ok := spec["selector"].(map[string]any); ok {
+					info.Selector = make(map[string]string)
+					for k, v := range sel {
+						if vs, ok := v.(string); ok {
+							info.Selector[k] = vs
+						}
+					}
+				}
+			}
+			partitions = append(partitions, info)
+		}
+
+		return nil, ListPartitionsOutput{
+			Partitions: partitions,
+			Count:      len(partitions),
+		}, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Annotations: tools.ReadOnly("List PartitionSets"),
+		Name:        "list_kcp_partitionsets",
+		Description: `List PartitionSets visible from a kcp workspace.
+PartitionSets group partitions together for management.`,
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"workspace": map[string]any{
+					"type":        "string",
+					"description": "Workspace ID (from list_kcp_workspaces)",
+				},
+			},
+			"required": []string{"workspace"},
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input ListPartitionSetsInput) (*mcp.CallToolResult, ListPartitionSetsOutput, error) {
+		if !scope.HasAccess(input.Workspace) {
+			return nil, ListPartitionSetsOutput{}, tools.NewScopeError(input.Workspace, scope)
+		}
+
+		_, dynClient, err := scope.ClientFor(input.Workspace)
+		if err != nil {
+			return nil, ListPartitionSetsOutput{}, fmt.Errorf("getting client: %w", err)
+		}
+
+		list, err := dynClient.Resource(partitionSetGVR).List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return nil, ListPartitionSetsOutput{}, fmt.Errorf("listing PartitionSets: %w", err)
+		}
+
+		items := tools.ExtractListItems(list)
+		sets := make([]PartitionSetInfo, 0, len(items))
+		for _, item := range items {
+			info := PartitionSetInfo{}
+			if meta, ok := item["metadata"].(map[string]any); ok {
+				if name, ok := meta["name"].(string); ok {
+					info.Name = name
+				}
+			}
+			if spec, ok := item["spec"].(map[string]any); ok {
+				if dims, ok := spec["dimensions"].([]any); ok {
+					info.Dimensions = len(dims)
+				}
+			}
+			sets = append(sets, info)
+		}
+
+		return nil, ListPartitionSetsOutput{
+			PartitionSets: sets,
+			Count:         len(sets),
+		}, nil
+	})
+}

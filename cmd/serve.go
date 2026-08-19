@@ -81,5 +81,6 @@ func runServe(c *cobra.Command) error {
 		Authentication: serverCfg.Authentication,
 		Access:         accessClient,
 		Impersonator:   restConfig,
+		Toolsets:       serverCfg.Toolsets,
 	})
 }

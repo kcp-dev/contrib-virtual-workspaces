@@ -25,8 +25,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	genericoptions "k8s.io/apiserver/pkg/server/options"
-	kubeoptions "k8s.io/kubernetes/pkg/kubeapiserver/options"
 	"k8s.io/client-go/rest"
+	kubeoptions "k8s.io/kubernetes/pkg/kubeapiserver/options"
 	netutils "k8s.io/utils/net"
 
 	"github.com/kcp-dev/virtual-workspace-framework/pkg/rootapiserver"
@@ -44,6 +44,9 @@ type ServeOptions struct {
 
 	// Impersonator is the base credential for per-workspace requests.
 	Impersonator *rest.Config
+
+	// Toolsets names the tool groups to expose; see package toolsets.
+	Toolsets []string
 }
 
 // Serve runs the MCP virtual workspace until ctx is cancelled.
@@ -73,7 +76,7 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 		return err
 	}
 
-	vw := NewVirtualWorkspace(opts.Access, opts.Impersonator)
+	vw := NewVirtualWorkspace(opts.Access, opts.Impersonator, opts.Toolsets)
 	vws := []rootapiserver.NamedVirtualWorkspace{vw}
 
 	rootCfg, err := rootapiserver.NewConfig(recommended)

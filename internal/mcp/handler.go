@@ -34,24 +34,21 @@ import (
 // Stateless: every request rebuilds the caller's Scope, so a workspace granted
 // or revoked between calls takes effect within the access cache's TTL rather
 // than lasting for the lifetime of a session.
-func NewHandler(accessClient *access.Client, factory *ClientFactory) http.Handler {
+func NewHandler(accessClient *access.Client, factory *ClientFactory, toolsets []string) http.Handler {
 	return mcpsdk.NewStreamableHTTPHandler(
 		func(r *http.Request) *mcpsdk.Server {
-			return serverForRequest(r, accessClient, factory)
+			return serverForRequest(r, accessClient, factory, toolsets)
 		},
-		// Per SEP-1442/2322: stateless from the start.
 		&mcpsdk.StreamableHTTPOptions{Stateless: true},
 	)
 }
 
-func serverForRequest(r *http.Request, accessClient *access.Client, factory *ClientFactory) *mcpsdk.Server {
+func serverForRequest(r *http.Request, accessClient *access.Client, factory *ClientFactory, toolsets []string) *mcpsdk.Server {
 	ctx := r.Context()
 	logger := klog.FromContext(ctx)
 
 	u, ok := genericapirequest.UserFrom(ctx)
 	if !ok {
-		// The filter chain authenticates before delegating here, so a missing
-		// user is a wiring bug rather than a client error.
 		logger.Error(nil, "no user in request context; did the authentication filter run?")
 		return errorServer("no authenticated user in request context")
 	}
@@ -62,11 +59,14 @@ func serverForRequest(r *http.Request, accessClient *access.Client, factory *Cli
 		return errorServer("could not resolve accessible workspaces: " + err.Error())
 	}
 
-	return NewServer(&Scope{User: u, Workspaces: workspaces, factory: factory})
+	server, err := NewServer(&Scope{User: u, Workspaces: workspaces, factory: factory}, toolsets)
+	if err != nil {
+		logger.Error(err, "registering toolsets")
+		return errorServer("could not register toolsets: " + err.Error())
+	}
+	return server
 }
 
-// errorServer exposes the failure as a single tool so MCP clients see the
-// reason rather than a connection error.
 func errorServer(msg string) *mcpsdk.Server {
 	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "kcp", Version: "v1alpha1"}, nil)
 

@@ -29,6 +29,9 @@ spec:
             - --access-ca-file=/etc/mcp-vw/access-ca/ca.crt
             {{- end }}
             - --kubeconfig=/etc/mcp-vw/kcp/kubeconfig
+            {{- with .Values.toolsets }}
+            - --toolsets={{ join "," . }}
+            {{- end }}
             {{- if .Values.requestHeader.caSecret }}
             - --requestheader-client-ca-file=/etc/mcp-vw/requestheader-ca/ca.crt
             {{- with .Values.requestHeader.allowedNames }}

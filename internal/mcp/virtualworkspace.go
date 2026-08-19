@@ -44,7 +44,7 @@ const RootPath = "/services/" + VirtualWorkspaceName
 // HTTP: there is no group, version or resource for the fixed-group-version
 // machinery to serve. It still sits behind the root apiserver's filter chain,
 // so authentication and audit are the framework's, not ours.
-func NewVirtualWorkspace(accessClient *access.Client, impersonator *rest.Config) rootapiserver.NamedVirtualWorkspace {
+func NewVirtualWorkspace(accessClient *access.Client, impersonator *rest.Config, toolsets []string) rootapiserver.NamedVirtualWorkspace {
 	vw := &frameworkhandler.VirtualWorkspace{
 		RootPathResolver: framework.RootPathResolverFunc(func(urlPath string, ctx context.Context) (bool, string, context.Context) {
 			if urlPath != RootPath && !strings.HasPrefix(urlPath, RootPath+"/") {
@@ -55,7 +55,7 @@ func NewVirtualWorkspace(accessClient *access.Client, impersonator *rest.Config)
 		Authorizer:   authenticatedOnly(),
 		ReadyChecker: framework.ReadyFunc(func() error { return nil }),
 		HandlerFactory: frameworkhandler.HandlerFactory(func(genericapiserver.CompletedConfig) (http.Handler, error) {
-			return NewHandler(accessClient, NewClientFactory(impersonator)), nil
+			return NewHandler(accessClient, NewClientFactory(impersonator), toolsets), nil
 		}),
 	}
 
