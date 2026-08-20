@@ -21,7 +21,9 @@ import (
 	"fmt"
 	"net"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	genericoptions "k8s.io/apiserver/pkg/server/options"
@@ -56,9 +58,16 @@ type ServeOptions struct {
 // caller is authenticated, authorized and audited by the same filter chain as
 // every other kcp endpoint, rather than by hand-rolled middleware.
 func Serve(ctx context.Context, opts ServeOptions) error {
-	// An empty scheme is enough: no Kubernetes types are served, but the
-	// generic apiserver still needs a codec factory to build.
-	codecs := serializer.NewCodecFactory(runtime.NewScheme())
+	// No Kubernetes types are served, but metav1 still has to be registered:
+	// the generic apiserver's filter chain renders every error it produces --
+	// 401, 403, 404, 500 -- as a metav1.Status through this codec factory,
+	// before any MCP code runs. An empty scheme cannot encode one, and the
+	// failure is quiet in the wrong way: the status code still reaches the
+	// client, so an unauthenticated request looks like a clean 401 while its
+	// body is empty and the log takes.
+	scheme := runtime.NewScheme()
+	metav1.AddToGroupVersion(scheme, schema.GroupVersion{Version: "v1"})
+	codecs := serializer.NewCodecFactory(scheme)
 	recommended := genericapiserver.NewRecommendedConfig(codecs)
 
 	// Self-signed defaulting is a local-development convenience only. Behind
