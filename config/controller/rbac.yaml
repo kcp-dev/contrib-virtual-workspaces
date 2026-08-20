@@ -5,6 +5,8 @@ kind: ClusterRole
 metadata:
   name: access-vw-controller
 rules:
+  - verbs: ["access"]
+    nonResourceURLs: ["/"]
   # Reach the APIExport's virtual workspace, which is how the provider sees
   # RBAC objects in every workspace that bound the export.
   - apiGroups: ["apis.kcp.io"]

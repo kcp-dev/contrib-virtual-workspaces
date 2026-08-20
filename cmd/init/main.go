@@ -53,6 +53,8 @@ func main() {
 		workspaceType        string
 		hostOverride         string
 		verifyBinding        string
+		serverUsers          []string
+		serverGroups         []string
 		timeout              time.Duration
 	)
 
@@ -73,6 +75,15 @@ func main() {
 			"https://frontproxy.kcp-system.svc:6443.")
 	pflag.StringVar(&workspaceType, "workspace-type", bootstrap.DefaultWorkspaceType,
 		"WorkspaceType for any workspace this creates.")
+	pflag.StringSliceVar(&serverUsers, "server-user", nil,
+		"Additional User to grant the controller role to, repeatable. Needed when the "+
+			"server does not run as the ServiceAccount this creates -- kcp-operator "+
+			"mounts a client certificate instead, so pass its common name, e.g. "+
+			"--server-user=access-vw. Without it the server is denied at startup with "+
+			`'cannot get path "/apis": access denied'.`)
+	pflag.StringSliceVar(&serverGroups, "server-group", nil,
+		"Additional Group to grant the controller role to, repeatable. The certificate "+
+			"organization, where --server-user is its common name.")
 	pflag.StringVar(&verifyBinding, "verify-apibinding", "",
 		"After installing, check that this APIBinding in the target workspace has all "+
 			"of its permission claims accepted. Useful when the workspace being "+
@@ -110,6 +121,8 @@ func main() {
 	result, err := bootstrap.Bootstrap(ctx, target, bootstrap.Options{
 		WorkspacePath: workspacePath,
 		HostOverride:  hostOverride,
+		ServerUsers:   serverUsers,
+		ServerGroups:  serverGroups,
 		Timeout:       timeout,
 	})
 	if err != nil {
