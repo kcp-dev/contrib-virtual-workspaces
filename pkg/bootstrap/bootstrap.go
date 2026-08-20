@@ -76,6 +76,15 @@ const (
 	// ControllerKubeconfigSecret holds the kubeconfig built from that
 	// token, for the server to mount.
 	ControllerKubeconfigSecret = "access-vw-kubeconfig"
+
+	// ControllerClusterRole is the role carrying everything the server needs
+	// in this workspace, including the verb=access rule that gates the rest.
+	ControllerClusterRole = "access-vw-controller"
+
+	// ServerIdentityBinding binds ControllerClusterRole to identities named by
+	// Options.ServerUsers/ServerGroups. Separate from the committed binding
+	// because those names are deployment-specific.
+	ServerIdentityBinding = "access-vw-controller-server"
 )
 
 var apiExportEndpointSliceGVR = schema.GroupVersionResource{
@@ -126,6 +135,16 @@ type Options struct {
 	// the cluster (or the reverse).
 	HostOverride string
 
+	// ServerUsers and ServerGroups are extra identities to grant the
+	// controller role to, for deployments that run the server as something
+	// other than the ServiceAccount minted here -- kcp-operator mounts a
+	// client certificate, so its server arrives as a User.
+	//
+	// Empty means only the ServiceAccount is granted, which is correct when
+	// the server uses the generated kubeconfig.
+	ServerUsers  []string
+	ServerGroups []string
+
 	// Timeout bounds the apply-and-verify loop.
 	Timeout time.Duration
 }
@@ -164,6 +183,14 @@ func Bootstrap(ctx context.Context, cfg *rest.Config, opts Options) (*Result, er
 	logger.Info("applying controller identity", "serviceAccount", ControllerServiceAccount)
 	if err := applyFS(ctx, dynamicClient, mapper, cache, configcontroller.FS, configcontroller.Order); err != nil {
 		return nil, fmt.Errorf("apply controller identity: %w", err)
+	}
+
+	if len(opts.ServerUsers) > 0 || len(opts.ServerGroups) > 0 {
+		logger.Info("granting the controller role to the configured server identity",
+			"users", opts.ServerUsers, "groups", opts.ServerGroups)
+		if err := applyServerIdentityBinding(ctx, dynamicClient, mapper, cache, opts.ServerUsers, opts.ServerGroups); err != nil {
+			return nil, fmt.Errorf("grant server identity: %w", err)
+		}
 	}
 
 	urls := waitForEndpointSlice(ctx, dynamicClient)
@@ -332,6 +359,76 @@ func applyFS(ctx context.Context, client dynamic.Interface, mapper meta.RESTMapp
 		return fmt.Errorf("%w (last error: %v)", err, lastErr)
 	}
 	return err
+}
+
+// applyServerIdentityBinding binds ControllerClusterRole to identities the
+// deployment names, alongside the committed ServiceAccount binding. The
+// retry shape matches applyFS: the RBAC types are ordinary built-ins, but the
+// workspace may still be settling when this runs.
+func applyServerIdentityBinding(
+	ctx context.Context,
+	client dynamic.Interface,
+	mapper meta.RESTMapper,
+	cache discovery.CachedDiscoveryInterface,
+	users, groups []string,
+) error {
+	binding := map[string]interface{}{
+		"apiVersion": "rbac.authorization.k8s.io/v1",
+		"kind":       "ClusterRoleBinding",
+		"metadata":   map[string]interface{}{"name": ServerIdentityBinding},
+		"roleRef": map[string]interface{}{
+			"apiGroup": "rbac.authorization.k8s.io",
+			"kind":     "ClusterRole",
+			"name":     ControllerClusterRole,
+		},
+		"subjects": serverSubjects(users, groups),
+	}
+
+	raw, err := yaml.Marshal(binding)
+	if err != nil {
+		return fmt.Errorf("marshal %s: %w", ServerIdentityBinding, err)
+	}
+
+	var lastErr error
+	err = wait.PollUntilContextCancel(ctx, 2*time.Second, true, func(ctx context.Context) (bool, error) {
+		if err := applyResource(ctx, client, mapper, raw); err != nil {
+			lastErr = err
+			cache.Invalidate()
+			return false, nil
+		}
+		return true, nil
+	})
+	if err != nil && lastErr != nil {
+		return fmt.Errorf("%w (last error: %v)", err, lastErr)
+	}
+	return err
+}
+
+// serverSubjects renders the subject list, deduplicated so that repeating a
+// flag does not produce a binding the API server rejects.
+func serverSubjects(users, groups []string) []interface{} {
+	var subjects []interface{}
+	seen := map[string]bool{}
+
+	add := func(kind, name string) {
+		if name == "" || seen[kind+"/"+name] {
+			return
+		}
+		seen[kind+"/"+name] = true
+		subjects = append(subjects, map[string]interface{}{
+			"apiGroup": "rbac.authorization.k8s.io",
+			"kind":     kind,
+			"name":     name,
+		})
+	}
+
+	for _, u := range users {
+		add("User", u)
+	}
+	for _, g := range groups {
+		add("Group", g)
+	}
+	return subjects
 }
 
 func verifyOrderCoversFS(fs embed.FS, order []string) error {
