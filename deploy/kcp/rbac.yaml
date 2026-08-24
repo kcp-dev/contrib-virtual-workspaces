@@ -20,6 +20,8 @@ rules:
   - apiGroups: ["authentication.k8s.io"]
     resources: ["*"]
     verbs: ["impersonate"]
+  - nonResourceURLs: ["/"]
+    verbs: ["access"]
 ---
 # Bind the role to the identity the server presents in its --kubeconfig. Adjust
 # the subject to whatever principal that credential authenticates as.
