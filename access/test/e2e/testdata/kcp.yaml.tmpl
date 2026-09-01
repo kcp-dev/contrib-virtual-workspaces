@@ -1,0 +1,165 @@
+# The kcp installation the access virtual workspace is deployed into: one root shard, its
+# front-proxy, and the two identities the virtual workspace's containers run as.
+#
+# Both the shard's and the front-proxy's serving certificates carry "localhost" so the test can
+# reach them through `kubectl port-forward` without disabling verification: everything the test
+# asserts about identity depends on TLS actually being checked.
+apiVersion: operator.kcp.io/v1alpha1
+kind: RootShard
+metadata:
+  name: root
+  namespace: {{ .Namespace }}
+spec:
+  external:
+    hostname: {{ .FrontProxyHostname }}
+    port: 6443
+  certificates:
+    issuerRef:
+      group: cert-manager.io
+      kind: ClusterIssuer
+      name: selfsigned
+  etcd:
+    endpoints:
+      - http://etcd.{{ .Namespace }}.svc.cluster.local:2379
+  # Required by the CRD, and empty on purpose: with no reference to an external CacheServer the
+  # root shard runs the cache embedded, which is all a single-shard test needs.
+  cache: {}
+  certificateTemplates:
+    server:
+      spec:
+        dnsNames:
+          - localhost
+  # Every component here runs a single replica. The operator defaults to two, which for a
+  # single-shard test buys no coverage and triples the pod count once the front-proxy and the
+  # shard proxy are counted -- enough to push a one-node kind cluster into evicting things, which
+  # surfaces as the test losing its connection rather than as anything about this component.
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  proxy:
+    replicas: 1
+    certificateTemplates:
+      server:
+        spec:
+          dnsNames:
+            - localhost
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+---
+# The front-proxy is what every client in this test talks to, including the virtual workspace's own
+# containers: bootstrapping walks the workspace tree (root -> access -> controllers) and a shard
+# only serves the logical clusters it hosts, so path resolution across the tree is something only
+# the front-proxy does.
+#
+# additionalPathMappings routes the virtual workspace's own path prefix to the Service the operator
+# creates for it. This is the production path and the one the SCAR assertions exercise: the
+# front-proxy authenticates the client certificate and forwards the identity to the virtual
+# workspace as request headers, which is why the server needs no authenticator of its own.
+apiVersion: operator.kcp.io/v1alpha1
+kind: FrontProxy
+metadata:
+  name: front-proxy
+  namespace: {{ .Namespace }}
+spec:
+  rootShard:
+    ref:
+      name: root
+  replicas: 1
+  auth:
+    # Without this every certificate identity lands in system:masters, and an assertion that the
+    # server is scoped would pass for the wrong reason.
+    dropGroups:
+      - ""
+  certificateTemplates:
+    server:
+      spec:
+        dnsNames:
+          - localhost
+  additionalPathMappings:
+    - path: /services/access
+      backend: https://{{ .VirtualWorkspaceName }}-virtual-workspace.{{ .Namespace }}.svc.cluster.local:6443
+      # The kcp root CA, which signed the virtual workspace's serving certificate too, so no extra
+      # CA is needed. These are the paths the operator actually mounts -- the same ones its own
+      # generated mappings for /clusters/ and /services/ use. Note that kcp-operator's sample for
+      # this component names /etc/kcp-front-proxy/tls/ca/tls.crt here, which does not exist in the
+      # pod: the front-proxy refuses to start on it, taking the whole installation with it.
+      backend_server_ca: /etc/kcp/tls/ca/tls.crt
+      proxy_client_cert: /etc/kcp-front-proxy/requestheader-client/tls.crt
+      proxy_client_key: /etc/kcp-front-proxy/requestheader-client/tls.key
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+---
+# The administrator the test itself uses, and the identity the init container bootstraps with.
+# kcp's bootstrap policy binds system:kcp:admin to cluster-admin.
+apiVersion: operator.kcp.io/v1alpha1
+kind: Kubeconfig
+metadata:
+  name: admin
+  namespace: {{ .Namespace }}
+spec:
+  target:
+    frontProxyRef:
+      name: front-proxy
+  username: kcp-admin
+  groups:
+    - system:kcp:admin
+  # Comfortably longer than a run, so that a cluster kept with NO_TEARDOWN is still usable the next
+  # morning: once these certificates expire every component fails with a bare "Unauthorized", which
+  # looks exactly like a permissions bug and is not one.
+  validity: 24h
+  secretRef:
+    name: admin-kubeconfig
+
+---
+# The identity the virtual workspace server runs as: no groups at all, scoped to the workspace
+# holding the APIExport, and holding only what the test binds it to there.
+#
+# spec.authorization would do that binding, but its cleanup finalizer has to reach kcp, and tearing
+# down the namespace takes the front-proxy with it -- the Kubeconfig could then never be finalized
+# and the namespace would wedge in Terminating. The test creates the ClusterRole and its binding
+# inside kcp instead.
+apiVersion: operator.kcp.io/v1alpha1
+kind: Kubeconfig
+metadata:
+  name: access-vw-server
+  namespace: {{ .Namespace }}
+spec:
+  target:
+    frontProxyRef:
+      name: front-proxy
+  targetWorkspace: {{ .ControllersWorkspace }}
+  username: {{ .ServerUsername }}
+  # Comfortably longer than a run, so that a cluster kept with NO_TEARDOWN is still usable the next
+  # morning: once these certificates expire every component fails with a bare "Unauthorized", which
+  # looks exactly like a permissions bug and is not one.
+  validity: 24h
+  secretRef:
+    name: access-vw-server-kubeconfig
+
+---
+# A consumer of the exported API, used to check that the virtual workspace reports the workspaces
+# this identity can reach and no others.
+apiVersion: operator.kcp.io/v1alpha1
+kind: Kubeconfig
+metadata:
+  name: {{ .ConsumerUsername }}
+  namespace: {{ .Namespace }}
+spec:
+  target:
+    frontProxyRef:
+      name: front-proxy
+  username: {{ .ConsumerUsername }}
+  # Comfortably longer than a run, so that a cluster kept with NO_TEARDOWN is still usable the next
+  # morning: once these certificates expire every component fails with a bare "Unauthorized", which
+  # looks exactly like a permissions bug and is not one.
+  validity: 24h
+  secretRef:
+    name: {{ .ConsumerUsername }}-kubeconfig

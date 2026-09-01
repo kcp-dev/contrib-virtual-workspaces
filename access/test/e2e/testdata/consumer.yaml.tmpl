@@ -1,0 +1,40 @@
+# Applied inside kcp, in a workspace that wants to be reported by the access virtual workspace.
+#
+# The APIBinding is what opts the workspace in: until it exists and its permission claims are
+# accepted, the provider does not index this workspace at all and no identity resolves to it. It is
+# the same binding as config/examples/apibinding-consumer.yaml, with the export path templated
+# because the test controls where the export lives.
+apiVersion: apis.kcp.io/v1alpha2
+kind: APIBinding
+metadata:
+  name: {{ .APIExportName }}
+spec:
+  reference:
+    export:
+      path: {{ .ControllersWorkspace }}
+      name: {{ .APIExportName }}
+  permissionClaims:
+    - group: rbac.authorization.k8s.io
+      resource: clusterrolebindings
+      verbs: [get, list, watch]
+      state: Accepted
+      selector:
+        matchAll: true
+    - group: rbac.authorization.k8s.io
+      resource: rolebindings
+      verbs: [get, list, watch]
+      state: Accepted
+      selector:
+        matchAll: true
+    - group: rbac.authorization.k8s.io
+      resource: clusterroles
+      verbs: [get, list, watch]
+      state: Accepted
+      selector:
+        matchAll: true
+    - group: rbac.authorization.k8s.io
+      resource: roles
+      verbs: [get, list, watch]
+      state: Accepted
+      selector:
+        matchAll: true
