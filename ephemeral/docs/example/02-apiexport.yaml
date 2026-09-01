@@ -1,0 +1,51 @@
+# Applied in the provider workspace, e.g. root:providers:s3.
+#
+# This is the whole trick: the resource is declared with `storage: virtual`,
+# referencing an APIExportEndpointSlice. kcp needs NO changes for this.
+#
+#   * ResourceSchemaStorageVirtual.Reference is a TypedLocalObjectReference and
+#     its doc comment says the target "can be of any kind" as long as it has a
+#     URL in status. The shard resolves that reference through the cache server,
+#     so the object has to be there -- which is what kcp's reference-driven
+#     replication does: it replicates what an APIExport names.
+#
+#   * The URL comes from the provider's own virtual workspace, published into
+#     the slice's status by the server itself, rather than composed by kcp from
+#     shard.spec.virtualWorkspaceURL. That setting is shard-global, and aiming
+#     it at one virtual workspace redirects all of them.
+#
+# This export mixes both storage kinds, which the request path handles by
+# itself: the shard forwards only the resources declared `storage: virtual` and
+# serves the rest from its own storage.
+#
+# Routing is where mixing costs something. The built-in APIExport virtual
+# workspace lives on the same path this server answers on, so a router that
+# sends the whole export there takes the provider's own access to `buckets`
+# with it. Either route by API group, or keep ephemeral resources in a
+# single-purpose export -- see docs/routing.md.
+apiVersion: apis.kcp.io/v1alpha2
+kind: APIExport
+metadata:
+  name: s3.example.com
+spec:
+  resources:
+  # The ordinary one. `storage: crd` is what every APIExport has always used:
+  # kcp creates a bound CRD in the consumer's workspace and serves it from the
+  # shard's own storage. Nothing is forwarded, this server never sees it, and
+  # the consumer gets the full verb set.
+  - name: buckets
+    group: s3.example.com
+    schema: v1alpha1.buckets.s3.example.com
+    storage:
+      crd: {}
+
+  # The ephemeral one. Same export, same group, different storage.
+  - name: bucketinfos
+    group: s3.example.com
+    schema: v1alpha1.bucketinfos.s3.example.com
+    storage:
+      virtual:
+        reference:
+          apiGroup: ephemeral.contrib.kcp.io
+          kind: EphemeralResourceEndpointSlice
+          name: s3.example.com

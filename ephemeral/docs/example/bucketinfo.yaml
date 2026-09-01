@@ -1,0 +1,11 @@
+# Submitted by a consumer with `kubectl create -f bucketinfo.yaml -o yaml`.
+#
+# The object is never written anywhere. It is forwarded to the provider's
+# webhook, and what comes back is printed as the 201 response body. A name is
+# not required: like SubjectAccessReview, this is a question, not a record.
+apiVersion: s3.example.com/v1alpha1
+kind: BucketInfo
+metadata:
+  name: foo
+spec:
+  bucketName: my-bucket

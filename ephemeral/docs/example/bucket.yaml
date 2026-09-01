@@ -1,0 +1,13 @@
+# Submitted by a consumer with `kubectl create -f bucket.yaml`.
+#
+# The ordinary counterpart to bucketinfo.yaml. This one is a record: it needs a
+# name, it is written to etcd, and it comes back from `kubectl get buckets`
+# afterwards. Nothing about it reaches the ephemeral virtual workspace -- the
+# shard serves it from the bound CRD, as it does for any exported resource.
+apiVersion: s3.example.com/v1alpha1
+kind: Bucket
+metadata:
+  name: my-bucket
+spec:
+  region: eu-central-1
+  versioning: true

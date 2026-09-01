@@ -1,0 +1,26 @@
+# Applied in the provider workspace, e.g. root:providers:s3.
+#
+# The object the APIExport references. Its spec says nothing but which export it
+# belongs to -- the URL is not the provider's to type, because it is wherever
+# the virtual workspace happens to be running.
+#
+# The ephemeral virtual workspace fills status.endpoints in from its
+# --external-url:
+#
+#   status:
+#     endpoints:
+#     - url: https://ephemeral.example.com:6454/services/ephemeral-buckets/<cluster>/s3.example.com
+#       shards:
+#         matchAll: true
+#
+# matchAll means every shard uses that URL: there is nothing shard-local about
+# asking a provider's webhook a question. A provider running one virtual
+# workspace per shard would publish several endpoints instead, each with a
+# shards.selector naming the shard it serves.
+apiVersion: ephemeral.contrib.kcp.io/v1alpha1
+kind: EphemeralResourceEndpointSlice
+metadata:
+  name: s3.example.com
+spec:
+  export:
+    name: s3.example.com
