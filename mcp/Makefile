@@ -12,9 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Unit tests, vet, tidy, verification and images live in the repository root
+# Makefile (`make -C .. help`); the targets here are local development only.
+
 GO      ?= go
 BIN_DIR ?= bin
-IMAGE   ?= ghcr.io/kcp-dev/contrib-mcp-virtual-workspace:latest
 
 # Local development. ACCESS_URL must reach the access virtual workspace, and the
 # authentication configuration MUST match kcp's: identity is used both to ask the
@@ -35,10 +37,6 @@ help: ## Show available targets
 build: ## Build the binary into bin/
 	$(GO) build -o $(BIN_DIR)/mcp-virtual-workspace .
 
-.PHONY: test
-test: ## Run unit tests
-	$(GO) test -race ./...
-
 .PHONY: test-e2e
 test-e2e: ## Deploy into a throwaway kind cluster via kcp-operator and run the e2e tests
 	./hack/ci/run-e2e-tests.sh
@@ -46,27 +44,6 @@ test-e2e: ## Deploy into a throwaway kind cluster via kcp-operator and run the e
 .PHONY: test-e2e-keep
 test-e2e-keep: ## Same, but keep the cluster and namespaces afterwards for inspection
 	NO_TEARDOWN=true ./hack/ci/run-e2e-tests.sh
-
-.PHONY: vet
-vet: ## Run go vet
-	$(GO) vet ./...
-	$(GO) vet -tags e2e ./test/...
-
-.PHONY: tidy
-tidy: ## Sync go.mod / go.sum
-	$(GO) mod tidy
-
-.PHONY: verify
-verify: vet verify-fork-pin verify-e2e-manifests ## Run every verification check
-	$(GO) mod tidy -diff
-
-.PHONY: verify-e2e-manifests
-verify-e2e-manifests: ## Render the e2e manifests without a cluster, so template errors fail here
-	$(GO) test -tags e2e -run TestManifestsRender -count=1 ./test/e2e/
-
-.PHONY: verify-fork-pin
-verify-fork-pin: ## Check the kcp Kubernetes fork pin matches virtual-workspace-framework
-	./hack/verify-fork-pin.sh
 
 .PHONY: serve
 serve: build ## Run against a local kcp and access virtual workspace
@@ -76,10 +53,6 @@ serve: build ## Run against a local kcp and access virtual workspace
 		--secure-port $(SECURE_PORT) \
 		$(if $(AUTH_CONFIG),--authentication-config $(AUTH_CONFIG),) \
 		-v=4
-
-.PHONY: image
-image: ## Build the container image
-	docker build -t $(IMAGE) .
 
 .PHONY: clean
 clean: ## Remove build artifacts

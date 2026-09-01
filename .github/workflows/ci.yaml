@@ -26,7 +26,8 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # go vet, the kcp Kubernetes fork pin check, and go mod tidy -diff.
+      # gofmt, go vet (including the e2e build tag), the kcp Kubernetes fork
+      # pin check, e2e manifest rendering, and go mod tidy -diff.
       - name: Verify
         run: make verify
 
@@ -47,17 +48,23 @@ jobs:
       - name: Test
         run: make test
 
-  # Deploys this component through kcp-operator, the way a user does, and checks that the result
-  # serves. It runs against kcp-operator's main branch on purpose: the support for custom virtual
-  # workspaces with init containers that this deployment depends on lives there, and a change on
-  # either side that breaks the pairing should show up here rather than in someone's cluster.
+  # One e2e job per component. Each deploys its component the way a user
+  # would — access and mcp through kcp-operator on a kind cluster, ephemeral
+  # as local processes against a real kcp — and asserts that the result
+  # serves.
   #
-  # Because it tracks a moving branch, this job can go red without anything in this repository
-  # having changed. That is the signal it exists to give.
+  # These jobs track moving branches (kcp-operator main, kcp main) on
+  # purpose: a change on either side that breaks the pairing should show up
+  # here rather than in someone's cluster. That means a job can go red
+  # without anything in this repository having changed. That is the signal
+  # it exists to give.
   e2e:
     runs-on: ubuntu-latest
-    # kind, kcp and the operator all have to come up before the first assertion runs.
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [access, mcp, ephemeral]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # tag=v7.0.1
@@ -67,7 +74,12 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # On failure the script dumps the operator's logs and the state of the objects it was
-      # reconciling before it tears the cluster down, so the job log is self-contained.
+      # On failure the scripts dump the relevant logs and object state before
+      # tearing down, so the job log is self-contained.
       - name: Run e2e tests
-        run: make test-e2e
+        run: make test-e2e-${{ matrix.component }}
+        env:
+          # Only the ephemeral harness reads this. Set the KCP_IMAGE
+          # repository variable to pin a tag when kcp main is broken and the
+          # noise is not useful.
+          KCP_IMAGE: ${{ vars.KCP_IMAGE || 'ghcr.io/kcp-dev/kcp:main' }}

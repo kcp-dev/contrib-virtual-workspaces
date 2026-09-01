@@ -28,9 +28,9 @@ import (
 	"github.com/kcp-dev/virtual-workspace-framework/pkg/fixedgvs"
 	"github.com/kcp-dev/virtual-workspace-framework/pkg/rootapiserver"
 
-	accessv1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/access/sdk/apis/access/v1alpha1"
 	"github.com/kcp-dev/contrib-virtual-workspaces/access/pkg/graph"
 	"github.com/kcp-dev/contrib-virtual-workspaces/access/pkg/virtual"
+	accessv1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/access/sdk/apis/access/v1alpha1"
 )
 
 const VirtualWorkspaceName = "access"

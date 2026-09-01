@@ -617,8 +617,8 @@ real etcd objects.
 
 ## Images
 
-Published to `ghcr.io/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace`
-by [`.github/workflows/images.yaml`](.github/workflows/images.yaml), on `v*`
+Published to `ghcr.io/kcp-dev/contrib-virtual-workspaces/ephemeral-vw`
+by [`.github/workflows/images.yaml`](../.github/workflows/images.yaml), on `v*`
 tags only. Every other trigger builds both architectures without pushing, so a
 Dockerfile that has stopped compiling fails on the pull request rather than at
 release time.
@@ -735,4 +735,3 @@ works when it is wrong.
 
 6. **The config file is read once at startup.** Certificate rotation on disk is
    not picked up; restart the server.
-# contrib-virtual-ephemeral-resources-virtual-workspace

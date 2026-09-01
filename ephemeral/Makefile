@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Unit tests, vet, tidy, verification and images live in the repository root
+# Makefile (`make -C .. help`); the targets here are local development only.
+
 GO ?= go
 BIN_DIR ?= bin
 
@@ -20,7 +23,7 @@ BIN_DIR ?= bin
 # module or its selected dependencies" is Go refusing exactly that. Build it
 # over there and drop the binary in bin/ so everything runs from this
 # directory, next to the pki/ and .local/ it needs.
-KCP_DIR ?= ../kcp
+KCP_DIR ?= ../../kcp
 
 .PHONY: all
 all: build
@@ -43,10 +46,6 @@ kubectl-ws: ## Build the kubectl ws plugin from $(KCP_DIR) into bin/.
 	$(GO) build -C $(KCP_DIR)/staging/src/github.com/kcp-dev/cli -o $(abspath $(BIN_DIR))/kubectl-ws ./cmd/kubectl-ws
 	@echo "built $(BIN_DIR)/kubectl-ws; add $(BIN_DIR) to PATH to use 'kubectl ws'"
 
-.PHONY: test
-test: ## Run unit tests.
-	$(GO) test ./...
-
 .PHONY: test-e2e
 test-e2e: ## Stand the stack up locally and run the e2e tests against it.
 	./hack/ci/run-e2e-tests.sh
@@ -55,25 +54,8 @@ test-e2e: ## Stand the stack up locally and run the e2e tests against it.
 test-e2e-keep: ## Same, but leave everything running afterwards for inspection.
 	NO_TEARDOWN=true ./hack/ci/run-e2e-tests.sh
 
-.PHONY: verify
-verify: verify-gofmt vet ## Run all static checks.
-
-.PHONY: verify-gofmt
-verify-gofmt:
-	@out=$$(gofmt -l -s $$(find . -name '*.go' -not -path './$(BIN_DIR)/*')); \
-	if [ -n "$$out" ]; then echo "not gofmt'd:"; echo "$$out"; exit 1; fi
-
-.PHONY: vet
-vet:
-	$(GO) vet ./...
-	$(GO) vet -tags e2e ./test/...
-
-.PHONY: tidy
-tidy:
-	$(GO) mod tidy
-
 .PHONY: clean
-clean:
+clean: ## Remove build artifacts
 	rm -rf $(BIN_DIR)
 
 .PHONY: help

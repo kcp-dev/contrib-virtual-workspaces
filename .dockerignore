@@ -1,0 +1,7 @@
+.git
+bin
+.e2e
+.e2e-*
+.kcp
+.local
+pki

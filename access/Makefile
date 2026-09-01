@@ -28,16 +28,15 @@ help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-24s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 #Build & test
+# Unit tests, vet, tidy and verification live in the repository root Makefile;
+# the targets here are the ones that only make sense next to config/ and the
+# demo assets.
 
 .PHONY: build
 build: ## Build all binaries into bin/
 	go build -o bin/access-vw ./cmd/access-vw
 	go build -o bin/access-vw-init ./cmd/init
 	go build -o bin/scar-to-kubeconfig ./cmd/scar-to-kubeconfig
-
-.PHONY: test
-test: ## Run unit tests
-	go test ./...
 
 .PHONY: test-e2e
 test-e2e: ## Deploy into a throwaway kind cluster via kcp-operator and run the e2e tests
@@ -46,27 +45,6 @@ test-e2e: ## Deploy into a throwaway kind cluster via kcp-operator and run the e
 .PHONY: test-e2e-keep
 test-e2e-keep: ## Same, but keep the cluster and namespaces afterwards for inspection
 	NO_TEARDOWN=true ./hack/ci/run-e2e-tests.sh
-
-.PHONY: vet
-vet: ## Run go vet
-	go vet ./...
-	go vet -tags e2e ./test/...
-
-.PHONY: tidy
-tidy: ## Sync go.mod / go.sum
-	go mod tidy
-
-.PHONY: verify
-verify: vet verify-fork-pin verify-e2e-manifests ## Run all verification checks
-	go mod tidy -diff
-
-.PHONY: verify-e2e-manifests
-verify-e2e-manifests: ## Render the e2e manifests without a cluster, so template errors fail here
-	go test -tags e2e -run TestManifestsRender -count=1 ./test/e2e/
-
-.PHONY: verify-fork-pin
-verify-fork-pin: ## Check the kcp Kubernetes fork pin matches virtual-workspace-framework
-	./hack/verify-fork-pin.sh
 
 .PHONY: clean
 clean: ## Remove build artifacts
@@ -181,9 +159,4 @@ mcp-demo: build ## Generate scoped alice.kubeconfig for MCP demo
 	@echo '  {"mcpServers":{"kcp-access":{"type":"local","command":"kubernetes-mcp-server","args":["--kubeconfig","$(CURDIR)/alice.kubeconfig","--cluster-provider=kcp","--toolsets=core,kcp"]}}}'
 
 #Container image
-# For a cluster-based run, prefer `make test-e2e`: it builds this image, loads it into kind and
-# deploys it through kcp-operator the way a user would.
-
-.PHONY: docker-build
-docker-build: ## Build access-vw Docker image
-	docker build -t localhost/access-vw:local .
+# Images are built from the repository root: `make -C .. image-access`.

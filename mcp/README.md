@@ -6,7 +6,7 @@ virtual workspace, scoped to what the calling user can actually see.
 An agent connected to a kcp installation needs two things: a list of workspaces
 it may work on, and a way to act in them as the human who asked. This component
 provides the second. The first comes from
-[contrib-access-virtual-workspace](https://github.com/kcp-dev/contrib-access-virtual-workspace),
+the [access virtual workspace](../access/) in this repository,
 which answers `SelfClusterAccessReview`.
 
 See [kcp-dev/kcp#3839](https://github.com/kcp-dev/kcp/issues/3839).
@@ -90,10 +90,10 @@ Not covered: callers that reach this server directly with a JWT, i.e.
 always the one validating credentials, and this server only ever authenticates
 `X-Remote-*` headers.
 
-Both dependencies track a moving branch, so the job can go red without anything
-here having changed — which is the point. Pin them with `KCP_OPERATOR_REF` and
-`ACCESS_VW_REF`, or build the access virtual workspace from a local checkout
-with `ACCESS_VW_SRC=../contrib-access-virtual-workspace`. The script's header
+kcp-operator tracks a moving branch, so the job can go red without anything
+here having changed — which is the point. Pin it with `KCP_OPERATOR_REF`. The
+access virtual workspace is built from this repository at the same revision,
+so the two virtual workspaces can never drift apart. The script's header
 lists every knob.
 
 One such red is outstanding: the access virtual workspace needs the revision

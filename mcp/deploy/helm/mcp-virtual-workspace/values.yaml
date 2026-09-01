@@ -1,5 +1,5 @@
 image:
-  repository: ghcr.io/kcp-dev/contrib-mcp-virtual-workspace
+  repository: ghcr.io/kcp-dev/contrib-virtual-workspaces/mcp-vw
   tag: latest
   pullPolicy: IfNotPresent
 

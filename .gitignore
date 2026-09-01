@@ -1,0 +1,20 @@
+/bin/
+*.test
+cover.out
+
+# Working directories of the e2e harnesses: kind kubeconfigs, checkouts the
+# scripts deploy from, and local kcp state.
+.e2e/
+.e2e-*/
+.kcp/
+.local/
+pki/
+
+# Binaries built into component roots by `go build ./cmd/...`. They shadow
+# bin/ on tab-completion and go stale silently; use `make build`.
+/ephemeral/ephemeral-virtual-workspace
+/ephemeral/endpointslice-controller
+/ephemeral/example-webhook
+
+.claudebin/
+.DS_Store

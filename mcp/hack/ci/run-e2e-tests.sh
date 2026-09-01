@@ -22,16 +22,10 @@
 #
 # Two components are built from source rather than pulled from a registry. This one, obviously; and
 # the access virtual workspace, because this server answers nothing without it -- the workspaces a
-# caller may use come from SelfClusterAccessReview, and neither repository publishes an image
-# outside release tags. Both default to their main branch on purpose: what this test covers is the
-# pairing of three moving parts (kcp-operator, the access virtual workspace and this server), and a
-# change on any side that breaks it should surface here rather than in someone's cluster.
-#
-# The access virtual workspace must be at a revision whose access-vw-init merges its assets rather
-# than replacing them. Without that fix, init creates the APIExportEndpointSlice on its first pass
-# and can never re-apply it -- kcp defaults spec.export.path and then rejects the update with
-# "APIExport reference must not be changed" -- so any restart of that container is a permanent crash
-# loop, and this test fails waiting for a pod that will never be ready.
+# caller may use come from SelfClusterAccessReview, and no image is published outside release tags.
+# Both are built from this monorepo checkout, so the pairing of the two virtual workspaces is
+# always tested at the same revision; kcp-operator still defaults to its main branch on purpose,
+# so a change on its side that breaks the pairing surfaces here rather than in someone's cluster.
 #
 # Environment:
 #   KIND_CLUSTER_NAME    name of the kind cluster to create (default: mcp-vw-e2e)
@@ -41,8 +35,6 @@
 #   KCP_OPERATOR_IMG     kcp-operator image (default: ghcr.io/kcp-dev/kcp-operator:$KCP_OPERATOR_REF)
 #   MCP_VW_IMG           image to build from this checkout and test (default: localhost/mcp-vw:e2e)
 #   SKIP_IMAGE_BUILD     reuse an MCP_VW_IMG that is already loaded (default: false)
-#   ACCESS_VW_REF        git ref of contrib-access-virtual-workspace to build (default: main)
-#   ACCESS_VW_SRC        build the access VW from this checkout instead of cloning (default: unset)
 #   ACCESS_VW_IMG        access virtual workspace image (default: localhost/access-vw:e2e)
 #   SKIP_ACCESS_BUILD    reuse an ACCESS_VW_IMG that is already loaded (default: false)
 #   WHAT                 packages to test (default: ./test/e2e/...)
@@ -62,8 +54,6 @@ KCP_OPERATOR_REF="${KCP_OPERATOR_REF:-main}"
 KCP_OPERATOR_IMG="${KCP_OPERATOR_IMG:-ghcr.io/kcp-dev/kcp-operator:${KCP_OPERATOR_REF}}"
 MCP_VW_IMG="${MCP_VW_IMG:-localhost/mcp-vw:e2e}"
 SKIP_IMAGE_BUILD="${SKIP_IMAGE_BUILD:-false}"
-ACCESS_VW_REF="${ACCESS_VW_REF:-main}"
-ACCESS_VW_SRC="${ACCESS_VW_SRC:-}"
 ACCESS_VW_IMG="${ACCESS_VW_IMG:-localhost/access-vw:e2e}"
 SKIP_ACCESS_BUILD="${SKIP_ACCESS_BUILD:-false}"
 CERT_MANAGER_VERSION="${CERT_MANAGER_VERSION:-v1.20.2}"
@@ -218,38 +208,19 @@ load_image() {
 	kind load docker-image "${image}" --name "${KIND_CLUSTER_NAME}"
 }
 
+# Both images build from the monorepo root: the shared Dockerfile there holds
+# one image target per component, so the access VW is always tested at the
+# same revision as this server.
 if [[ "${SKIP_IMAGE_BUILD}" != "true" ]]; then
 	echo "Building ${MCP_VW_IMG}..."
-	docker build --tag "${MCP_VW_IMG}" "${REPO_ROOT}"
+	docker build --target mcp-vw --tag "${MCP_VW_IMG}" "${REPO_ROOT}/.."
 fi
 
 load_image "${MCP_VW_IMG}"
 
-# The access virtual workspace. ACCESS_VW_SRC exists because the two repositories are usually
-# checked out side by side: pointing at a local tree makes it possible to test a change to the
-# access VW against this server before it is pushed anywhere.
 if [[ "${SKIP_ACCESS_BUILD}" != "true" ]]; then
-	if [[ -n "${ACCESS_VW_SRC}" ]]; then
-		ACCESS_DIR="$(realpath "${ACCESS_VW_SRC}")"
-		echo "Building ${ACCESS_VW_IMG} from ${ACCESS_DIR}..."
-	else
-		ACCESS_DIR="${DATA_DIR}/contrib-access-virtual-workspace"
-
-		if [[ -d "${ACCESS_DIR}/.git" ]]; then
-			echo "Updating the access virtual workspace checkout to ${ACCESS_VW_REF}..."
-			git -C "${ACCESS_DIR}" fetch --depth 1 origin "${ACCESS_VW_REF}"
-			git -C "${ACCESS_DIR}" checkout --quiet FETCH_HEAD
-		else
-			echo "Cloning the access virtual workspace at ${ACCESS_VW_REF}..."
-			git clone --quiet --depth 1 --branch "${ACCESS_VW_REF}" \
-				https://github.com/kcp-dev/contrib-access-virtual-workspace "${ACCESS_DIR}"
-		fi
-
-		echo "The access virtual workspace is at $(git -C "${ACCESS_DIR}" rev-parse --short HEAD)."
-		echo "Building ${ACCESS_VW_IMG}..."
-	fi
-
-	docker build --tag "${ACCESS_VW_IMG}" "${ACCESS_DIR}"
+	echo "Building ${ACCESS_VW_IMG}..."
+	docker build --target access-vw --tag "${ACCESS_VW_IMG}" "${REPO_ROOT}/.."
 fi
 
 load_image "${ACCESS_VW_IMG}"

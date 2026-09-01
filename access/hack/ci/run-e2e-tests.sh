@@ -193,7 +193,9 @@ kubectl --namespace kcp-operator-system rollout status deployment/kcp-operator-c
 
 if [[ "${SKIP_IMAGE_BUILD}" != "true" ]]; then
 	echo "Building ${ACCESS_VW_IMG}..."
-	docker build --tag "${ACCESS_VW_IMG}" "${REPO_ROOT}"
+	# The build context is the monorepo root: the shared Dockerfile there
+	# holds one image target per component.
+	docker build --target access-vw --tag "${ACCESS_VW_IMG}" "${REPO_ROOT}/.."
 fi
 
 if [[ "${USE_EXISTING_CLUSTER}" != "true" ]]; then
