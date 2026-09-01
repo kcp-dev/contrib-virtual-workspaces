@@ -23,7 +23,7 @@ import (
 
 	"github.com/spf13/pflag"
 
-	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/toolsets"
+	"github.com/kcp-dev/contrib-virtual-workspaces/mcp/pkg/toolsets"
 
 	genericoptions "k8s.io/apiserver/pkg/server/options"
 	kubeoptions "k8s.io/kubernetes/pkg/kubeapiserver/options"

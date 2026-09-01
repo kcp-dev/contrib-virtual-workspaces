@@ -42,8 +42,8 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
 
-	ephemeralv1alpha1 "github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/pkg/apis/ephemeral/v1alpha1"
-	"github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/pkg/endpointslice"
+	ephemeralv1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/pkg/apis/ephemeral/v1alpha1"
+	"github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/pkg/endpointslice"
 )
 
 func main() {

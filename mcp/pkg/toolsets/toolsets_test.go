@@ -26,8 +26,8 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/tools"
-	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/tools/core"
+	"github.com/kcp-dev/contrib-virtual-workspaces/mcp/pkg/tools"
+	"github.com/kcp-dev/contrib-virtual-workspaces/mcp/pkg/tools/core"
 )
 
 type fakeScope struct {

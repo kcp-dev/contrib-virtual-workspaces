@@ -27,11 +27,11 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/tools"
-	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/tools/admin"
-	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/tools/apis"
-	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/tools/core"
-	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/tools/write"
+	"github.com/kcp-dev/contrib-virtual-workspaces/mcp/pkg/tools"
+	"github.com/kcp-dev/contrib-virtual-workspaces/mcp/pkg/tools/admin"
+	"github.com/kcp-dev/contrib-virtual-workspaces/mcp/pkg/tools/apis"
+	"github.com/kcp-dev/contrib-virtual-workspaces/mcp/pkg/tools/core"
+	"github.com/kcp-dev/contrib-virtual-workspaces/mcp/pkg/tools/write"
 )
 
 // Toolset is a named group of MCP tools that is enabled or disabled as a unit.

@@ -25,7 +25,7 @@ import (
 	"testing"
 	"time"
 
-	accessv1alpha1 "github.com/kcp-dev/contrib-access-virtual-workspace/sdk/apis/access/v1alpha1"
+	accessv1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/access/sdk/apis/access/v1alpha1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apiserver/pkg/authentication/user"

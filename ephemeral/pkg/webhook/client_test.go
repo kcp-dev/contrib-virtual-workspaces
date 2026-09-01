@@ -25,8 +25,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	ephemeralv1alpha1 "github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/pkg/apis/ephemeral/v1alpha1"
-	"github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/pkg/config"
+	ephemeralv1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/pkg/apis/ephemeral/v1alpha1"
+	"github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/pkg/config"
 )
 
 func TestDenyPrivateAddresses(t *testing.T) {

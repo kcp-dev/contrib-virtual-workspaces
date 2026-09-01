@@ -29,7 +29,7 @@ import (
 
 	"github.com/kcp-dev/logicalcluster/v3"
 
-	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/graph"
+	"github.com/kcp-dev/contrib-virtual-workspaces/access/pkg/graph"
 )
 
 const defaultResyncPeriod = 10 * time.Minute

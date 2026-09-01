@@ -45,7 +45,7 @@ import (
 	corev1alpha1 "github.com/kcp-dev/sdk/apis/core/v1alpha1"
 	tenancyv1alpha1 "github.com/kcp-dev/sdk/apis/tenancy/v1alpha1"
 
-	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/graph"
+	"github.com/kcp-dev/contrib-virtual-workspaces/access/pkg/graph"
 )
 
 func (p *Provider) runMulticluster(ctx context.Context, cfg *rest.Config, g *graph.Graph) error {

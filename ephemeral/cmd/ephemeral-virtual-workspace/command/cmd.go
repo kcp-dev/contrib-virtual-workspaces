@@ -42,12 +42,12 @@ import (
 	kcpinformers "github.com/kcp-dev/sdk/client/informers/externalversions"
 	virtualrootapiserver "github.com/kcp-dev/virtual-workspace-framework/pkg/rootapiserver"
 
-	"github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/cmd/ephemeral-virtual-workspace/options"
-	"github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/pkg/cacheclient"
-	"github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/pkg/config"
-	ephemeralauthorizer "github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/pkg/virtualworkspace/authorizer"
-	"github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/pkg/virtualworkspace/builder"
-	"github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/pkg/webhook"
+	"github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/cmd/ephemeral-virtual-workspace/options"
+	"github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/pkg/cacheclient"
+	"github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/pkg/config"
+	ephemeralauthorizer "github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/pkg/virtualworkspace/authorizer"
+	"github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/pkg/virtualworkspace/builder"
+	"github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/pkg/webhook"
 )
 
 const informerResync = 10 * time.Minute

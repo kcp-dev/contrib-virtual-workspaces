@@ -24,8 +24,8 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
 
-	"github.com/kcp-dev/contrib-mcp-virtual-workspace/internal/access"
-	"github.com/kcp-dev/contrib-mcp-virtual-workspace/internal/mcp"
+	"github.com/kcp-dev/contrib-virtual-workspaces/mcp/internal/access"
+	"github.com/kcp-dev/contrib-virtual-workspaces/mcp/internal/mcp"
 )
 
 var serveCmd = &cobra.Command{

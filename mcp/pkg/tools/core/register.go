@@ -23,7 +23,7 @@ package core
 import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/tools"
+	"github.com/kcp-dev/contrib-virtual-workspaces/mcp/pkg/tools"
 )
 
 // Register adds the core toolset to server, bound to scope.

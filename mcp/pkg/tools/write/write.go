@@ -31,7 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/yaml"
 
-	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/tools"
+	"github.com/kcp-dev/contrib-virtual-workspaces/mcp/pkg/tools"
 )
 
 // CreateResourceInput is the input for create_resource.

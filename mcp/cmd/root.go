@@ -24,7 +24,7 @@ import (
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"github.com/kcp-dev/contrib-mcp-virtual-workspace/internal/config"
+	"github.com/kcp-dev/contrib-virtual-workspaces/mcp/internal/config"
 )
 
 var serverCfg config.ServerConfig

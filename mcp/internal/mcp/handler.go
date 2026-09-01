@@ -26,7 +26,7 @@ import (
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/klog/v2"
 
-	"github.com/kcp-dev/contrib-mcp-virtual-workspace/internal/access"
+	"github.com/kcp-dev/contrib-virtual-workspaces/mcp/internal/access"
 )
 
 // NewHandler returns the MCP handler.

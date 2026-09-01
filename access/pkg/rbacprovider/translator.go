@@ -27,7 +27,7 @@ import (
 
 	rbacv1 "k8s.io/api/rbac/v1"
 
-	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/graph"
+	"github.com/kcp-dev/contrib-virtual-workspaces/access/pkg/graph"
 )
 
 type bindingKey struct {

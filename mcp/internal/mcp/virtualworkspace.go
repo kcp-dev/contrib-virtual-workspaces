@@ -29,7 +29,7 @@ import (
 	frameworkhandler "github.com/kcp-dev/virtual-workspace-framework/pkg/handler"
 	"github.com/kcp-dev/virtual-workspace-framework/pkg/rootapiserver"
 
-	"github.com/kcp-dev/contrib-mcp-virtual-workspace/internal/access"
+	"github.com/kcp-dev/contrib-virtual-workspaces/mcp/internal/access"
 )
 
 // VirtualWorkspaceName is the name this virtual workspace is registered under.

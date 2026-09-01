@@ -1,22 +1,45 @@
-module github.com/kcp-dev/contrib-mcp-virtual-workspace
+module github.com/kcp-dev/contrib-virtual-workspaces
 
 go 1.26.4
 
 require (
-	github.com/kcp-dev/contrib-access-virtual-workspace v0.0.2
+	github.com/go-logr/logr v1.4.4
+	github.com/kcp-dev/logicalcluster/v3 v3.0.5
+	github.com/kcp-dev/multicluster-provider v0.8.0
+	github.com/kcp-dev/sdk v0.32.3
 	github.com/kcp-dev/virtual-workspace-framework v0.32.3
-	github.com/modelcontextprotocol/go-sdk v1.7.0
-	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	k8s.io/api v0.36.3
 	k8s.io/apimachinery v0.36.3
 	k8s.io/apiserver v0.36.3
 	k8s.io/client-go v0.36.3
 	k8s.io/klog/v2 v2.140.0
-	k8s.io/kubernetes v1.37.0-alpha.0
+	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad
+	k8s.io/kubernetes v1.35.1
 	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3
 	sigs.k8s.io/controller-runtime v0.24.1
+	sigs.k8s.io/multicluster-runtime v0.24.1
 	sigs.k8s.io/yaml v1.6.0
+)
+
+require (
+	github.com/google/jsonschema-go v0.4.3 // indirect
+	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
+	github.com/moby/spdystream v0.5.1 // indirect
+	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f // indirect
+	github.com/segmentio/asm v1.1.3 // indirect
+	github.com/segmentio/encoding v0.5.4 // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
+	k8s.io/cloud-provider v0.0.0 // indirect
+	k8s.io/endpointslice v0.0.0 // indirect
+	k8s.io/externaljwt v0.0.0 // indirect
+	k8s.io/kube-aggregator v0.0.0 // indirect
+	k8s.io/kube-controller-manager v0.0.0 // indirect
+	k8s.io/kube-proxy v0.0.0 // indirect
+	k8s.io/kube-scheduler v0.0.0 // indirect
+	k8s.io/kubectl v0.0.0 // indirect
+	k8s.io/metrics v0.0.0 // indirect
 )
 
 require (
@@ -39,7 +62,6 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.1 // indirect
-	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/jsonpointer v1.0.0 // indirect
 	github.com/go-openapi/jsonreference v1.0.0 // indirect
@@ -60,19 +82,17 @@ require (
 	github.com/google/cel-go v0.28.0 // indirect
 	github.com/google/gnostic-models v0.7.1 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
-	github.com/google/jsonschema-go v0.4.3 // indirect
-	github.com/google/uuid v1.6.0 // indirect
+	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.1.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.7 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/kcp-dev/apimachinery/v2 v2.32.3 // indirect
-	github.com/kcp-dev/client-go v0.32.3 // indirect
-	github.com/kcp-dev/logicalcluster/v3 v3.0.5 // indirect
-	github.com/kcp-dev/sdk v0.32.3 // indirect
+	github.com/kcp-dev/client-go v0.32.3
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/moby/sys/mountinfo v0.7.2 // indirect
+	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
@@ -86,10 +106,9 @@ require (
 	github.com/prometheus/common v0.67.5 // indirect
 	github.com/prometheus/procfs v0.20.1 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
-	github.com/segmentio/asm v1.1.3 // indirect
-	github.com/segmentio/encoding v0.5.4 // indirect
+	github.com/spf13/cobra v1.10.2
+	github.com/stretchr/testify v1.11.1
 	github.com/x448/float16 v0.8.4 // indirect
-	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.etcd.io/etcd/api/v3 v3.6.8 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.6.8 // indirect
 	go.etcd.io/etcd/client/v3 v3.6.8 // indirect
@@ -126,15 +145,14 @@ require (
 	gopkg.in/go-jose/go-jose.v2 v2.6.3 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
-	k8s.io/apiextensions-apiserver v0.36.0 // indirect
+	k8s.io/apiextensions-apiserver v0.36.3
 	k8s.io/cluster-bootstrap v0.0.0 // indirect
-	k8s.io/component-base v0.36.3 // indirect
+	k8s.io/component-base v0.36.3
 	k8s.io/component-helpers v0.0.0 // indirect
 	k8s.io/controller-manager v0.0.0 // indirect
 	k8s.io/csi-translation-lib v0.0.0 // indirect
 	k8s.io/dynamic-resource-allocation v0.0.0 // indirect
 	k8s.io/kms v0.36.3 // indirect
-	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
 	k8s.io/kubelet v0.0.0 // indirect
 	k8s.io/mount-utils v0.0.0 // indirect
 	k8s.io/pod-security-admission v0.0.0 // indirect
@@ -142,13 +160,17 @@ require (
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.34.0 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
-	sigs.k8s.io/structured-merge-diff/v6 v6.4.1 // indirect
+	sigs.k8s.io/structured-merge-diff/v6 v6.4.1
 )
 
-// virtual-workspace-framework builds against kcp's fork of Kubernetes, and Go
-// does not propagate replace directives across module boundaries, so this block
-// mirrors the framework's. Keep the pin in lockstep — see
-// hack/verify-fork-pin.sh.
+// github.com/kcp-dev/virtual-workspace-framework builds against kcp's fork of
+// Kubernetes: it relies on the fork's cluster-aware apiserver (for example
+// k8s.io/apiserver/pkg/endpoints/request.Cluster and WithCluster, which vanilla
+// Kubernetes does not have). Go does not propagate replace directives across
+// module boundaries, so this module must mirror the framework's replace block.
+//
+// Keep this pin in lockstep with the virtual-workspace-framework release in the
+// require block above — see hack/verify-fork-pin.sh.
 replace (
 	k8s.io/api => github.com/kcp-dev/kubernetes/staging/src/k8s.io/api v0.0.0-20260602065202-e006560fc76a
 	k8s.io/apiextensions-apiserver => github.com/kcp-dev/kubernetes/staging/src/k8s.io/apiextensions-apiserver v0.0.0-20260602065202-e006560fc76a

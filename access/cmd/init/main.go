@@ -42,7 +42,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
 
-	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/bootstrap"
+	"github.com/kcp-dev/contrib-virtual-workspaces/access/pkg/bootstrap"
 )
 
 func main() {

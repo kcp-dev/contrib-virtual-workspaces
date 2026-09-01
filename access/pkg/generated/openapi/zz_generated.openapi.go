@@ -19,10 +19,10 @@ import (
 
 func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
 	return map[string]common.OpenAPIDefinition{
-		"github.com/kcp-dev/contrib-access-virtual-workspace/sdk/apis/access/v1alpha1.AccessEndpointSlice":           schema_sdk_apis_access_v1alpha1_AccessEndpointSlice(ref),
-		"github.com/kcp-dev/contrib-access-virtual-workspace/sdk/apis/access/v1alpha1.SelfClusterAccessReview":       schema_sdk_apis_access_v1alpha1_SelfClusterAccessReview(ref),
-		"github.com/kcp-dev/contrib-access-virtual-workspace/sdk/apis/access/v1alpha1.SelfClusterAccessReviewList":   schema_sdk_apis_access_v1alpha1_SelfClusterAccessReviewList(ref),
-		"github.com/kcp-dev/contrib-access-virtual-workspace/sdk/apis/access/v1alpha1.SelfClusterAccessReviewStatus": schema_sdk_apis_access_v1alpha1_SelfClusterAccessReviewStatus(ref),
+		"github.com/kcp-dev/contrib-virtual-workspaces/access/sdk/apis/access/v1alpha1.AccessEndpointSlice":           schema_sdk_apis_access_v1alpha1_AccessEndpointSlice(ref),
+		"github.com/kcp-dev/contrib-virtual-workspaces/access/sdk/apis/access/v1alpha1.SelfClusterAccessReview":       schema_sdk_apis_access_v1alpha1_SelfClusterAccessReview(ref),
+		"github.com/kcp-dev/contrib-virtual-workspaces/access/sdk/apis/access/v1alpha1.SelfClusterAccessReviewList":   schema_sdk_apis_access_v1alpha1_SelfClusterAccessReviewList(ref),
+		"github.com/kcp-dev/contrib-virtual-workspaces/access/sdk/apis/access/v1alpha1.SelfClusterAccessReviewStatus": schema_sdk_apis_access_v1alpha1_SelfClusterAccessReviewStatus(ref),
 		v1.APIGroup{}.OpenAPIModelName():                  schema_pkg_apis_meta_v1_APIGroup(ref),
 		v1.APIGroupList{}.OpenAPIModelName():              schema_pkg_apis_meta_v1_APIGroupList(ref),
 		v1.APIResource{}.OpenAPIModelName():               schema_pkg_apis_meta_v1_APIResource(ref),
@@ -141,14 +141,14 @@ func schema_sdk_apis_access_v1alpha1_SelfClusterAccessReview(ref common.Referenc
 						SchemaProps: spec.SchemaProps{
 							Description: "Status carries the result of the review.",
 							Default:     map[string]interface{}{},
-							Ref:         ref("github.com/kcp-dev/contrib-access-virtual-workspace/sdk/apis/access/v1alpha1.SelfClusterAccessReviewStatus"),
+							Ref:         ref("github.com/kcp-dev/contrib-virtual-workspaces/access/sdk/apis/access/v1alpha1.SelfClusterAccessReviewStatus"),
 						},
 					},
 				},
 			},
 		},
 		Dependencies: []string{
-			"github.com/kcp-dev/contrib-access-virtual-workspace/sdk/apis/access/v1alpha1.SelfClusterAccessReviewStatus", v1.ObjectMeta{}.OpenAPIModelName()},
+			"github.com/kcp-dev/contrib-virtual-workspaces/access/sdk/apis/access/v1alpha1.SelfClusterAccessReviewStatus", v1.ObjectMeta{}.OpenAPIModelName()},
 	}
 }
 
@@ -186,7 +186,7 @@ func schema_sdk_apis_access_v1alpha1_SelfClusterAccessReviewList(ref common.Refe
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
 										Default: map[string]interface{}{},
-										Ref:     ref("github.com/kcp-dev/contrib-access-virtual-workspace/sdk/apis/access/v1alpha1.SelfClusterAccessReview"),
+										Ref:     ref("github.com/kcp-dev/contrib-virtual-workspaces/access/sdk/apis/access/v1alpha1.SelfClusterAccessReview"),
 									},
 								},
 							},
@@ -197,7 +197,7 @@ func schema_sdk_apis_access_v1alpha1_SelfClusterAccessReviewList(ref common.Refe
 			},
 		},
 		Dependencies: []string{
-			"github.com/kcp-dev/contrib-access-virtual-workspace/sdk/apis/access/v1alpha1.SelfClusterAccessReview", v1.ListMeta{}.OpenAPIModelName()},
+			"github.com/kcp-dev/contrib-virtual-workspaces/access/sdk/apis/access/v1alpha1.SelfClusterAccessReview", v1.ListMeta{}.OpenAPIModelName()},
 	}
 }
 
@@ -216,7 +216,7 @@ func schema_sdk_apis_access_v1alpha1_SelfClusterAccessReviewStatus(ref common.Re
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
 										Default: map[string]interface{}{},
-										Ref:     ref("github.com/kcp-dev/contrib-access-virtual-workspace/sdk/apis/access/v1alpha1.AccessEndpointSlice"),
+										Ref:     ref("github.com/kcp-dev/contrib-virtual-workspaces/access/sdk/apis/access/v1alpha1.AccessEndpointSlice"),
 									},
 								},
 							},
@@ -226,7 +226,7 @@ func schema_sdk_apis_access_v1alpha1_SelfClusterAccessReviewStatus(ref common.Re
 			},
 		},
 		Dependencies: []string{
-			"github.com/kcp-dev/contrib-access-virtual-workspace/sdk/apis/access/v1alpha1.AccessEndpointSlice"},
+			"github.com/kcp-dev/contrib-virtual-workspaces/access/sdk/apis/access/v1alpha1.AccessEndpointSlice"},
 	}
 }
 

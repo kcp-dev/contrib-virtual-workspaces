@@ -25,8 +25,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
-	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/accessprovider"
-	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/graph"
+	"github.com/kcp-dev/contrib-virtual-workspaces/access/pkg/accessprovider"
+	"github.com/kcp-dev/contrib-virtual-workspaces/access/pkg/graph"
 )
 
 var _ accessprovider.AccessProvider = (*Provider)(nil)

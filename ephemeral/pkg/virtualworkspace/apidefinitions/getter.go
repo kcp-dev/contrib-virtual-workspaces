@@ -43,10 +43,10 @@ import (
 	"github.com/kcp-dev/virtual-workspace-framework/pkg/dynamic/apiserver"
 	dynamiccontext "github.com/kcp-dev/virtual-workspace-framework/pkg/dynamic/context"
 
-	"github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/pkg/config"
-	"github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/pkg/registry"
-	"github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/pkg/virtualworkspace/apidomainkey"
-	"github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/pkg/webhook"
+	"github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/pkg/config"
+	"github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/pkg/registry"
+	"github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/pkg/virtualworkspace/apidomainkey"
+	"github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/pkg/webhook"
 )
 
 var _ apidefinition.APIDefinitionSetGetter = (*Getter)(nil)

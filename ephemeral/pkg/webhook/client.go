@@ -34,8 +34,8 @@ import (
 
 	"k8s.io/client-go/transport"
 
-	ephemeralv1alpha1 "github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/pkg/apis/ephemeral/v1alpha1"
-	"github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/pkg/config"
+	ephemeralv1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/pkg/apis/ephemeral/v1alpha1"
+	"github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/pkg/config"
 )
 
 // DefaultMaxResponseBytes bounds how large a webhook response body may be. A

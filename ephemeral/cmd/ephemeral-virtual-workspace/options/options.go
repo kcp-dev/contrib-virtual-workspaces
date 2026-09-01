@@ -33,7 +33,7 @@ import (
 
 	frameworkoptions "github.com/kcp-dev/virtual-workspace-framework/pkg/options"
 
-	"github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/pkg/virtualworkspace/builder"
+	"github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/pkg/virtualworkspace/builder"
 )
 
 // DefaultRootPathPrefix matches kcp's, and must, because the URL this server

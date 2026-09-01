@@ -49,7 +49,7 @@ import (
 
 	"github.com/kcp-dev/logicalcluster/v3"
 
-	ephemeralv1alpha1 "github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/pkg/apis/ephemeral/v1alpha1"
+	ephemeralv1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/pkg/apis/ephemeral/v1alpha1"
 )
 
 // GroupVersionResource of the slices this controller owns.

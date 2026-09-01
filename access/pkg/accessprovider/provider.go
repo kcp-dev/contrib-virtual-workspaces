@@ -22,7 +22,7 @@ package accessprovider
 import (
 	"context"
 
-	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/graph"
+	"github.com/kcp-dev/contrib-virtual-workspaces/access/pkg/graph"
 )
 
 // AccessProvider populates an access graph from some authorization source.

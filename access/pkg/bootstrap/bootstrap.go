@@ -51,8 +51,8 @@ import (
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/yaml"
 
-	configapiexport "github.com/kcp-dev/contrib-access-virtual-workspace/config/apiexport"
-	configcontroller "github.com/kcp-dev/contrib-access-virtual-workspace/config/controller"
+	configapiexport "github.com/kcp-dev/contrib-virtual-workspaces/access/config/apiexport"
+	configcontroller "github.com/kcp-dev/contrib-virtual-workspaces/access/config/controller"
 )
 
 // APIExportName is the APIExport, and the APIExportEndpointSlice, this

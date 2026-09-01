@@ -24,7 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/tools"
+	"github.com/kcp-dev/contrib-virtual-workspaces/mcp/pkg/tools"
 )
 
 var apiConversionGVR = schema.GroupVersionResource{

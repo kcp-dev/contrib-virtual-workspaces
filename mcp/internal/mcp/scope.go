@@ -24,8 +24,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
-	"github.com/kcp-dev/contrib-mcp-virtual-workspace/internal/access"
-	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/tools"
+	"github.com/kcp-dev/contrib-virtual-workspaces/mcp/internal/access"
+	"github.com/kcp-dev/contrib-virtual-workspaces/mcp/pkg/tools"
 )
 
 // ClientFactory produces per-workspace clients that act as the caller through

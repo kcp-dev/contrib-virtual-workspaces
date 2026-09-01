@@ -26,7 +26,7 @@ import (
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/klog/v2"
 
-	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/server"
+	"github.com/kcp-dev/contrib-virtual-workspaces/access/pkg/server"
 )
 
 func main() {

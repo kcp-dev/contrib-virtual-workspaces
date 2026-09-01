@@ -39,8 +39,8 @@ import (
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/structured-merge-diff/v6/fieldpath"
 
-	ephemeralv1alpha1 "github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/pkg/apis/ephemeral/v1alpha1"
-	"github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/pkg/webhook"
+	ephemeralv1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/pkg/apis/ephemeral/v1alpha1"
+	"github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/pkg/webhook"
 )
 
 // The storage implements exactly these interfaces and no more. Discovery in the

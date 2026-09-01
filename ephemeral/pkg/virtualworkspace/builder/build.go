@@ -36,11 +36,11 @@ import (
 	dynamiccontext "github.com/kcp-dev/virtual-workspace-framework/pkg/dynamic/context"
 	"github.com/kcp-dev/virtual-workspace-framework/pkg/rootapiserver"
 
-	"github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/pkg/config"
-	"github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/pkg/virtualworkspace/apidefinitions"
-	"github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/pkg/virtualworkspace/apidomainkey"
-	ephemeralauthorizer "github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/pkg/virtualworkspace/authorizer"
-	"github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/pkg/webhook"
+	"github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/pkg/config"
+	"github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/pkg/virtualworkspace/apidefinitions"
+	"github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/pkg/virtualworkspace/apidomainkey"
+	ephemeralauthorizer "github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/pkg/virtualworkspace/authorizer"
+	"github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/pkg/webhook"
 )
 
 // DefaultVirtualWorkspaceName is the path segment this virtual workspace is

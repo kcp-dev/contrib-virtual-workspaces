@@ -16,7 +16,7 @@ limitations under the License.
 
 package main
 
-import "github.com/kcp-dev/contrib-mcp-virtual-workspace/cmd"
+import "github.com/kcp-dev/contrib-virtual-workspaces/mcp/cmd"
 
 func main() {
 	cmd.Execute()

@@ -29,8 +29,8 @@ import (
 	"k8s.io/apiserver/pkg/registry/rest"
 	"k8s.io/klog/v2"
 
-	accessv1alpha1 "github.com/kcp-dev/contrib-access-virtual-workspace/sdk/apis/access/v1alpha1"
-	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/graph"
+	accessv1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/access/sdk/apis/access/v1alpha1"
+	"github.com/kcp-dev/contrib-virtual-workspaces/access/pkg/graph"
 )
 
 type REST struct {

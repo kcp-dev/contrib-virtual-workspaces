@@ -43,12 +43,12 @@ import (
 
 	"github.com/kcp-dev/virtual-workspace-framework/pkg/rootapiserver"
 
-	generatedopenapi "github.com/kcp-dev/contrib-access-virtual-workspace/pkg/generated/openapi"
-	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/graph"
-	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/rbacprovider"
-	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/virtual"
-	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/virtual/scar"
-	accessv1alpha1 "github.com/kcp-dev/contrib-access-virtual-workspace/sdk/apis/access/v1alpha1"
+	generatedopenapi "github.com/kcp-dev/contrib-virtual-workspaces/access/pkg/generated/openapi"
+	"github.com/kcp-dev/contrib-virtual-workspaces/access/pkg/graph"
+	"github.com/kcp-dev/contrib-virtual-workspaces/access/pkg/rbacprovider"
+	"github.com/kcp-dev/contrib-virtual-workspaces/access/pkg/virtual"
+	"github.com/kcp-dev/contrib-virtual-workspaces/access/pkg/virtual/scar"
+	accessv1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/access/sdk/apis/access/v1alpha1"
 )
 
 const debugGraphPath = "/debug/graph"

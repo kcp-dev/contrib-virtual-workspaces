@@ -36,7 +36,7 @@ import (
 	"github.com/kcp-dev/sdk/apis/core"
 	apisv1alpha2listers "github.com/kcp-dev/sdk/client/listers/apis/v1alpha2"
 
-	"github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/pkg/virtualworkspace/apidomainkey"
+	"github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/pkg/virtualworkspace/apidomainkey"
 )
 
 // ExportChecker reports whether this virtual workspace serves anything for an

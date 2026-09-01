@@ -20,7 +20,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/kcp-dev/contrib-access-virtual-workspace/pkg/graph"
+	"github.com/kcp-dev/contrib-virtual-workspaces/access/pkg/graph"
 )
 
 func endpoint(name string) string {

@@ -22,7 +22,7 @@ import (
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/component-base/cli"
 
-	"github.com/kcp-dev/contrib-virtual-ephemeral-resources-virtual-workspace/cmd/ephemeral-virtual-workspace/command"
+	"github.com/kcp-dev/contrib-virtual-workspaces/ephemeral/cmd/ephemeral-virtual-workspace/command"
 )
 
 func main() {

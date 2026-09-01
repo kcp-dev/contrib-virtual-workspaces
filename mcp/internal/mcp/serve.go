@@ -33,7 +33,7 @@ import (
 
 	"github.com/kcp-dev/virtual-workspace-framework/pkg/rootapiserver"
 
-	"github.com/kcp-dev/contrib-mcp-virtual-workspace/internal/access"
+	"github.com/kcp-dev/contrib-virtual-workspaces/mcp/internal/access"
 )
 
 // ServeOptions configures the HTTP surface.

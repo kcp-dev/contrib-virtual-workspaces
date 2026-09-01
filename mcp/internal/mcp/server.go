@@ -19,7 +19,7 @@ package mcp
 import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/kcp-dev/contrib-mcp-virtual-workspace/pkg/toolsets"
+	"github.com/kcp-dev/contrib-virtual-workspaces/mcp/pkg/toolsets"
 )
 
 // NewServer builds an MCP server exposing the named toolsets, bound to scope.

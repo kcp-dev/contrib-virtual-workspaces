@@ -47,7 +47,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/rest"
 
-	accessv1alpha1 "github.com/kcp-dev/contrib-access-virtual-workspace/sdk/apis/access/v1alpha1"
+	accessv1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/access/sdk/apis/access/v1alpha1"
 )
 
 const (
