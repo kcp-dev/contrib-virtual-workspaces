@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mcp-virtual-workspace.name" . }}
+  labels:
+    {{- include "mcp-virtual-workspace.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "mcp-virtual-workspace.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: https
+      port: {{ .Values.securePort }}
+      targetPort: https

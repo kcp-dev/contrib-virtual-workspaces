@@ -1,0 +1,62 @@
+image:
+  repository: ghcr.io/kcp-dev/contrib-mcp-virtual-workspace
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Single replica is not a constraint of this component — it holds no state
+# beyond a cache — but scaling it only helps once the access virtual workspace
+# and kcp behind it are also scaled.
+replicaCount: 1
+
+securePort: 9444
+
+# Toolsets to expose (core, apis, admin, write). Empty uses the binary's
+# default, core only. Enforced server-side: a toolset not listed here does not
+# exist for any caller.
+toolsets: []
+
+access:
+  # Address of the access virtual workspace, through the front-proxy or direct.
+  url: ""
+  # Secret with key ca.crt verifying its serving certificate. Empty uses the
+  # system pool.
+  caSecret: ""
+  cacheTTL: 30s
+
+kcp:
+  # Secret with key kubeconfig for this server's own identity, which must hold
+  # impersonate on users, groups and userextras.
+  kubeconfigSecret: mcp-virtual-workspace-kubeconfig
+
+tls:
+  # kubernetes.io/tls secret for the serving certificate. The front-proxy must
+  # be able to verify it via its backend_server_ca.
+  secret: mcp-virtual-workspace-server
+
+# Identity for callers arriving through kcp's front-proxy. allowedNames pins
+# which client certificate may assert identity headers; without it anything
+# holding a certificate from this CA can claim to be any user.
+requestHeader:
+  caSecret: mcp-virtual-workspace-requestheader-ca
+  allowedNames:
+    - kcp-front-proxy
+
+# Identity for callers reaching the service directly with a bearer token.
+# Prefer configFile — the same AuthenticationConfiguration content kcp uses, so
+# usernames cannot drift — over restating the oidc flags here.
+authentication:
+  configMap: ""
+  oidc:
+    issuerURL: ""
+    clientID: ""
+    usernameClaim: ""
+    usernamePrefix: ""
+    groupsClaim: ""
+    groupsPrefix: ""
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi

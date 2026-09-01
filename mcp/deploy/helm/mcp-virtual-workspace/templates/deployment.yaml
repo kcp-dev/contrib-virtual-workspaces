@@ -1,0 +1,122 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mcp-virtual-workspace.name" . }}
+  labels:
+    {{- include "mcp-virtual-workspace.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "mcp-virtual-workspace.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mcp-virtual-workspace.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "mcp-virtual-workspace.name" . }}
+      containers:
+        - name: mcp-virtual-workspace
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --secure-port={{ .Values.securePort }}
+            - --tls-cert-file=/etc/mcp-vw/tls/tls.crt
+            - --tls-private-key-file=/etc/mcp-vw/tls/tls.key
+            - --access-url={{ required "access.url is required" .Values.access.url }}
+            - --access-cache-ttl={{ .Values.access.cacheTTL }}
+            {{- if .Values.access.caSecret }}
+            - --access-ca-file=/etc/mcp-vw/access-ca/ca.crt
+            {{- end }}
+            - --kubeconfig=/etc/mcp-vw/kcp/kubeconfig
+            {{- with .Values.toolsets }}
+            - --toolsets={{ join "," . }}
+            {{- end }}
+            {{- if .Values.requestHeader.caSecret }}
+            - --requestheader-client-ca-file=/etc/mcp-vw/requestheader-ca/ca.crt
+            {{- with .Values.requestHeader.allowedNames }}
+            - --requestheader-allowed-names={{ join "," . }}
+            {{- end }}
+            - --requestheader-username-headers=X-Remote-User
+            - --requestheader-group-headers=X-Remote-Group
+            - --requestheader-extra-headers-prefix=X-Remote-Extra-
+            {{- end }}
+            {{- if .Values.authentication.configMap }}
+            - --authentication-config=/etc/mcp-vw/authentication/config.yaml
+            {{- else if .Values.authentication.oidc.issuerURL }}
+            - --oidc-issuer-url={{ .Values.authentication.oidc.issuerURL }}
+            - --oidc-client-id={{ .Values.authentication.oidc.clientID }}
+            {{- with .Values.authentication.oidc.usernameClaim }}
+            - --oidc-username-claim={{ . }}
+            {{- end }}
+            {{- with .Values.authentication.oidc.usernamePrefix }}
+            - --oidc-username-prefix={{ . }}
+            {{- end }}
+            {{- with .Values.authentication.oidc.groupsClaim }}
+            - --oidc-groups-claim={{ . }}
+            {{- end }}
+            {{- with .Values.authentication.oidc.groupsPrefix }}
+            - --oidc-groups-prefix={{ . }}
+            {{- end }}
+            {{- end }}
+          ports:
+            - name: https
+              containerPort: {{ .Values.securePort }}
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: https
+              scheme: HTTPS
+            initialDelaySeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: https
+              scheme: HTTPS
+            initialDelaySeconds: 5
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/mcp-vw/tls
+              readOnly: true
+            - name: kcp-kubeconfig
+              mountPath: /etc/mcp-vw/kcp
+              readOnly: true
+            {{- if .Values.access.caSecret }}
+            - name: access-ca
+              mountPath: /etc/mcp-vw/access-ca
+              readOnly: true
+            {{- end }}
+            {{- if .Values.requestHeader.caSecret }}
+            - name: requestheader-ca
+              mountPath: /etc/mcp-vw/requestheader-ca
+              readOnly: true
+            {{- end }}
+            {{- if .Values.authentication.configMap }}
+            - name: authentication-config
+              mountPath: /etc/mcp-vw/authentication
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ .Values.tls.secret }}
+        - name: kcp-kubeconfig
+          secret:
+            secretName: {{ .Values.kcp.kubeconfigSecret }}
+        {{- if .Values.access.caSecret }}
+        - name: access-ca
+          secret:
+            secretName: {{ .Values.access.caSecret }}
+        {{- end }}
+        {{- if .Values.requestHeader.caSecret }}
+        - name: requestheader-ca
+          secret:
+            secretName: {{ .Values.requestHeader.caSecret }}
+        {{- end }}
+        {{- if .Values.authentication.configMap }}
+        - name: authentication-config
+          configMap:
+            name: {{ .Values.authentication.configMap }}
+        {{- end }}

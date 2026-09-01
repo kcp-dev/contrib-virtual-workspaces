@@ -1,0 +1,62 @@
+# The component under test, deployed the way a user deploys it: as a kcp-operator VirtualWorkspace
+# behind the front-proxy.
+#
+# The chart in deploy/helm/ describes the same server for installations that do not run
+# kcp-operator. It is deliberately not what this test uses: the chart has to be told the serving
+# certificate, the requestheader CA and the kubeconfig by hand, so a test built on it would mostly
+# be asserting that the test's own wiring is right. Here the operator supplies all three, and what
+# is under test is whether this binary accepts what the operator generates.
+apiVersion: operator.kcp.io/v1alpha1
+kind: VirtualWorkspace
+metadata:
+  name: {{ .MCPVirtualWorkspaceName }}
+  namespace: {{ .Namespace }}
+spec:
+  # A singleton connected to the root shard. Not one instance per workspace: an agent asks "what
+  # can I work on" before it knows any workspace, so the answer has to span the fleet.
+  target:
+    rootShardRef:
+      name: root
+
+  # Where clients reach this server -- the front-proxy, not this virtual workspace's own Service.
+  external:
+    hostname: {{ .FrontProxyHostname }}
+    port: 6443
+
+  image:
+    repository: {{ .MCPImageRepository }}
+    tag: {{ .MCPImageTag }}
+
+  # Not kcp's own virtual-workspace server. Setting command also tells the operator to leave out
+  # the flags only kcp's server understands, which this binary would reject; and it is where the
+  # `serve` subcommand goes, because the operator appends only flags after it.
+  command:
+    - /mcp-virtual-workspace
+    - serve
+
+  # Holds nothing but a per-caller cache, so replicas are a scaling question rather than a
+  # correctness one. One is enough here and keeps the pod count on a single kind node sane.
+  replicas: 1
+
+  # This server's own identity, used as the base credential for every impersonated call: to the
+  # access virtual workspace to resolve the caller's workspaces, and to kcp itself for anything a
+  # tool does in one of them.
+  kubeconfigSecretRef:
+    name: mcp-vw-server-kubeconfig
+
+  extraArgs:
+    # Through the front-proxy rather than straight at the access VW's Service, because that is the
+    # topology deploy/kcp/front-proxy-mapping.yaml describes and the one where the identity headers
+    # are produced by kcp rather than by this server's own client certificate. No --access-ca-file:
+    # the CA in the kubeconfig above signed the front-proxy's serving certificate.
+    - --access-url=https://{{ .FrontProxyHostname }}:6443/services/access
+    # Far below the 30s default. The test grants access to a workspace and then asks for it, so the
+    # cache TTL is the floor on how long that takes; keeping it short is the difference between a
+    # poll loop that finishes quickly and one that looks stuck.
+    - --access-cache-ttl=5s
+    - --v=4
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi

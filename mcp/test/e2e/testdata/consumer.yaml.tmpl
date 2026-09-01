@@ -1,0 +1,73 @@
+# Applied inside kcp, in a workspace an agent should be able to work on.
+#
+# The APIBinding is what opts the workspace in: until it exists and its permission claims are
+# accepted, the access virtual workspace does not index this workspace at all, no identity resolves
+# to it, and the MCP server reports it for nobody.
+apiVersion: apis.kcp.io/v1alpha2
+kind: APIBinding
+metadata:
+  name: {{ .APIExportName }}
+spec:
+  reference:
+    export:
+      path: {{ .ControllersWorkspace }}
+      name: {{ .APIExportName }}
+  permissionClaims:
+    - group: rbac.authorization.k8s.io
+      resource: clusterrolebindings
+      verbs: [get, list, watch]
+      state: Accepted
+      selector:
+        matchAll: true
+    - group: rbac.authorization.k8s.io
+      resource: rolebindings
+      verbs: [get, list, watch]
+      state: Accepted
+      selector:
+        matchAll: true
+    - group: rbac.authorization.k8s.io
+      resource: clusterroles
+      verbs: [get, list, watch]
+      state: Accepted
+      selector:
+        matchAll: true
+    - group: rbac.authorization.k8s.io
+      resource: roles
+      verbs: [get, list, watch]
+      state: Accepted
+      selector:
+        matchAll: true
+
+---
+# deploy/kcp/rbac.yaml, with the subject templated because the test controls what the server's
+# certificate authenticates as.
+#
+# Impersonation is the only right this identity is given anywhere, which is the point: everything
+# the MCP server does in a workspace, it does as the caller, and kcp authorizes each of those
+# requests against the caller's own rights rather than the server's.
+#
+# Applied even though list_kcp_workspaces, the tool the e2e test exercises, never reaches into a
+# workspace: it is the manifest users are told to apply, so a rule kcp would reject should fail
+# here rather than in their cluster.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: mcp-virtual-workspace-impersonator
+rules:
+  - apiGroups: [""]
+    resources: ["users", "groups", "serviceaccounts", "userextras"]
+    verbs: ["impersonate"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: mcp-virtual-workspace-impersonator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mcp-virtual-workspace-impersonator
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: {{ .MCPServerUsername }}

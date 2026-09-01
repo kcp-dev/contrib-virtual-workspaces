@@ -1,0 +1,75 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # tag=v7.0.1
+
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # tag=v6.5.0
+        with:
+          go-version-file: go.mod
+
+      # go vet, the kcp Kubernetes fork pin check, and go mod tidy -diff.
+      - name: Verify
+        run: make verify
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # tag=v7.0.1
+
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # tag=v6.5.0
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: make build
+
+      - name: Test
+        run: make test
+
+  # Deploys this component through kcp-operator alongside the access virtual workspace it depends
+  # on, and then speaks MCP to it as a user would. Both of those are tracked at their main branch on
+  # purpose: this server answers nothing without the access VW, and the support for custom virtual
+  # workspaces it is deployed with lives in the operator, so a change on any of the three sides that
+  # breaks the pairing should show up here rather than in someone's cluster.
+  #
+  # Because it tracks moving branches, this job can go red without anything in this repository
+  # having changed. That is the signal it exists to give.
+  e2e:
+    runs-on: ubuntu-latest
+    # kind, kcp, the operator and two virtual workspaces all have to come up before the first
+    # assertion runs.
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # tag=v7.0.1
+
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # tag=v6.5.0
+        with:
+          go-version-file: go.mod
+
+      # On failure the script dumps the operator's logs and the state of the objects it was
+      # reconciling before it tears the cluster down, so the job log is self-contained.
+      - name: Run e2e tests
+        run: make test-e2e
