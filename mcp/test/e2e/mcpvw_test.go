@@ -185,11 +185,11 @@ func TestMCPVirtualWorkspace(t *testing.T) {
 	}
 
 	t.Log("Deploying etcd...")
-	workload.apply(t, ctx, "etcd.yaml.tmpl", data)
+	workload.Apply(t, ctx, "etcd.yaml.tmpl", data)
 	waitForPods(t, ctx, workload, namespace, "app.kubernetes.io/name=etcd", 5*time.Minute)
 
 	t.Log("Deploying kcp and minting credentials...")
-	workload.apply(t, ctx, "kcp.yaml.tmpl", data)
+	workload.Apply(t, ctx, "kcp.yaml.tmpl", data)
 	waitForPods(t, ctx, workload, namespace, "app.kubernetes.io/component=rootshard", 10*time.Minute)
 	waitForPods(t, ctx, workload, namespace, "app.kubernetes.io/component=front-proxy", 10*time.Minute)
 
@@ -218,7 +218,7 @@ func TestMCPVirtualWorkspace(t *testing.T) {
 	createWorkspace(t, ctx, accessWorkspace, controllersWorkspaceName)
 
 	controllers := inWorkspace(t, adminConfig, controllersWorkspace)
-	controllers.apply(t, ctx, "access-rbac.yaml.tmpl", data)
+	controllers.Apply(t, ctx, "access-rbac.yaml.tmpl", data)
 
 	// Waited on only now, because the access server's credential is scoped to the workspace that
 	// has just been created. Waiting for it earlier would be asking the operator to mint a
@@ -228,7 +228,7 @@ func TestMCPVirtualWorkspace(t *testing.T) {
 	consumerSecret := waitForSecret(t, ctx, workload, namespace, consumerUsername+"-kubeconfig")
 
 	t.Log("Deploying the access virtual workspace...")
-	workload.apply(t, ctx, "access-virtualworkspace.yaml.tmpl", data)
+	workload.Apply(t, ctx, "access-virtualworkspace.yaml.tmpl", data)
 	waitForPods(t, ctx, workload, namespace,
 		"app.kubernetes.io/component=virtual-workspace,app.kubernetes.io/instance="+accessVirtualWorkspaceName,
 		10*time.Minute)
@@ -237,7 +237,7 @@ func TestMCPVirtualWorkspace(t *testing.T) {
 	// server survived flag parsing -- including the flags kcp-operator generated rather than this
 	// repository -- and its own TLS and authentication setup.
 	t.Log("Deploying the MCP virtual workspace...")
-	workload.apply(t, ctx, "mcp-virtualworkspace.yaml.tmpl", data)
+	workload.Apply(t, ctx, "mcp-virtualworkspace.yaml.tmpl", data)
 	waitForPods(t, ctx, workload, namespace, mcpPodSelector, 10*time.Minute)
 
 	// Two consumer workspaces, both bound to the export, with the two caller identities granted in
@@ -313,7 +313,7 @@ func waitForKcp(t *testing.T, ctx context.Context, c *cluster) {
 	var lastErr error
 
 	err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
-		_, err := c.get(ctx, "core.kcp.io", "v1alpha1", "logicalclusters", "", "cluster")
+		_, err := c.Get(ctx, "core.kcp.io", "v1alpha1", "logicalclusters", "", "cluster")
 		lastErr = err
 
 		return err == nil, nil
@@ -330,7 +330,7 @@ func waitForKcp(t *testing.T, ctx context.Context, c *cluster) {
 func assertDeploymentShape(t *testing.T, ctx context.Context, workload *cluster, namespace string) {
 	t.Helper()
 
-	deployment, err := workload.kube.AppsV1().Deployments(namespace).Get(ctx, mcpVirtualWorkspaceName+"-virtual-workspace", metav1.GetOptions{})
+	deployment, err := workload.Kube.AppsV1().Deployments(namespace).Get(ctx, mcpVirtualWorkspaceName+"-virtual-workspace", metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("Failed to get the Deployment: %v", err)
 	}
@@ -736,7 +736,7 @@ func decodeStructured(call *mcpsdk.CallToolResult, into any) error {
 func dumpMCPLogs(t *testing.T, ctx context.Context, workload *cluster, namespace string) {
 	t.Helper()
 
-	pods, err := workload.kube.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: mcpPodSelector})
+	pods, err := workload.Kube.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: mcpPodSelector})
 	if err != nil {
 		t.Logf("Failed to list the MCP server's pods: %v", err)
 
@@ -760,7 +760,7 @@ func waitForEndpoints(t *testing.T, ctx context.Context, controllers *cluster) {
 	var urls []string
 
 	err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 3*time.Minute, true, func(ctx context.Context) (bool, error) {
-		slice, err := controllers.get(ctx, "apis.kcp.io", "v1alpha1", "apiexportendpointslices", "", apiExportName)
+		slice, err := controllers.Get(ctx, "apis.kcp.io", "v1alpha1", "apiexportendpointslices", "", apiExportName)
 		if err != nil {
 			return false, nil
 		}
@@ -801,7 +801,7 @@ func createConsumerWorkspace(t *testing.T, ctx context.Context, adminConfig *res
 	createWorkspace(t, ctx, controllers, name)
 
 	workspace := inWorkspace(t, adminConfig, controllersWorkspace+":"+name)
-	workspace.apply(t, ctx, "consumer.yaml.tmpl", data)
+	workspace.Apply(t, ctx, "consumer.yaml.tmpl", data)
 	waitForAPIBinding(t, ctx, workspace)
 
 	gvr := schemaGVR("rbac.authorization.k8s.io", "v1", "clusterrolebindings")
@@ -823,7 +823,7 @@ func createConsumerWorkspace(t *testing.T, ctx context.Context, adminConfig *res
 			},
 		}}
 
-		if err := createErr(workspace.dynamic.Resource(gvr).Create(ctx, binding, metav1.CreateOptions{})); err != nil {
+		if err := createErr(workspace.Dynamic.Resource(gvr).Create(ctx, binding, metav1.CreateOptions{})); err != nil {
 			t.Fatalf("Failed to grant %s access to %s: %v", grantee, name, err)
 		}
 	}
@@ -838,7 +838,7 @@ func waitForAPIBinding(t *testing.T, ctx context.Context, workspace *cluster) {
 	t.Helper()
 
 	err := wait.PollUntilContextTimeout(ctx, 2*time.Second, 3*time.Minute, true, func(ctx context.Context) (bool, error) {
-		binding, err := workspace.get(ctx, "apis.kcp.io", "v1alpha2", "apibindings", "", apiExportName)
+		binding, err := workspace.Get(ctx, "apis.kcp.io", "v1alpha2", "apibindings", "", apiExportName)
 		if err != nil {
 			return false, nil
 		}
