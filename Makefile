@@ -81,6 +81,9 @@ verify-fork-pin: ## Check the kcp Kubernetes fork pin matches virtual-workspace-
 # ── e2e ──────────────────────────────────────────────────────────────
 # Each component owns its e2e harness; these are the entry points CI uses.
 
+.PHONY: test-e2e
+test-e2e: test-e2e-access test-e2e-mcp test-e2e-ephemeral ## Run every component's e2e tests in sequence
+
 .PHONY: test-e2e-access
 test-e2e-access: ## Run the access VW e2e tests (throwaway kind cluster via kcp-operator)
 	./access/hack/ci/run-e2e-tests.sh
