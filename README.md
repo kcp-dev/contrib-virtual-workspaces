@@ -1,10 +1,6 @@
 # contrib-virtual-workspaces
 
-Contrib virtual workspaces for [kcp](https://github.com/kcp-dev/kcp), consolidated
-into one repository and one Go module. Three components, three images, one shared
-dependency set — every component builds against the same
-[virtual-workspace-framework](https://github.com/kcp-dev/virtual-workspace-framework)
-and the same kcp Kubernetes fork pin, so they can never drift apart.
+Contrib virtual workspaces for [kcp](https://github.com/kcp-dev/kcp).
 
 | Component | What it serves | Image |
 |---|---|---|

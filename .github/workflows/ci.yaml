@@ -31,6 +31,24 @@ jobs:
       - name: Verify
         run: make verify
 
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # tag=v7.0.1
+
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # tag=v6.5.0
+        with:
+          go-version-file: go.mod
+
+      # Build tags and linter selection come from .golangci.yml, so this job
+      # and `make lint` check exactly the same thing.
+      - name: Lint
+        uses: golangci/golangci-lint-action@d583c34f0599d37dbac4a198b9c83201be380893 # tag=v9.3.0
+        with:
+          args: --timeout 10m
+
   test:
     runs-on: ubuntu-latest
     steps:

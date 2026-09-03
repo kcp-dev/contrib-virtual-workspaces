@@ -52,6 +52,14 @@ build-ephemeral: ## Build the ephemeral resources virtual workspace binaries
 test: ## Run unit tests
 	$(GO) test -race $$($(GO) list ./... | grep -v /test/e2e)
 
+GOLANGCI_LINT ?= golangci-lint
+
+.PHONY: lint
+lint: ## Run golangci-lint (configuration in .golangci.yml)
+	@command -v $(GOLANGCI_LINT) >/dev/null 2>&1 || { \
+		echo "golangci-lint not found; install it from https://golangci-lint.run/usage/install/"; exit 1; }
+	$(GOLANGCI_LINT) run --timeout 10m ./...
+
 .PHONY: vet
 vet: ## Run go vet, including the e2e build tag so the tests cannot rot
 	$(GO) vet ./...

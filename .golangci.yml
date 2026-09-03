@@ -1,0 +1,34 @@
+version: "2"
+
+run:
+  build-tags:
+    - e2e
+  allow-parallel-runners: true
+
+linters:
+  # The default set (errcheck, govet, ineffassign, staticcheck, unused) plus
+  # a curated subset of what kcp itself runs. Add more as they come green.
+  enable:
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - copyloopvar
+    - dupword
+    - durationcheck
+    - errchkjson
+    - goprintffuncname
+    - intrange
+    - misspell
+    - nosprintfhostport
+    - unconvert
+    - wastedassign
+    - whitespace
+  settings:
+    misspell:
+      ignore-rules:
+        # rest.Creater is what Kubernetes actually calls the interface.
+        - Creater
+  exclusions:
+    # Generated openapi definitions are not ours to restyle.
+    paths:
+      - access/pkg/generated

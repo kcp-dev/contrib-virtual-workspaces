@@ -206,8 +206,8 @@ func (c *Configuration) Validate() field.ErrorList {
 func validateWebhook(w WebhookConfiguration, path *field.Path) field.ErrorList {
 	var errs field.ErrorList
 
-	switch {
-	case w.URL == "":
+	switch w.URL {
+	case "":
 		errs = append(errs, field.Required(path.Child("url"), ""))
 	default:
 		u, err := url.Parse(w.URL)

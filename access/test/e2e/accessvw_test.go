@@ -34,6 +34,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"slices"
@@ -524,7 +525,7 @@ func assertSCAR(t *testing.T, ctx context.Context, adminConfig *rest.Config, con
 
 	// The endpoint is what a client would connect to next, so an empty or in-cluster one would
 	// make the answer useless even though the cluster list is right.
-	wantPrefix := fmt.Sprintf("https://%s:6443/clusters/", data.FrontProxyHostname)
+	wantPrefix := "https://" + net.JoinHostPort(data.FrontProxyHostname, "6443") + "/clusters/"
 	for _, cluster := range review.Status.Clusters {
 		if !strings.HasPrefix(cluster.Endpoint, wantPrefix) {
 			t.Errorf("Cluster %s has endpoint %q, expected it to start with %q (--endpoint-base).", cluster.ClusterName, cluster.Endpoint, wantPrefix)
@@ -547,7 +548,7 @@ func postSCAR(ctx context.Context, client *http.Client, url string) ([]byte, int
 	if err != nil {
 		return nil, 0, err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	raw, err := io.ReadAll(response.Body)
 	if err != nil {

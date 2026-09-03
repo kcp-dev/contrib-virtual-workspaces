@@ -444,7 +444,7 @@ func dumpLog(t *testing.T, ctx context.Context, c *Cluster, pod corev1.Pod, cont
 
 		return
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	body, err := io.ReadAll(stream)
 	if err != nil {
@@ -526,7 +526,7 @@ func PortForward(t *testing.T, ctx context.Context, namespace, target string, re
 		if err != nil {
 			return false, nil
 		}
-		conn.Close()
+		_ = conn.Close()
 
 		return true, nil
 	})
@@ -546,7 +546,7 @@ func freePort(t *testing.T) int {
 	if err != nil {
 		t.Fatalf("Failed to find a free port: %v", err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	return listener.Addr().(*net.TCPAddr).Port
 }

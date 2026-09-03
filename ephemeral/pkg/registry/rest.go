@@ -238,7 +238,7 @@ func errorFromStatus(gr schema.GroupResource, name string, status *metav1.Status
 	out.Status = metav1.StatusFailure
 	out.Code = code
 	if out.Reason == "" {
-		out.Reason = metav1.StatusReason(apierrors.NewGenericServerResponse(int(code), "create", gr, name, "", 0, false).Status().Reason)
+		out.Reason = apierrors.NewGenericServerResponse(int(code), "create", gr, name, "", 0, false).Status().Reason
 	}
 	if out.Message == "" {
 		out.Message = fmt.Sprintf("the ephemeral webhook denied the request for %s", gr)

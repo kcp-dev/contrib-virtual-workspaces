@@ -97,7 +97,7 @@ func callSCAR(ctx context.Context, scarURL, token string, insecure bool) ([]scar
 	if err != nil {
 		return nil, fmt.Errorf("POST %s: %w", scarURL, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

@@ -528,9 +528,9 @@ If replicas is provided, scales the resource to that number.`,
 			}
 
 			if input.Namespace != "" {
-				scaleObj, err = dynClient.Resource(gvr).Namespace(input.Namespace).Update(ctx, scaleObj, metav1.UpdateOptions{}, "scale")
+				_, err = dynClient.Resource(gvr).Namespace(input.Namespace).Update(ctx, scaleObj, metav1.UpdateOptions{}, "scale")
 			} else {
-				scaleObj, err = dynClient.Resource(gvr).Update(ctx, scaleObj, metav1.UpdateOptions{}, "scale")
+				_, err = dynClient.Resource(gvr).Update(ctx, scaleObj, metav1.UpdateOptions{}, "scale")
 			}
 			if err != nil {
 				return nil, ScaleResourceOutput{}, fmt.Errorf("updating scale: %w", err)

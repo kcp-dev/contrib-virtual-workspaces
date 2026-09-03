@@ -119,10 +119,10 @@ func Run(ctx context.Context, o *Options) error {
 	if err := o.SecureServing.MaybeDefaultWithSelfSignedCerts("localhost", nil, []net.IP{netutils.ParseIPSloppy("127.0.0.1")}); err != nil {
 		return fmt.Errorf("default serving certs: %w", err)
 	}
-	if err := o.SecureServing.ApplyTo(&recommended.Config.SecureServing); err != nil {
+	if err := o.SecureServing.ApplyTo(&recommended.SecureServing); err != nil {
 		return fmt.Errorf("apply secure serving: %w", err)
 	}
-	if err := o.Authentication.ApplyTo(ctx, &recommended.Config.Authentication, recommended.Config.SecureServing); err != nil {
+	if err := o.Authentication.ApplyTo(ctx, &recommended.Authentication, recommended.SecureServing); err != nil {
 		return fmt.Errorf("apply authentication: %w", err)
 	}
 	if err := o.Authorization.ApplyTo(&recommended.Config, func() []rootapiserver.NamedVirtualWorkspace { return vws }); err != nil {
@@ -130,8 +130,8 @@ func Run(ctx context.Context, o *Options) error {
 	}
 
 	// Outside the VW authorizers, so granted explicitly.
-	recommended.Config.Authorization.Authorizer = union.New(
-		recommended.Config.Authorization.Authorizer,
+	recommended.Authorization.Authorizer = union.New(
+		recommended.Authorization.Authorizer,
 		pathScopedAuthorizer(debugGraphPath, virtual.AuthenticatedOnlyAuthorizer()),
 	)
 

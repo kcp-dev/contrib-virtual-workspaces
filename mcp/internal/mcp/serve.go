@@ -78,7 +78,7 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 		[]net.IP{netutils.ParseIPSloppy("127.0.0.1")}); err != nil {
 		return fmt.Errorf("defaulting serving certificates: %w", err)
 	}
-	if err := opts.SecureServing.ApplyTo(&recommended.Config.SecureServing); err != nil {
+	if err := opts.SecureServing.ApplyTo(&recommended.SecureServing); err != nil {
 		return fmt.Errorf("configuring secure serving: %w", err)
 	}
 	if err := applyAuthentication(ctx, opts.Authentication, &recommended.Config); err != nil {

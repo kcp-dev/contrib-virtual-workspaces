@@ -36,6 +36,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"slices"
@@ -454,7 +455,7 @@ func postSCAR(ctx context.Context, client *http.Client, url string) ([]byte, int
 	if err != nil {
 		return nil, 0, err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	raw, err := io.ReadAll(response.Body)
 	if err != nil {
@@ -483,7 +484,7 @@ func assertToolsAdvertised(t *testing.T, ctx context.Context, workload *cluster,
 
 			return false, nil
 		}
-		defer session.Close()
+		defer func() { _ = session.Close() }()
 
 		tools, err := session.ListTools(ctx, nil)
 		if err != nil {
@@ -540,7 +541,7 @@ func assertListWorkspaces(t *testing.T, ctx context.Context, workload *cluster, 
 
 			return false, nil
 		}
-		defer session.Close()
+		defer func() { _ = session.Close() }()
 
 		// An empty object rather than no arguments at all: the tool takes an empty struct, and its
 		// schema is an object.
@@ -589,7 +590,7 @@ func assertListWorkspaces(t *testing.T, ctx context.Context, workload *cluster, 
 
 	// The endpoint is what the agent's next call would go to, so an empty or in-cluster one would
 	// make the answer useless even though the workspace list is right.
-	wantPrefix := fmt.Sprintf("https://%s:6443/clusters/", data.FrontProxyHostname)
+	wantPrefix := "https://" + net.JoinHostPort(data.FrontProxyHostname, "6443") + "/clusters/"
 	for _, workspace := range result.Workspaces {
 		if !strings.HasPrefix(workspace.Endpoint, wantPrefix) {
 			t.Errorf("Workspace %s has endpoint %q, expected it to start with %q.", workspace.ID, workspace.Endpoint, wantPrefix)
@@ -607,7 +608,7 @@ func assertAnonymousRefused(t *testing.T, ctx context.Context, adminConfig *rest
 	t.Helper()
 
 	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(adminConfig.TLSClientConfig.CAData) {
+	if !pool.AppendCertsFromPEM(adminConfig.CAData) {
 		t.Fatal("The admin kubeconfig holds no usable CA bundle.")
 	}
 
@@ -631,7 +632,7 @@ func assertAnonymousRefused(t *testing.T, ctx context.Context, adminConfig *rest
 	if err != nil {
 		t.Fatalf("Anonymous request failed at the transport: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	raw, _ := io.ReadAll(response.Body)
 
@@ -670,13 +671,13 @@ func mcpSession(ctx context.Context, config *rest.Config, frontProxyPort int) (*
 func tokenConfig(t *testing.T, adminConfig *rest.Config, token string) *rest.Config {
 	t.Helper()
 
-	if len(adminConfig.TLSClientConfig.CAData) == 0 {
+	if len(adminConfig.CAData) == 0 {
 		t.Fatal("The admin kubeconfig holds no CA bundle to verify the front-proxy with.")
 	}
 
 	return &rest.Config{
 		BearerToken:     token,
-		TLSClientConfig: rest.TLSClientConfig{CAData: adminConfig.TLSClientConfig.CAData},
+		TLSClientConfig: rest.TLSClientConfig{CAData: adminConfig.CAData},
 		Timeout:         30 * time.Second,
 	}
 }
