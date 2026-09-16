@@ -1,4 +1,5 @@
 /bin/
+/tenancy/bin/
 *.test
 cover.out
 

@@ -1,0 +1,13 @@
+# The APIExportEndpointSlice the operator and the virtual workspace watch:
+# its status carries one virtual-workspace URL per shard serving the
+# APIExport, and organization workspaces are discovered through those URLs.
+#
+# Lives in the same workspace as the APIExport, so spec.export.path is
+# omitted and defaults to this logical cluster.
+apiVersion: apis.kcp.io/v1alpha1
+kind: APIExportEndpointSlice
+metadata:
+  name: tenancy.contrib.kcp.io
+spec:
+  export:
+    name: tenancy.contrib.kcp.io

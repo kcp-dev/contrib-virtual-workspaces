@@ -1,0 +1,37 @@
+# Who may BIND the tenancy APIExport. Applied into the workspace that
+# hosts it.
+#
+# kcp gates both APIBinding and APIExportEndpointSlice creation on a `bind`
+# verb against the APIExport, evaluated in the EXPORT's own workspace. It
+# is a separate admission check, so holding cluster-admin does not satisfy
+# it — without this an export is one nobody, including this component's own
+# init, can bind.
+#
+# Open to system:authenticated on purpose: binding this export gives a
+# workspace the tenancy resources, and the workspace-provisioning claim is
+# only in force once the CONSUMER accepts it on its own APIBinding, so
+# opening `bind` grants nothing by itself. A deployment that wants the
+# export restricted replaces the ClusterRoleBinding subject with its own
+# group.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: system:kcp:apiexport:tenancy.contrib.kcp.io:bind
+rules:
+  - apiGroups: ["apis.kcp.io"]
+    resources: ["apiexports"]
+    resourceNames: ["tenancy.contrib.kcp.io"]
+    verbs: ["bind"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: system:kcp:authenticated:apiexport:tenancy.contrib.kcp.io:bind
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:kcp:apiexport:tenancy.contrib.kcp.io:bind
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: system:authenticated

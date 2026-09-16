@@ -1,0 +1,67 @@
+apiVersion: apis.kcp.io/v1alpha1
+kind: APIResourceSchema
+metadata:
+  name: v1alpha1.tenants.tenancy.contrib.kcp.io
+spec:
+  group: tenancy.contrib.kcp.io
+  names:
+    kind: Tenant
+    listKind: TenantList
+    plural: tenants
+    singular: tenant
+  scope: Cluster
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      schema:
+        description: |
+          Tenant asks for an isolated kcp workspace for one organizational
+          unit. The tenancy operator provisions a workspace under the
+          organization workspace this object lives in and reports it in
+          status.
+        type: object
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            type: object
+            required:
+              - displayName
+            properties:
+              displayName:
+                description: |
+                  Human name of the tenant. Seeds the workspace name,
+                  subject to the operator's naming strategy. Not required
+                  to be unique.
+                type: string
+                minLength: 1
+              description:
+                description: Free text for humans.
+                type: string
+          status:
+            type: object
+            properties:
+              phase:
+                description: Pending, Ready or Error.
+                type: string
+              message:
+                description: Detail when phase is not Ready.
+                type: string
+              workspace:
+                description: Name of the provisioned Workspace object.
+                type: string
+              workspaceCluster:
+                description: Logical cluster backing the provisioned workspace.
+                type: string
+              url:
+                description: Direct address of the provisioned workspace.
+                type: string
+        required:
+          - spec
