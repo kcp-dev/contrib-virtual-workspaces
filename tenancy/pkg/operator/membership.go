@@ -20,11 +20,13 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sort"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/multicluster-runtime/pkg/multicluster"
 	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
 
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -34,10 +36,21 @@ import (
 	tenancyv1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/tenancy/sdk/apis/tenancy/v1alpha1"
 )
 
+// A Membership lives in its tenant's workspace and materializes in that
+// tenant's PROJECT workspaces — never in the tenant workspace itself.
+//
+// That asymmetry is deliberate. The tenant workspace holds the Memberships
+// and Projects that decide who may reach what; a tenant able to write there
+// could grant themselves anything, behind the virtual workspace rather than
+// through it. No binding in that logical cluster names any tenant identity,
+// so the tier is unreachable by construction rather than by a check.
+//
+// A tenant-wide grant therefore fans out across every project of the
+// tenant, and a project-scoped one lands in exactly one.
 func (r *reconcilers) reconcileMembership(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("cluster", req.ClusterName, "membership", req.Name)
 
-	c, err := r.clusterClient(ctx, req.ClusterName)
+	c, err := clientFor(ctx, r.m.tenancy, req.ClusterName)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -47,20 +60,22 @@ func (r *reconcilers) reconcileMembership(ctx context.Context, req mcreconcile.R
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	targetURL, pending, err := r.resolveTargetWorkspace(ctx, c, &membership)
+	targets, pending, err := r.targetClusters(ctx, c, &membership)
 
 	if !membership.DeletionTimestamp.IsZero() {
-		// Best effort: when the target workspace is gone (tenant deleted,
-		// workspace deleted), the binding went with it.
-		if err == nil && !pending && targetURL != "" {
-			target, dErr := r.directClient(targetURL)
-			if dErr != nil {
-				return ctrl.Result{}, dErr
-			}
-			crb := rbacv1.ClusterRoleBinding{}
-			crb.Name = MembershipBindingName(membership.Name)
-			if dErr := target.Delete(ctx, &crb); dErr != nil && !apierrors.IsNotFound(dErr) {
-				return ctrl.Result{}, fmt.Errorf("delete binding: %w", dErr)
+		// Best effort: a project workspace that is gone took its RBAC with
+		// it, so only reachable targets are cleaned.
+		if err == nil {
+			for _, target := range targets {
+				acc, aErr := clientFor(ctx, r.m.access, target)
+				if aErr != nil {
+					return ctrl.Result{}, aErr
+				}
+				crb := rbacv1.ClusterRoleBinding{}
+				crb.Name = MembershipBindingName(membership.Name)
+				if dErr := acc.Delete(ctx, &crb); dErr != nil && !apierrors.IsNotFound(dErr) {
+					return ctrl.Result{}, fmt.Errorf("delete binding in %s: %w", target, dErr)
+				}
 			}
 		}
 		if controllerutil.RemoveFinalizer(&membership, finalizer) {
@@ -82,77 +97,86 @@ func (r *reconcilers) reconcileMembership(ctx context.Context, req mcreconcile.R
 	}
 
 	if err != nil {
-		return requeue2(updateMembershipStatus(ctx, c, &membership, tenancyv1alpha1.MembershipStatus{
+		return requeueAfterStatus(updateMembershipStatus(ctx, c, &membership, tenancyv1alpha1.MembershipStatus{
 			Phase:   tenancyv1alpha1.PhaseError,
 			Message: err.Error(),
 		}))
 	}
 	if pending {
-		return requeue2(updateMembershipStatus(ctx, c, &membership, tenancyv1alpha1.MembershipStatus{
+		return requeueAfterStatus(updateMembershipStatus(ctx, c, &membership, tenancyv1alpha1.MembershipStatus{
 			Phase:   tenancyv1alpha1.PhasePending,
-			Message: "waiting for the target workspace",
+			Message: "waiting for a project workspace to grant in",
 		}))
 	}
 
-	target, err := r.directClient(targetURL)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if err := r.applyRBAC(ctx, target, &membership); err != nil {
-		if statusErr := updateMembershipStatus(ctx, c, &membership, tenancyv1alpha1.MembershipStatus{
-			Phase:   tenancyv1alpha1.PhaseError,
-			Message: err.Error(),
-		}); statusErr != nil {
-			logger.Error(statusErr, "writing error status")
+	for _, target := range targets {
+		acc, err := clientFor(ctx, r.m.access, target)
+		if err != nil {
+			return ctrl.Result{}, err
 		}
-		return ctrl.Result{}, err
+		if err := applyRBAC(ctx, acc, &membership); err != nil {
+			if statusErr := updateMembershipStatus(ctx, c, &membership, tenancyv1alpha1.MembershipStatus{
+				Phase:   tenancyv1alpha1.PhaseError,
+				Message: err.Error(),
+			}); statusErr != nil {
+				logger.Error(statusErr, "writing error status")
+			}
+			return ctrl.Result{}, err
+		}
 	}
 
-	logger.V(2).Info("membership applied", "role", membership.Spec.Role, "subject", membership.Spec.Subject.Name)
+	logger.V(2).Info("membership applied",
+		"role", membership.Spec.Role, "subject", membership.Spec.Subject.Name, "projects", len(targets))
 	return ctrl.Result{}, updateMembershipStatus(ctx, c, &membership, tenancyv1alpha1.MembershipStatus{
 		Phase: tenancyv1alpha1.PhaseReady,
 	})
 }
 
-// resolveTargetWorkspace finds the workspace URL a membership's RBAC lands
-// in: the tenant's workspace, or the project's when the grant is
-// project-scoped. pending is true while the workspace is still coming up.
-func (r *reconcilers) resolveTargetWorkspace(ctx context.Context, c client.Client, membership *tenancyv1alpha1.Membership) (targetURL string, pending bool, err error) {
-	var tenant tenancyv1alpha1.Tenant
-	if err := c.Get(ctx, types.NamespacedName{Name: membership.Spec.Tenant}, &tenant); err != nil {
-		if apierrors.IsNotFound(err) {
-			return "", false, fmt.Errorf("tenant %q not found in this workspace", membership.Spec.Tenant)
+// targetClusters resolves which project workspaces a membership lands in.
+// pending is true while a named project has no workspace yet, or while a
+// tenant-wide grant has no ready project to land in at all.
+func (r *reconcilers) targetClusters(ctx context.Context, c client.Client, membership *tenancyv1alpha1.Membership) (targets []multicluster.ClusterName, pending bool, err error) {
+	if name := membership.Spec.Project; name != "" {
+		var project tenancyv1alpha1.Project
+		if err := c.Get(ctx, types.NamespacedName{Name: name}, &project); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil, false, fmt.Errorf("project %q not found in this tenant", name)
+			}
+			return nil, false, err
 		}
-		return "", false, err
+		if project.Status.Phase != tenancyv1alpha1.PhaseReady || project.Status.WorkspaceCluster == "" {
+			return nil, true, nil
+		}
+		return []multicluster.ClusterName{multicluster.ClusterName(project.Status.WorkspaceCluster)}, false, nil
 	}
 
-	if membership.Spec.Project == "" {
-		if tenant.Status.Phase != tenancyv1alpha1.PhaseReady || tenant.Status.URL == "" {
-			return "", true, nil
-		}
-		return tenant.Status.URL, false, nil
+	// Tenant-wide: every project of this tenant, which is every project in
+	// this workspace.
+	var projects tenancyv1alpha1.ProjectList
+	if err := c.List(ctx, &projects); err != nil {
+		return nil, false, fmt.Errorf("list projects: %w", err)
 	}
+	var notReady bool
+	for _, p := range projects.Items {
+		if p.Status.Phase != tenancyv1alpha1.PhaseReady || p.Status.WorkspaceCluster == "" {
+			notReady = true
+			continue
+		}
+		targets = append(targets, multicluster.ClusterName(p.Status.WorkspaceCluster))
+	}
+	sort.Slice(targets, func(i, j int) bool { return targets[i] < targets[j] })
 
-	var project tenancyv1alpha1.Project
-	if err := c.Get(ctx, types.NamespacedName{Name: membership.Spec.Project}, &project); err != nil {
-		if apierrors.IsNotFound(err) {
-			return "", false, fmt.Errorf("project %q not found in this workspace", membership.Spec.Project)
-		}
-		return "", false, err
+	// A tenant with no ready project yet is pending, not an error: the
+	// grant becomes real as soon as there is somewhere to put it.
+	if len(targets) == 0 && (notReady || len(projects.Items) == 0) {
+		return nil, true, nil
 	}
-	if project.Spec.Tenant != membership.Spec.Tenant {
-		return "", false, fmt.Errorf("project %q belongs to tenant %q, not %q",
-			membership.Spec.Project, project.Spec.Tenant, membership.Spec.Tenant)
-	}
-	if project.Status.Phase != tenancyv1alpha1.PhaseReady || project.Status.URL == "" {
-		return "", true, nil
-	}
-	return project.Status.URL, false, nil
+	return targets, false, nil
 }
 
 // applyRBAC materializes the role's ClusterRole and the membership's
-// binding in the target workspace.
-func (r *reconcilers) applyRBAC(ctx context.Context, target client.Client, membership *tenancyv1alpha1.Membership) error {
+// binding in one project workspace, through the access export.
+func applyRBAC(ctx context.Context, target client.Client, membership *tenancyv1alpha1.Membership) error {
 	desiredRole, err := DesiredClusterRole(membership.Spec.Role)
 	if err != nil {
 		return err
@@ -167,8 +191,7 @@ func (r *reconcilers) applyRBAC(ctx context.Context, target client.Client, membe
 	case err != nil:
 		return fmt.Errorf("get role %q: %w", desiredRole.Name, err)
 	case !reflect.DeepEqual(existingRole.Rules, desiredRole.Rules):
-		// The operator owns these roles; drift (or an older version's
-		// rules) is repaired, not respected.
+		// The operator owns these roles; drift is repaired, not respected.
 		existingRole.Rules = desiredRole.Rules
 		if err := target.Update(ctx, &existingRole); err != nil {
 			return fmt.Errorf("update role %q: %w", desiredRole.Name, err)
@@ -196,9 +219,7 @@ func (r *reconcilers) applyRBAC(ctx context.Context, target client.Client, membe
 		return nil
 	}
 
-	// roleRef is immutable on ClusterRoleBindings, so a changed role means
-	// replace, not update. Subjects alone could be updated in place, but one
-	// path is simpler and replacement is idempotent either way.
+	// roleRef is immutable, so a changed role means replace, not update.
 	if err := target.Delete(ctx, &existingBinding); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("replace binding %q (delete): %w", desiredBinding.Name, err)
 	}

@@ -26,16 +26,27 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/multicluster-runtime/pkg/multicluster"
 
+	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/bootstrap"
 	tenancyv1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/tenancy/sdk/apis/tenancy/v1alpha1"
 )
 
+// A Project lives in its tenant's own workspace, so the workspace it asks
+// for is a child of the cluster this reconcile is already in. There is no
+// tenant to look up and no URL to follow — which is the point of putting
+// the tenant tier between the platform and its projects.
 func (r *reconcilers) reconcileProject(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("cluster", req.ClusterName, "project", req.Name)
 
-	c, err := r.clusterClient(ctx, req.ClusterName)
+	c, err := clientFor(ctx, r.m.tenancy, req.ClusterName)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	prov, err := clientFor(ctx, r.m.provisioner, req.ClusterName)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -45,26 +56,13 @@ func (r *reconcilers) reconcileProject(ctx context.Context, req mcreconcile.Requ
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// The project's workspace lives inside the tenant's workspace, so both
-	// creation and deletion go through the tenant.
-	var tenant tenancyv1alpha1.Tenant
-	tenantErr := c.Get(ctx, types.NamespacedName{Name: project.Spec.Tenant}, &tenant)
-
 	if !project.DeletionTimestamp.IsZero() {
-		// If the tenant or its workspace is already gone, the project's
-		// workspace went with it; there is nothing left to delete.
-		if tenantErr == nil && tenant.DeletionTimestamp.IsZero() && tenant.Status.URL != "" {
-			parent, err := r.directClient(tenant.Status.URL)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
-			done, err := deleteWorkspace(ctx, parent, project.Status.Workspace, string(project.UID))
-			if err != nil {
-				return ctrl.Result{}, err
-			}
-			if !done {
-				return requeue()
-			}
+		done, err := deleteWorkspace(ctx, prov, project.Status.Workspace, string(project.UID))
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if !done {
+			return requeue()
 		}
 		if controllerutil.RemoveFinalizer(&project, finalizer) {
 			if err := c.Update(ctx, &project); err != nil {
@@ -84,30 +82,10 @@ func (r *reconcilers) reconcileProject(ctx context.Context, req mcreconcile.Requ
 		}
 	}
 
-	if apierrors.IsNotFound(tenantErr) {
-		return requeue2(updateProjectStatus(ctx, c, &project, tenancyv1alpha1.ProjectStatus{
-			Phase:   tenancyv1alpha1.PhaseError,
-			Message: fmt.Sprintf("tenant %q not found in this workspace", project.Spec.Tenant),
-		}))
-	}
-	if tenantErr != nil {
-		return ctrl.Result{}, tenantErr
-	}
-	if tenant.Status.Phase != tenancyv1alpha1.PhaseReady || tenant.Status.URL == "" {
-		return requeue2(updateProjectStatus(ctx, c, &project, tenancyv1alpha1.ProjectStatus{
-			Phase:   tenancyv1alpha1.PhasePending,
-			Message: fmt.Sprintf("waiting for tenant %q workspace", project.Spec.Tenant),
-		}))
-	}
-
-	parent, err := r.directClient(tenant.Status.URL)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
-	prov, err := ensureWorkspace(ctx, parent,
+	ws, err := ensureWorkspace(ctx, prov,
 		project.Spec.DisplayName, string(project.UID),
-		r.strategy.Propose(project.Spec.DisplayName, string(project.UID)))
+		r.strategy.Propose(project.Spec.DisplayName, string(project.UID)),
+		bootstrap.WorkspaceTypeProject, r.exportsPath)
 	if err != nil {
 		if statusErr := updateProjectStatus(ctx, c, &project, tenancyv1alpha1.ProjectStatus{
 			Phase:   tenancyv1alpha1.PhaseError,
@@ -121,31 +99,87 @@ func (r *reconcilers) reconcileProject(ctx context.Context, req mcreconcile.Requ
 	status := tenancyv1alpha1.ProjectStatus{
 		Phase:            tenancyv1alpha1.PhasePending,
 		Message:          "waiting for the workspace to become ready",
-		Workspace:        prov.Name,
-		WorkspaceCluster: prov.Cluster,
-		URL:              prov.URL,
+		Workspace:        ws.Name,
+		WorkspaceCluster: ws.Cluster,
+		URL:              ws.URL,
 	}
-	if prov.Ready {
+	if ws.Ready {
 		status.Phase = tenancyv1alpha1.PhaseReady
 		status.Message = ""
 	}
 	if err := updateProjectStatus(ctx, c, &project, status); err != nil {
 		return ctrl.Result{}, err
 	}
-
-	if !prov.Ready {
+	if !ws.Ready {
 		return requeue()
 	}
-	logger.V(2).Info("project ready", "workspace", prov.Name, "workspaceCluster", prov.Cluster)
+
+	// The `project` WorkspaceType omits `extend: root:universal` so that a
+	// tenant's API surface stays theirs, and the cost of that is kcp not
+	// creating `default`. Creating it is exactly what the namespaces claim
+	// on tenancy-access is for.
+	if err := ensureDefaultNamespace(ctx, r, multicluster.ClusterName(ws.Cluster)); err != nil {
+		logger.Error(err, "creating the default namespace", "workspaceCluster", ws.Cluster)
+		return requeue()
+	}
+
+	// A tenant-wide grant fans out across the projects that exist when the
+	// Membership is reconciled, so a project created afterwards would never
+	// receive it — an authorization system silently failing to apply a
+	// grant. The project pulls what applies to it rather than every
+	// Membership watching for new projects.
+	if err := r.applyMembershipsTo(ctx, c, project.Name, multicluster.ClusterName(ws.Cluster)); err != nil {
+		logger.Error(err, "applying existing grants to the new project", "workspaceCluster", ws.Cluster)
+		return requeue()
+	}
+
+	logger.V(2).Info("project ready", "workspace", ws.Name, "workspaceCluster", ws.Cluster)
 	return ctrl.Result{}, nil
 }
 
-// requeue2 folds a status write into the poll-again result.
-func requeue2(err error) (ctrl.Result, error) {
-	if err != nil {
-		return ctrl.Result{}, err
+// applyMembershipsTo materializes every grant in this tenant that covers
+// the named project: the tenant-wide ones, and any scoped to it. Applying
+// is idempotent, so a grant already there costs a no-op.
+func (r *reconcilers) applyMembershipsTo(ctx context.Context, tenantWS client.Client, projectName string, cluster multicluster.ClusterName) error {
+	var memberships tenancyv1alpha1.MembershipList
+	if err := tenantWS.List(ctx, &memberships); err != nil {
+		return fmt.Errorf("list memberships: %w", err)
 	}
-	return requeue()
+
+	var target client.Client
+	for i := range memberships.Items {
+		m := &memberships.Items[i]
+		if !m.DeletionTimestamp.IsZero() {
+			continue
+		}
+		if m.Spec.Project != "" && m.Spec.Project != projectName {
+			continue
+		}
+		if target == nil {
+			var err error
+			if target, err = clientFor(ctx, r.m.access, cluster); err != nil {
+				return err
+			}
+		}
+		if err := applyRBAC(ctx, target, m); err != nil {
+			return fmt.Errorf("apply membership %q: %w", m.Name, err)
+		}
+	}
+	return nil
+}
+
+// ensureDefaultNamespace creates `default` in a project workspace, through
+// the access export.
+func ensureDefaultNamespace(ctx context.Context, r *reconcilers, cluster multicluster.ClusterName) error {
+	acc, err := clientFor(ctx, r.m.access, cluster)
+	if err != nil {
+		return err
+	}
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "default"}}
+	if err := acc.Create(ctx, ns); err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("create the default namespace: %w", err)
+	}
+	return nil
 }
 
 func updateProjectStatus(ctx context.Context, c client.Client, project *tenancyv1alpha1.Project, status tenancyv1alpha1.ProjectStatus) error {

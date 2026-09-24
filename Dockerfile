@@ -79,11 +79,13 @@ ENTRYPOINT ["/ephemeral-virtual-workspace"]
 
 # ── tenancy ──────────────────────────────────────────────────────────
 FROM builder AS build-tenancy
-# One binary with subcommands (init, operator, virtualworkspace), so the
-# deployment's init container and both long-running processes share it.
+# One server binary with subcommands (init, operator, virtualworkspace), so
+# the deployment's init container and both long-running processes share it,
+# plus tenancyctl so an operator can drive the model from inside the image.
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    go build -o /out/tenancy-vw ./tenancy/
+    go build -o /out/tenancy-vw ./tenancy/ && \
+    go build -o /out/tenancyctl ./tenancy/cmd/tenancyctl/
 
 FROM gcr.io/distroless/static:nonroot AS tenancy-vw
 COPY --from=build-tenancy /out/ /

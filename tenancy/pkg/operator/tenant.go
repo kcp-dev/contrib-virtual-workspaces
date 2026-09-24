@@ -27,13 +27,23 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
+	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/bootstrap"
 	tenancyv1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/tenancy/sdk/apis/tenancy/v1alpha1"
 )
 
 func (r *reconcilers) reconcileTenant(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("cluster", req.ClusterName, "tenant", req.Name)
 
-	c, err := r.clusterClient(ctx, req.ClusterName)
+	// The Tenant object lives in the platform workspace, served by the
+	// platform export.
+	c, err := clientFor(ctx, r.m.platform, req.ClusterName)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	// Its workspace is created in the provisioning parent — a different
+	// tier from the store this record was read from — through the
+	// provisioner export, the only one that claims `create workspaces`.
+	prov, err := clientFor(ctx, r.m.provisioner, r.tenantsCluster)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -44,7 +54,7 @@ func (r *reconcilers) reconcileTenant(ctx context.Context, req mcreconcile.Reque
 	}
 
 	if !tenant.DeletionTimestamp.IsZero() {
-		done, err := deleteWorkspace(ctx, c, tenant.Status.Workspace, string(tenant.UID))
+		done, err := deleteWorkspace(ctx, prov, tenant.Status.Workspace, string(tenant.UID))
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -69,9 +79,10 @@ func (r *reconcilers) reconcileTenant(ctx context.Context, req mcreconcile.Reque
 		}
 	}
 
-	prov, err := ensureWorkspace(ctx, c,
+	ws, err := ensureWorkspace(ctx, prov,
 		tenant.Spec.DisplayName, string(tenant.UID),
-		r.strategy.Propose(tenant.Spec.DisplayName, string(tenant.UID)))
+		r.strategy.Propose(tenant.Spec.DisplayName, string(tenant.UID)),
+		bootstrap.WorkspaceTypeTenant, r.exportsPath)
 	if err != nil {
 		if statusErr := updateTenantStatus(ctx, c, &tenant, tenancyv1alpha1.TenantStatus{
 			Phase:   tenancyv1alpha1.PhaseError,
@@ -85,11 +96,11 @@ func (r *reconcilers) reconcileTenant(ctx context.Context, req mcreconcile.Reque
 	status := tenancyv1alpha1.TenantStatus{
 		Phase:            tenancyv1alpha1.PhasePending,
 		Message:          "waiting for the workspace to become ready",
-		Workspace:        prov.Name,
-		WorkspaceCluster: prov.Cluster,
-		URL:              prov.URL,
+		Workspace:        ws.Name,
+		WorkspaceCluster: ws.Cluster,
+		URL:              ws.URL,
 	}
-	if prov.Ready {
+	if ws.Ready {
 		status.Phase = tenancyv1alpha1.PhaseReady
 		status.Message = ""
 	}
@@ -97,10 +108,10 @@ func (r *reconcilers) reconcileTenant(ctx context.Context, req mcreconcile.Reque
 		return ctrl.Result{}, err
 	}
 
-	if !prov.Ready {
+	if !ws.Ready {
 		return requeue()
 	}
-	logger.V(2).Info("tenant ready", "workspace", prov.Name, "workspaceCluster", prov.Cluster)
+	logger.V(2).Info("tenant ready", "workspace", ws.Name, "workspaceCluster", ws.Cluster)
 	return ctrl.Result{}, nil
 }
 

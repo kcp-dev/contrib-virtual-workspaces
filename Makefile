@@ -47,8 +47,9 @@ build-ephemeral: ## Build the ephemeral resources virtual workspace binaries
 	$(GO) build -o $(BIN_DIR)/example-webhook ./ephemeral/examples/webhook
 
 .PHONY: build-tenancy
-build-tenancy: ## Build the tenancy binary (operator, virtualworkspace and init subcommands)
+build-tenancy: ## Build the tenancy server binary and the tenancyctl client
 	$(GO) build -o $(BIN_DIR)/tenancy-vw ./tenancy
+	$(GO) build -o $(BIN_DIR)/tenancyctl ./tenancy/cmd/tenancyctl
 
 # ── Test & verify ────────────────────────────────────────────────────
 

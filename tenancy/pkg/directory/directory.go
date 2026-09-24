@@ -70,12 +70,22 @@ type Membership struct {
 }
 
 // Directory is safe for concurrent use.
+//
+// The three kinds arrive from two different tiers: Tenants from the
+// platform workspace, Projects and Memberships from inside each tenant's
+// own workspace. They are joined on the tenant's workspace cluster — a
+// Membership belongs to the tenant whose workspace it lives in — so
+// nothing here relies on a name matching across a workspace boundary.
 type Directory struct {
 	mu sync.RWMutex
 
 	tenants     map[Key]Tenant
 	projects    map[Key]Project
 	memberships map[Key]Membership
+
+	// byWorkspace resolves a tenant's workspace cluster back to the Tenant
+	// object that asked for it.
+	byWorkspace map[string]Key
 
 	ready bool
 }
@@ -86,6 +96,7 @@ func New() *Directory {
 		tenants:     map[Key]Tenant{},
 		projects:    map[Key]Project{},
 		memberships: map[Key]Membership{},
+		byWorkspace: map[string]Key{},
 	}
 }
 
@@ -108,13 +119,22 @@ func (d *Directory) Ready() bool {
 func (d *Directory) UpsertTenant(k Key, t Tenant) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if old, ok := d.tenants[k]; ok && old.WorkspaceCluster != "" && old.WorkspaceCluster != t.WorkspaceCluster {
+		delete(d.byWorkspace, old.WorkspaceCluster)
+	}
 	d.tenants[k] = t
+	if t.WorkspaceCluster != "" {
+		d.byWorkspace[t.WorkspaceCluster] = k
+	}
 }
 
 // RemoveTenant forgets a tenant.
 func (d *Directory) RemoveTenant(k Key) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if old, ok := d.tenants[k]; ok && old.WorkspaceCluster != "" {
+		delete(d.byWorkspace, old.WorkspaceCluster)
+	}
 	delete(d.tenants, k)
 }
 
@@ -151,8 +171,11 @@ func (d *Directory) RemoveMembership(k Key) {
 func (d *Directory) ForgetCluster(cluster string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	for k := range d.tenants {
+	for k, t := range d.tenants {
 		if k.Cluster == cluster {
+			if t.WorkspaceCluster != "" {
+				delete(d.byWorkspace, t.WorkspaceCluster)
+			}
 			delete(d.tenants, k)
 		}
 	}
@@ -192,10 +215,11 @@ func (d *Directory) ReviewFor(username string, groups []string, endpointFor func
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	// Collect matched roles: tenant-wide by tenant key, project-scoped by
-	// project name within the tenant key.
-	tenantRoles := map[Key]map[string]struct{}{}
-	projectRoles := map[Key]map[string]map[string]struct{}{}
+	// Roles are collected per tenant WORKSPACE cluster, because that is
+	// the cluster a Membership lives in. The Tenant object itself is in the
+	// platform workspace and is resolved at the end.
+	tenantRoles := map[string]map[string]struct{}{}
+	projectRoles := map[string]map[string]map[string]struct{}{}
 
 	for k, m := range d.memberships {
 		switch m.Subject.Kind {
@@ -211,55 +235,57 @@ func (d *Directory) ReviewFor(username string, groups []string, endpointFor func
 			continue
 		}
 
-		tk := Key{Cluster: k.Cluster, Name: m.Tenant}
+		ws := k.Cluster
 		if m.Project == "" {
-			if tenantRoles[tk] == nil {
-				tenantRoles[tk] = map[string]struct{}{}
+			if tenantRoles[ws] == nil {
+				tenantRoles[ws] = map[string]struct{}{}
 			}
-			tenantRoles[tk][m.Role] = struct{}{}
+			tenantRoles[ws][m.Role] = struct{}{}
 			continue
 		}
-		if projectRoles[tk] == nil {
-			projectRoles[tk] = map[string]map[string]struct{}{}
+		if projectRoles[ws] == nil {
+			projectRoles[ws] = map[string]map[string]struct{}{}
 		}
-		if projectRoles[tk][m.Project] == nil {
-			projectRoles[tk][m.Project] = map[string]struct{}{}
+		if projectRoles[ws][m.Project] == nil {
+			projectRoles[ws][m.Project] = map[string]struct{}{}
 		}
-		projectRoles[tk][m.Project][m.Role] = struct{}{}
+		projectRoles[ws][m.Project][m.Role] = struct{}{}
 	}
 
-	// One claim per tenant that matched anything and still exists.
-	claims := make([]tenancyv1alpha1.TenantClaim, 0, len(tenantRoles)+len(projectRoles))
-	seen := map[Key]struct{}{}
-	for tk := range tenantRoles {
-		seen[tk] = struct{}{}
+	seen := map[string]struct{}{}
+	for ws := range tenantRoles {
+		seen[ws] = struct{}{}
 	}
-	for tk := range projectRoles {
-		seen[tk] = struct{}{}
+	for ws := range projectRoles {
+		seen[ws] = struct{}{}
 	}
 
-	for tk := range seen {
-		tenant, ok := d.tenants[tk]
+	claims := make([]tenancyv1alpha1.TenantClaim, 0, len(seen))
+	for ws := range seen {
+		tenantKey, ok := d.byWorkspace[ws]
 		if !ok {
-			// Membership to a tenant that no longer exists (or has not been
-			// observed yet); nothing useful to claim.
+			// A grant in a workspace whose Tenant the directory has not
+			// seen yet (or that is gone); nothing useful to claim.
 			continue
 		}
+		tenant := d.tenants[tenantKey]
 
 		claim := tenancyv1alpha1.TenantClaim{
-			Name:        tk.Name,
+			Name:        tenantKey.Name,
 			DisplayName: tenant.DisplayName,
 			Cluster:     tenant.WorkspaceCluster,
-			Roles:       sortedRoles(tenantRoles[tk]),
+			Roles:       sortedRoles(tenantRoles[ws]),
 		}
 		if claim.Cluster != "" {
 			claim.Endpoint = endpointFor(claim.Cluster)
 		}
 
-		wide := tenantRoles[tk]
-		scoped := projectRoles[tk]
+		wide := tenantRoles[ws]
+		scoped := projectRoles[ws]
 		for pk, project := range d.projects {
-			if pk.Cluster != tk.Cluster || project.Tenant != tk.Name {
+			// Projects live in the tenant's workspace, alongside the
+			// Memberships that grant them.
+			if pk.Cluster != ws {
 				continue
 			}
 			roles := unionRoles(wide, scoped[pk.Name])

@@ -32,6 +32,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apiserver/pkg/authorization/authorizer"
+	"k8s.io/apiserver/pkg/authorization/union"
 	openapinamer "k8s.io/apiserver/pkg/endpoints/openapi"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/client-go/tools/clientcmd"
@@ -40,6 +42,7 @@ import (
 
 	"github.com/kcp-dev/virtual-workspace-framework/pkg/rootapiserver"
 
+	"github.com/kcp-dev/contrib-virtual-workspaces/access/pkg/virtual"
 	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/directory"
 	generatedopenapi "github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/generated/openapi"
 	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/provider"
@@ -90,13 +93,15 @@ func Run(ctx context.Context, o *Options) error {
 	providerErr := make(chan error, 1)
 	go func() {
 		providerErr <- provider.Run(ctx, provider.Options{
-			RestConfig:             restConfig,
-			APIExportEndpointSlice: o.APIExportEndpointSlice,
+			RestConfig:    restConfig,
+			PlatformSlice: o.PlatformSlice,
+			TenancySlice:  o.TenancySlice,
 		}, dir)
 	}()
 
 	klog.InfoS("tenancy directory provider running",
-		"apiExportEndpointSlice", o.APIExportEndpointSlice, "kubeconfig", o.Kubeconfig, "host", restConfig.Host)
+		"platformSlice", o.PlatformSlice, "tenancySlice", o.TenancySlice,
+		"kubeconfig", o.Kubeconfig, "host", restConfig.Host)
 
 	vws := []rootapiserver.NamedVirtualWorkspace{
 		selftenancyreview.NewVirtualWorkspace(dir, endpointFor(o.EndpointBase)),
@@ -132,6 +137,14 @@ func Run(ctx context.Context, o *Options) error {
 	if err := o.Authorization.ApplyTo(&recommended.Config, func() []rootapiserver.NamedVirtualWorkspace { return vws }); err != nil {
 		return fmt.Errorf("apply authorization: %w", err)
 	}
+
+	// The debug endpoint is outside every virtual workspace's root path, so
+	// the framework's authorizer resolves it to no virtual workspace and
+	// denies it. Granting it explicitly is what makes it reachable at all.
+	recommended.Authorization.Authorizer = union.New(
+		recommended.Authorization.Authorizer,
+		pathScopedAuthorizer(debugDirectoryPath, virtual.AuthenticatedOnlyAuthorizer()),
+	)
 
 	completed := rootCfg.Complete()
 	rootServer, err := rootapiserver.NewServer(completed, genericapiserver.NewEmptyDelegate())
@@ -181,4 +194,15 @@ func Run(ctx context.Context, o *Options) error {
 	case err := <-serveErr:
 		return err
 	}
+}
+
+// pathScopedAuthorizer delegates only for one non-resource path, and has no
+// opinion on anything else.
+func pathScopedAuthorizer(path string, delegate authorizer.Authorizer) authorizer.Authorizer {
+	return authorizer.AuthorizerFunc(func(ctx context.Context, attrs authorizer.Attributes) (authorizer.Decision, string, error) {
+		if !attrs.IsResourceRequest() && attrs.GetPath() == path {
+			return delegate.Authorize(ctx, attrs)
+		}
+		return authorizer.DecisionNoOpinion, "", nil
+	})
 }

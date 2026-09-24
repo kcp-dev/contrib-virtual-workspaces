@@ -49,16 +49,20 @@ import (
 	corev1alpha1 "github.com/kcp-dev/sdk/apis/core/v1alpha1"
 	kcptenancyv1alpha1 "github.com/kcp-dev/sdk/apis/tenancy/v1alpha1"
 
+	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/bootstrap"
 	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/directory"
 	tenancyv1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/tenancy/sdk/apis/tenancy/v1alpha1"
 )
 
 // Options configures the directory provider.
 type Options struct {
-	// RestConfig reaches the kcp shard hosting the tenancy APIExport.
+	// RestConfig reaches the kcp shard hosting the tenancy APIExports.
 	RestConfig *rest.Config
-	// APIExportEndpointSlice is the endpoint slice of the tenancy APIExport.
-	APIExportEndpointSlice string
+	// PlatformSlice serves Tenants, TenancySlice serves Projects and
+	// Memberships. They are different exports because they live in
+	// different tiers, so the directory is fed by two managers.
+	PlatformSlice string
+	TenancySlice  string
 }
 
 // Run fills dir until ctx is cancelled. It marks the directory ready once
@@ -68,8 +72,11 @@ func Run(ctx context.Context, opts Options, dir *directory.Directory) error {
 	if opts.RestConfig == nil {
 		return fmt.Errorf("rest config is required")
 	}
-	if opts.APIExportEndpointSlice == "" {
-		return fmt.Errorf("apiexport endpoint slice is required")
+	if opts.PlatformSlice == "" {
+		opts.PlatformSlice = bootstrap.ExportPlatform
+	}
+	if opts.TenancySlice == "" {
+		opts.TenancySlice = bootstrap.ExportTenancy
 	}
 
 	logger := log.FromContext(ctx).WithName("tenancy-directory")
@@ -81,32 +88,46 @@ func Run(ctx context.Context, opts Options, dir *directory.Directory) error {
 	utilruntime.Must(apisv1alpha1.AddToScheme(sch))
 	utilruntime.Must(tenancyv1alpha1.AddToScheme(sch))
 
-	provider, err := apiexport.New(opts.RestConfig, opts.APIExportEndpointSlice, apiexport.Options{
-		Scheme:   sch,
-		Log:      &logger,
-		Handlers: handlers.Handlers{clusterLifecycle{dir: dir, logger: logger}},
-	})
-	if err != nil {
-		return fmt.Errorf("construct apiexport provider: %w", err)
+	newMgr := func(slice string) (mcmanager.Manager, error) {
+		provider, err := apiexport.New(opts.RestConfig, slice, apiexport.Options{
+			Scheme:   sch,
+			Log:      &logger,
+			Handlers: handlers.Handlers{clusterLifecycle{dir: dir, logger: logger}},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("construct provider for %q: %w", slice, err)
+		}
+		return mcmanager.New(opts.RestConfig, provider, manager.Options{
+			Scheme:  sch,
+			Metrics: metricsserver.Options{BindAddress: "0"}, // the VW has its own HTTP server
+		})
 	}
 
-	mgr, err := mcmanager.New(opts.RestConfig, provider, manager.Options{
-		Scheme:  sch,
-		Metrics: metricsserver.Options{BindAddress: "0"}, // the VW has its own HTTP server
-	})
+	platform, err := newMgr(opts.PlatformSlice)
 	if err != nil {
-		return fmt.Errorf("construct multicluster manager: %w", err)
+		return err
 	}
-
-	if err := registerMirrors(mgr, dir); err != nil {
+	tenancy, err := newMgr(opts.TenancySlice)
+	if err != nil {
 		return err
 	}
 
-	if err := mgr.GetLocalManager().Add(manager.RunnableFunc(func(ctx context.Context) error {
-		// Readiness gates the review endpoint: answering before the sync
-		// completes would return a partial answer that looks authoritative.
-		if !mgr.GetLocalManager().GetCache().WaitForCacheSync(ctx) {
-			return fmt.Errorf("discovery cache did not sync")
+	if err := registerTenantMirror(platform, dir); err != nil {
+		return err
+	}
+	if err := registerTenantScopedMirrors(tenancy, dir); err != nil {
+		return err
+	}
+
+	// Readiness gates the review endpoint: answering before BOTH syncs
+	// complete would return a partial answer that looks authoritative —
+	// tenants without their memberships, or the reverse.
+	if err := platform.GetLocalManager().Add(manager.RunnableFunc(func(ctx context.Context) error {
+		if !platform.GetLocalManager().GetCache().WaitForCacheSync(ctx) {
+			return fmt.Errorf("platform discovery cache did not sync")
+		}
+		if !tenancy.GetLocalManager().GetCache().WaitForCacheSync(ctx) {
+			return fmt.Errorf("tenancy discovery cache did not sync")
 		}
 		dir.SetReady()
 		logger.Info("tenancy directory ready")
@@ -116,7 +137,15 @@ func Run(ctx context.Context, opts Options, dir *directory.Directory) error {
 		return fmt.Errorf("register readiness runnable: %w", err)
 	}
 
-	return mgr.Start(ctx)
+	errs := make(chan error, 2)
+	go func() { errs <- platform.Start(ctx) }()
+	go func() { errs <- tenancy.Start(ctx) }()
+	select {
+	case err := <-errs:
+		return err
+	case <-ctx.Done():
+		return nil
+	}
 }
 
 type clusterLifecycle struct {
@@ -136,8 +165,8 @@ func (c clusterLifecycle) OnDelete(obj client.Object) {
 	c.dir.ForgetCluster(cluster)
 }
 
-// registerMirrors wires one mirroring controller per tenancy kind.
-func registerMirrors(mgr mcmanager.Manager, dir *directory.Directory) error {
+// registerTenantMirror mirrors Tenants from the platform tier.
+func registerTenantMirror(mgr mcmanager.Manager, dir *directory.Directory) error {
 	if err := mcbuilder.ControllerManagedBy(mgr).
 		Named("tenancy-vw-tenant").
 		For(&tenancyv1alpha1.Tenant{}).
@@ -159,7 +188,12 @@ func registerMirrors(mgr mcmanager.Manager, dir *directory.Directory) error {
 		})); err != nil {
 		return fmt.Errorf("build tenant mirror: %w", err)
 	}
+	return nil
+}
 
+// registerTenantScopedMirrors mirrors Projects and Memberships, which live
+// inside each tenant's own workspace.
+func registerTenantScopedMirrors(mgr mcmanager.Manager, dir *directory.Directory) error {
 	if err := mcbuilder.ControllerManagedBy(mgr).
 		Named("tenancy-vw-project").
 		For(&tenancyv1alpha1.Project{}).

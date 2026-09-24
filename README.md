@@ -7,7 +7,7 @@ Contrib virtual workspaces for [kcp](https://github.com/kcp-dev/kcp).
 | [access/](access/) | **SelfClusterAccessReview** — "which workspaces can this user access?" in one call | `ghcr.io/kcp-dev/contrib-virtual-workspaces/access-vw` |
 | [mcp/](mcp/) | [Model Context Protocol](https://modelcontextprotocol.io) as a virtual workspace, scoped to what the caller can see (uses the access VW) | `ghcr.io/kcp-dev/contrib-virtual-workspaces/mcp-vw` |
 | [ephemeral/](ephemeral/) | Non-persisted resources: `POST` in, a provider webhook answers, nothing reaches etcd | `ghcr.io/kcp-dev/contrib-virtual-workspaces/ephemeral-vw` |
-| [tenancy/](tenancy/) | Tenants, projects and memberships as kcp workspaces and RBAC, plus **SelfTenancyReview** — "which tenants am I in?" | `ghcr.io/kcp-dev/contrib-virtual-workspaces/tenancy-vw` |
+| [tenancy/](tenancy/) | Tenants, projects and memberships as kcp workspaces and RBAC, plus **SelfTenancyReview** — "which tenants am I in?" — and the `tenancyctl` client | `ghcr.io/kcp-dev/contrib-virtual-workspaces/tenancy-vw` |
 
 Each component's README documents its design, deployment and limits.
 
@@ -36,6 +36,12 @@ make image-mcp          # or per component
 ```
 
 ## Testing
+
+An identity provider is shared by every component: [hack/dex/](hack/dex/)
+runs Dex and writes the `AuthenticationConfiguration` that kcp and the
+virtual workspaces both consume, so a username cannot drift between them.
+The tenancy e2e uses it by default (`DEX=false` falls back to client
+certificates where docker is unavailable).
 
 ```sh
 make test               # unit tests

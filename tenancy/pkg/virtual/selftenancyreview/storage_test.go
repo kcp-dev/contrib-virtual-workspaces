@@ -30,11 +30,13 @@ import (
 
 func endpoint(cluster string) string { return "https://example.test/clusters/" + cluster }
 
+// The Tenant lives in the platform workspace; the Membership lives inside
+// the tenant's own workspace (ws1), which is how the two are joined.
 func readyDirectory() *directory.Directory {
 	d := directory.New()
-	d.UpsertTenant(directory.Key{Cluster: "org", Name: "acme"},
+	d.UpsertTenant(directory.Key{Cluster: "platform", Name: "acme"},
 		directory.Tenant{DisplayName: "Acme", WorkspaceCluster: "ws1"})
-	d.UpsertMembership(directory.Key{Cluster: "org", Name: "m1"},
+	d.UpsertMembership(directory.Key{Cluster: "ws1", Name: "m1"},
 		directory.Membership{
 			Subject: tenancyv1alpha1.Subject{Kind: tenancyv1alpha1.SubjectKindUser, Name: "alice"},
 			Role:    "admin", Tenant: "acme",

@@ -1,0 +1,21 @@
+# tenancy — the per-tenant API.
+#
+# Bound into every Tenant workspace by the `tenant` WorkspaceType, so one
+# fleet-wide informer over this export's virtual workspace sees every
+# tenant's Projects and Memberships without a client per tenant.
+apiVersion: apis.kcp.io/v1alpha2
+kind: APIExport
+metadata:
+  name: tenancy
+spec:
+  resources:
+    - name: projects
+      group: tenancy.contrib.kcp.io
+      schema: v1alpha1.projects.tenancy.contrib.kcp.io
+      storage:
+        crd: {}
+    - name: memberships
+      group: tenancy.contrib.kcp.io
+      schema: v1alpha1.memberships.tenancy.contrib.kcp.io
+      storage:
+        crd: {}

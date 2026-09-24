@@ -10,6 +10,10 @@ cover.out
 .kcp/
 .local/
 pki/
+.dex/
+
+# Kubeconfigs the README walkthrough writes (`tenancyctl kubeconfig -o ...`).
+*.kubeconfig
 
 # Binaries built into component roots by `go build ./cmd/...`. They shadow
 # bin/ on tab-completion and go stale silently; use `make build`.
@@ -19,3 +23,6 @@ pki/
 
 .claudebin/
 .DS_Store
+
+# Self-signed serving certs a VW generates when none are supplied.
+apiserver.local.config/

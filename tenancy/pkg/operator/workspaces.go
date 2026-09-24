@@ -55,7 +55,11 @@ type provisioned struct {
 // parent addressed by c, trying the strategy's candidates in order. The
 // call is idempotent: a workspace already labeled with the owner's UID is
 // adopted no matter which candidate produced its name.
-func ensureWorkspace(ctx context.Context, c client.Client, displayName, ownerUID string, candidates []string) (provisioned, error) {
+//
+// wsType is load-bearing: it is what binds the capability exports into the
+// new workspace. A workspace of the wrong type is a workspace the operator
+// cannot reach, because nothing bound it.
+func ensureWorkspace(ctx context.Context, c client.Client, displayName, ownerUID string, candidates []string, wsType, typePath string) (provisioned, error) {
 	if len(candidates) == 0 {
 		return provisioned{}, fmt.Errorf("naming strategy proposed no candidates")
 	}
@@ -69,6 +73,12 @@ func ensureWorkspace(ctx context.Context, c client.Client, displayName, ownerUID
 				ObjectMeta: metav1.ObjectMeta{
 					Name:   name,
 					Labels: map[string]string{ownerUIDLabel: ownerUID},
+				},
+				Spec: kcptenancyv1alpha1.WorkspaceSpec{
+					Type: &kcptenancyv1alpha1.WorkspaceTypeReference{
+						Name: kcptenancyv1alpha1.WorkspaceTypeName(wsType),
+						Path: typePath,
+					},
 				},
 			}
 			if err := c.Create(ctx, &create); err != nil {

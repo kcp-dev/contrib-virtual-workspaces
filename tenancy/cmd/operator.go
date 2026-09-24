@@ -24,17 +24,17 @@ import (
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/client-go/tools/clientcmd"
 
+	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/bootstrap"
 	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/naming"
 	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/operator"
-	tenancyv1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/tenancy/sdk/apis/tenancy/v1alpha1"
 )
 
 func newOperatorCommand() *cobra.Command {
 	var (
-		kubeconfig             string
-		workspacePath          string
-		apiExportEndpointSlice string
-		namingStrategy         string
+		kubeconfig     string
+		workspacePath  string
+		tenantsPath    string
+		namingStrategy string
 	)
 
 	cmd := &cobra.Command{
@@ -53,27 +53,30 @@ func newOperatorCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("load kubeconfig: %w", err)
 			}
-			if workspacePath != "" {
-				cfg.Host = retargetHost(cfg.Host, workspacePath)
+			if workspacePath == "" {
+				return fmt.Errorf("--workspace-path is required: it is where the exports and WorkspaceTypes live")
 			}
+			cfg.Host = retargetHost(cfg.Host, workspacePath)
 
 			ctx := genericapiserver.SetupSignalContext()
 			return operator.Run(ctx, operator.Options{
-				RestConfig:             cfg,
-				APIExportEndpointSlice: apiExportEndpointSlice,
-				Strategy:               strategy,
+				RestConfig:  cfg,
+				Strategy:    strategy,
+				ExportsPath: workspacePath,
+				TenantsPath: tenantsPath,
 			})
 		},
 	}
 
 	cmd.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Path to the kubeconfig for the target kcp (required).")
-	cmd.Flags().StringVar(&workspacePath, "workspace-path", "",
-		"Workspace path the kubeconfig is retargeted to, e.g. root:tenancy:controllers. "+
-			"Must be the workspace containing the APIExportEndpointSlice. "+
-			"Empty means the kubeconfig's own cluster URL is used unchanged.")
-	cmd.Flags().StringVar(&apiExportEndpointSlice, "apiexport-endpointslice", tenancyv1alpha1.GroupName,
-		"Name of the APIExportEndpointSlice for the tenancy APIExport; organization "+
-			"workspaces are discovered through it.")
+	cmd.Flags().StringVar(&workspacePath, "workspace-path",
+		bootstrap.DefaultWorkspacePrefix+":"+bootstrap.DefaultControllersWorkspace,
+		"Workspace holding the tenancy APIExports, their endpoint slices and the "+
+			"tenant/project WorkspaceTypes.")
+	cmd.Flags().StringVar(&tenantsPath, "tenants-workspace",
+		bootstrap.DefaultWorkspacePrefix+":"+bootstrap.DefaultTenantsWorkspace,
+		"Workspace every tenant workspace is created under. Deliberately not the "+
+			"workspace Tenant records live in.")
 	cmd.Flags().StringVar(&namingStrategy, "naming-strategy", naming.StrategySlug,
 		fmt.Sprintf("How workspaces are named after tenants and projects: %q slugifies the "+
 			"display name and falls back to a UID suffix on collision, %q always names by UID.",

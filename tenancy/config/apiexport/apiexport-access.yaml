@@ -1,0 +1,34 @@
+# tenancy-access — the capability to WRITE INSIDE a workspace.
+#
+# Declares no resources, so a tenant running `kubectl api-resources` in a
+# project workspace sees nothing new. What changes is that the operator's
+# reach into that workspace is declared, scoped and auditable: the claim
+# list below IS the blast radius of a bug in this operator, and
+# `kubectl get apibindings` there shows exactly what it may touch.
+#
+# This is the alternative to writing into child workspaces with an admin
+# client, where the blast radius of the same bug is "everything".
+#
+# The binding comes from the `project` WorkspaceType's defaultAPIBindings:
+# kcp's default-apibinding controller copies every claim on the export into
+# the binding it creates, already Accepted and with a matchAll selector.
+apiVersion: apis.kcp.io/v1alpha2
+kind: APIExport
+metadata:
+  name: tenancy-access
+spec:
+  permissionClaims:
+    # The `project` WorkspaceType omits `extend: root:universal`, so kcp
+    # does not create the `default` namespace and the operator must.
+    - group: ""
+      resource: namespaces
+      verbs: [get, list, watch, create]
+    # What a Membership becomes. Delete is load-bearing: a grant that is
+    # not symmetric with revoke leaves a stale binding, and a stale binding
+    # is live access.
+    - group: rbac.authorization.k8s.io
+      resource: clusterroles
+      verbs: [get, list, watch, create, update, delete]
+    - group: rbac.authorization.k8s.io
+      resource: clusterrolebindings
+      verbs: [get, list, watch, create, update, delete]

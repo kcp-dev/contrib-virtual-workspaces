@@ -23,6 +23,7 @@
 #   hack/ci/run-e2e-tests.sh                  run everything, then tear it down
 #   KCP_DIR=/path/to/kcp hack/ci/...          build kcp from a checkout
 #   KCP_IMAGE=ghcr.io/kcp-dev/kcp:main ...    take kcp from an image (Linux only)
+#   DEX=false hack/ci/...                     skip the identity provider (no docker)
 #   NO_TEARDOWN=true hack/ci/...              leave it running for inspection
 #   WHAT=./test/e2e/... TEST_ARGS="-run Naming -v" ...
 
@@ -49,6 +50,17 @@ ETCD_PEER_PORT="${ETCD_PEER_PORT:-2380}"
 
 NO_TEARDOWN="${NO_TEARDOWN:-false}"
 SKIP_BUILD="${SKIP_BUILD:-false}"
+
+# Dex gives the tests a real OIDC identity provider, so the same identity
+# can be proved two ways: a client certificate, and a token kcp and the
+# virtual workspace both validate against the same
+# AuthenticationConfiguration. It needs docker; DEX=false falls back to
+# certificates only.
+DEX="${DEX:-true}"
+DEX_PORT="${DEX_PORT:-5556}"
+DEX_DIR="${WORK_DIR}/dex"
+DEX_SCRIPT="${MONOREPO_ROOT}/hack/dex/dex.sh"
+AUTH_CONFIG=""
 
 log() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31mERR\033[0m %s\n' "$*" >&2; exit 1; }
@@ -105,6 +117,9 @@ teardown() {
     return
   fi
   stop_all
+  if [[ "${DEX}" == "true" ]]; then
+    DEX_PORT="${DEX_PORT}" "${DEX_SCRIPT}" down || true
+  fi
 }
 
 start_bg() { # name, then command
@@ -135,8 +150,12 @@ stop_all
 rm -rf "${KCP_ROOT_DIR}"
 trap teardown EXIT
 
-for port_and_name in "${KCP_PORT}:kcp" "${VW_PORT}:virtual workspace" \
-                     "${ETCD_CLIENT_PORT}:etcd client" "${ETCD_PEER_PORT}:etcd peer"; do
+ports_to_check=("${KCP_PORT}:kcp" "${VW_PORT}:virtual workspace"
+                "${ETCD_CLIENT_PORT}:etcd client" "${ETCD_PEER_PORT}:etcd peer")
+if [[ "${DEX}" == "true" ]]; then
+  ports_to_check+=("${DEX_PORT}:dex")
+fi
+for port_and_name in "${ports_to_check[@]}"; do
   port=${port_and_name%%:*}
   if lsof -nP -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1; then
     lsof -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | tail -n +2 >&2
@@ -170,15 +189,37 @@ fi
 [[ -x "${KCP_BIN}" ]] || die "no kcp binary at ${KCP_BIN}"
 TENANCY_BIN="${REPO_ROOT}/bin/tenancy-vw"
 [[ -x "${TENANCY_BIN}" ]] || die "no tenancy binary at ${TENANCY_BIN}"
+TENANCYCTL_BIN="${REPO_ROOT}/bin/tenancyctl"
+[[ -x "${TENANCYCTL_BIN}" ]] || die "no tenancyctl binary at ${TENANCYCTL_BIN}"
+
+### identity provider #########################################################
+
+# Before kcp, because kcp is started with the authentication configuration
+# on its command line and refuses to start if the issuer's certificate is
+# not there yet.
+if [[ "${DEX}" == "true" ]]; then
+  command -v docker >/dev/null 2>&1 || die "docker is required for Dex; re-run with DEX=false for certificates only"
+  log "starting Dex"
+  DEX_PORT="${DEX_PORT}" "${DEX_SCRIPT}" up "${DEX_DIR}"
+  AUTH_CONFIG="${DEX_DIR}/authentication-config.yaml"
+fi
 
 ### PKI #######################################################################
 
 # The virtual workspace authenticates callers by client certificate against
 # this throwaway CA. Tests present certs minted here; the CN becomes the
 # username and the O the groups, which is what Membership subjects match.
-if [[ ! -f "${PKI_DIR}/ca.crt" ]]; then
-  log "generating a client CA and user certificates"
-  openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
+#
+# The PKI is reused between runs, so expiry has to be checked rather than
+# only existence: an expired CA is not a build failure but a wall of 401s
+# in the review scenarios, which reads like an authorization bug and is
+# not one. -checkend treats "gone" and "about to go" alike.
+PKI_VALID_DAYS="${PKI_VALID_DAYS:-30}"
+if ! openssl x509 -in "${PKI_DIR}/ca.crt" -checkend 3600 >/dev/null 2>&1; then
+  log "generating a client CA and user certificates (valid ${PKI_VALID_DAYS} days)"
+  rm -f "${PKI_DIR}"/*.crt "${PKI_DIR}"/*.key "${PKI_DIR}"/*.csr "${PKI_DIR}"/*.srl
+
+  openssl req -x509 -newkey rsa:2048 -nodes -days "${PKI_VALID_DAYS}" \
     -keyout "${PKI_DIR}/ca.key" -out "${PKI_DIR}/ca.crt" \
     -subj "/CN=tenancy-e2e-ca" >>"${LOG_DIR}/pki.log" 2>&1
 
@@ -189,19 +230,26 @@ if [[ ! -f "${PKI_DIR}/ca.crt" ]]; then
       -subj "/CN=${user}/O=${group}" >>"${LOG_DIR}/pki.log" 2>&1
     openssl x509 -req -in "${PKI_DIR}/${user}.csr" \
       -CA "${PKI_DIR}/ca.crt" -CAkey "${PKI_DIR}/ca.key" -CAcreateserial \
-      -days 2 -out "${PKI_DIR}/${user}.crt" >>"${LOG_DIR}/pki.log" 2>&1
+      -days "${PKI_VALID_DAYS}" -out "${PKI_DIR}/${user}.crt" >>"${LOG_DIR}/pki.log" 2>&1
   done
 fi
 
 ### kcp #######################################################################
 
 log "starting kcp on :${KCP_PORT}"
-start_bg kcp "${KCP_BIN}" start \
-  --root-directory="${KCP_ROOT_DIR}" \
-  --secure-port="${KCP_PORT}" \
-  --embedded-etcd-client-port="${ETCD_CLIENT_PORT}" \
-  --embedded-etcd-peer-port="${ETCD_PEER_PORT}" \
-  --v="${KCP_V:-2}"
+# shellcheck disable=SC2206
+kcp_args=(start
+  --root-directory="${KCP_ROOT_DIR}"
+  --secure-port="${KCP_PORT}"
+  --embedded-etcd-client-port="${ETCD_CLIENT_PORT}"
+  --embedded-etcd-peer-port="${ETCD_PEER_PORT}"
+  --v="${KCP_V:-2}")
+if [[ -n "${AUTH_CONFIG}" ]]; then
+  # The same file the virtual workspace gets, so a username cannot differ
+  # between the two.
+  kcp_args+=(--authentication-config="${AUTH_CONFIG}")
+fi
+start_bg kcp "${KCP_BIN}" "${kcp_args[@]}"
 
 KUBECONFIG_PATH="${KCP_ROOT_DIR}/admin.kubeconfig"
 
@@ -232,9 +280,14 @@ log "starting the tenancy operator"
 start_bg operator "${TENANCY_BIN}" operator \
   --kubeconfig "${KUBECONFIG_PATH}" \
   --workspace-path root:tenancy:controllers \
+  --tenants-workspace root:tenancy:tenants \
   --v=4
 
 log "starting the tenancy virtual workspace on :${VW_PORT}"
+vw_extra=()
+if [[ -n "${AUTH_CONFIG}" ]]; then
+  vw_extra+=(--authentication-config "${AUTH_CONFIG}")
+fi
 start_bg vw "${TENANCY_BIN}" virtualworkspace \
   --kubeconfig "${KUBECONFIG_PATH}" \
   --workspace-path root:tenancy:controllers \
@@ -246,6 +299,7 @@ start_bg vw "${TENANCY_BIN}" virtualworkspace \
   `# regular user certs cannot impersonate through headers.` \
   --requestheader-allowed-names tenancy-front-proxy \
   --endpoint-base "https://localhost:${KCP_PORT}/clusters/" \
+  "${vw_extra[@]}" \
   --v=4
 
 log "waiting for the virtual workspace to serve"
@@ -270,7 +324,14 @@ export KUBECONFIG="${KUBECONFIG_PATH}"
 export TENANCY_VW_URL="https://localhost:${VW_PORT}"
 export TENANCY_PKI_DIR="${PKI_DIR}"
 export TENANCY_BIN
+export TENANCYCTL_BIN
 export NO_TEARDOWN
+
+if [[ "${DEX}" == "true" ]]; then
+  # shellcheck disable=SC1090
+  source <(DEX_PORT="${DEX_PORT}" "${DEX_SCRIPT}" env "${DEX_DIR}")
+  log "tests will also authenticate through Dex at ${DEX_ISSUER}"
+fi
 
 WHAT="${WHAT:-./test/e2e/...}"
 TEST_ARGS="${TEST_ARGS:--timeout 20m -v}"

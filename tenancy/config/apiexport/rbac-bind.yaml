@@ -1,36 +1,63 @@
-# Who may BIND the tenancy APIExport. Applied into the workspace that
-# hosts it.
+# Who may BIND these exports. Applied into the workspace that hosts them.
 #
-# kcp gates both APIBinding and APIExportEndpointSlice creation on a `bind`
-# verb against the APIExport, evaluated in the EXPORT's own workspace. It
-# is a separate admission check, so holding cluster-admin does not satisfy
-# it — without this an export is one nobody, including this component's own
-# init, can bind.
+# kcp gates APIBinding and APIExportEndpointSlice creation on a `bind` verb
+# against the APIExport, evaluated in the EXPORT's own workspace. It is a
+# separate admission check, so holding cluster-admin does not satisfy it —
+# without this an export is one nobody, including this component's own init,
+# can bind.
 #
-# Open to system:authenticated on purpose: binding this export gives a
-# workspace the tenancy resources, and the workspace-provisioning claim is
-# only in force once the CONSUMER accepts it on its own APIBinding, so
-# opening `bind` grants nothing by itself. A deployment that wants the
-# export restricted replaces the ClusterRoleBinding subject with its own
-# group.
+# Open to system:authenticated: a claim only takes effect once the CONSUMER
+# accepts it, and for the two capability exports the consumer is a
+# WorkspaceType this component owns. A deployment wanting the exports
+# restricted replaces the subject with its own group.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: system:kcp:apiexport:tenancy.contrib.kcp.io:bind
+  name: system:kcp:apiexport:tenancy:bind
 rules:
   - apiGroups: ["apis.kcp.io"]
     resources: ["apiexports"]
-    resourceNames: ["tenancy.contrib.kcp.io"]
+    resourceNames:
+      - tenancy
+      - tenancy-platform
+      - tenancy-provisioner
+      - tenancy-access
     verbs: ["bind"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: system:kcp:authenticated:apiexport:tenancy.contrib.kcp.io:bind
+  name: system:kcp:authenticated:apiexport:tenancy:bind
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: system:kcp:apiexport:tenancy.contrib.kcp.io:bind
+  name: system:kcp:apiexport:tenancy:bind
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: system:authenticated
+---
+# The `tenant` and `project` WorkspaceTypes are referenced from Workspace
+# objects created in other logical clusters, and kcp gates that on a `use`
+# verb against the type, in the type's own workspace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: system:kcp:workspacetype:tenancy:use
+rules:
+  - apiGroups: ["tenancy.kcp.io"]
+    resources: ["workspacetypes"]
+    resourceNames: ["tenant", "project"]
+    verbs: ["use"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: system:kcp:authenticated:workspacetype:tenancy:use
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:kcp:workspacetype:tenancy:use
 subjects:
   - apiGroup: rbac.authorization.k8s.io
     kind: Group

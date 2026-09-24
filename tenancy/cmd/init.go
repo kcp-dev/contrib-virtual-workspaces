@@ -36,6 +36,8 @@ func newInitCommand() *cobra.Command {
 		kubeconfig           string
 		workspacePrefix      string
 		controllersWorkspace string
+		storeWorkspace       string
+		tenantsWorkspace     string
 		workspaceType        string
 		serverUsers          []string
 		serverGroups         []string
@@ -80,7 +82,7 @@ root down. Idempotent: safe to run on every pod start and every upgrade.`,
 				return fmt.Errorf("resolve workspace path %s: %w", workspacePath, err)
 			}
 
-			result, err := bootstrap.Bootstrap(ctx, target, bootstrap.Options{
+			result, err := bootstrap.Bootstrap(ctx, target, workspacePath, bootstrap.Options{
 				ServerUsers:  serverUsers,
 				ServerGroups: serverGroups,
 			})
@@ -88,14 +90,78 @@ root down. Idempotent: safe to run on every pod start and every upgrade.`,
 				return err
 			}
 
+			// The two hand-bound tiers every install gets for free. Without
+			// them a fresh deployment has the API installed but nowhere to
+			// put a Tenant, and binding by hand means copying an identity
+			// hash that only this code knows.
+			//
+			// They are separate on purpose: the store holds the records,
+			// the tenants workspace is the parent the workspaces are
+			// created under, and neither can do the other's job.
+			var storePath, tenantsPath string
+			if storeWorkspace != "" {
+				storePath, err = accessbootstrap.JoinWorkspacePath(workspacePrefix, storeWorkspace)
+				if err != nil {
+					return err
+				}
+				logger.Info("creating the tenant store", "workspace", storePath)
+				storeCfg, err := accessbootstrap.CreateWorkspacePath(ctx, cfg, storePath, workspaceType)
+				if err != nil {
+					return fmt.Errorf("resolve workspace path %s: %w", storePath, err)
+				}
+				if err := bootstrap.BindStore(ctx, storeCfg, result); err != nil {
+					return fmt.Errorf("bind the Tenant API into %s: %w", storePath, err)
+				}
+				logger.Info("tenant store ready", "workspace", storePath)
+			}
+			if tenantsWorkspace != "" {
+				tenantsPath, err = accessbootstrap.JoinWorkspacePath(workspacePrefix, tenantsWorkspace)
+				if err != nil {
+					return err
+				}
+				logger.Info("creating the provisioning parent", "workspace", tenantsPath)
+				tenantsCfg, err := accessbootstrap.CreateWorkspacePath(ctx, cfg, tenantsPath, workspaceType)
+				if err != nil {
+					return fmt.Errorf("resolve workspace path %s: %w", tenantsPath, err)
+				}
+				if err := bootstrap.BindTenantsParent(ctx, tenantsCfg, result); err != nil {
+					return fmt.Errorf("bind the provisioner claim into %s: %w", tenantsPath, err)
+				}
+				logger.Info("provisioning parent ready", "workspace", tenantsPath)
+			}
+
+			// Only now is there a consumer, so only now can a slice have
+			// URLs to report. Informational: the servers follow the slices
+			// themselves and pick them up whenever they appear.
+			sliceURLs := map[string][]string{}
+			for _, slice := range []string{
+				bootstrap.ExportPlatform, bootstrap.ExportTenancy,
+				bootstrap.ExportProvisioner, bootstrap.ExportAccess,
+			} {
+				urls, err := bootstrap.WaitForEndpointSliceURLs(ctx, target, slice)
+				if err != nil {
+					return err
+				}
+				sliceURLs[slice] = urls
+			}
+
 			logger.Info("bootstrap complete",
 				"workspace", workspacePath,
-				"apiExportEndpointSlice", result.APIExportEndpointSlice,
-				"virtualWorkspaceURLs", result.VirtualWorkspaceURLs,
+				"exportsCluster", result.ExportsCluster,
+				"platformUrls", sliceURLs[bootstrap.ExportPlatform],
+				"tenancyUrls", sliceURLs[bootstrap.ExportTenancy],
+				"provisionerUrls", sliceURLs[bootstrap.ExportProvisioner],
+				"accessUrls", sliceURLs[bootstrap.ExportAccess],
 			)
-			logger.Info("organization workspaces opt in with an APIBinding to this export; "+
-				"see config/examples/apibinding-consumer.yaml",
-				"exportPath", workspacePath,
+			if storePath != "" {
+				logger.Info("put Tenants here; their Projects and Memberships live inside each tenant's own workspace",
+					"store", storePath, "provisionedUnder", tenantsPath,
+				)
+			}
+			logger.Info("tenant and project workspaces bind the capability exports through their WorkspaceType, "+
+				"so nothing below this tier is bound by hand",
+				"exportsPath", workspacePath,
+				"workspaceTypes", []string{bootstrap.WorkspaceTypeTenant, bootstrap.WorkspaceTypeProject},
 			)
 			return nil
 		},
@@ -108,6 +174,12 @@ root down. Idempotent: safe to run on every pod start and every upgrade.`,
 	cmd.Flags().StringVar(&controllersWorkspace, "controllers-workspace", bootstrap.DefaultControllersWorkspace,
 		"Name of the workspace this component owns, created under --workspace-prefix. "+
 			"Holds the APIExport and the endpoint slice.")
+	cmd.Flags().StringVar(&storeWorkspace, "store-workspace", bootstrap.DefaultStoreWorkspace,
+		"Name of the workspace Tenant records live in, created under --workspace-prefix "+
+			"and bound to the Tenant API. Empty skips creating it.")
+	cmd.Flags().StringVar(&tenantsWorkspace, "tenants-workspace", bootstrap.DefaultTenantsWorkspace,
+		"Name of the workspace every tenant workspace is created under, bound to the "+
+			"provisioner claim. Holds no tenancy objects. Empty skips creating it.")
 	cmd.Flags().StringVar(&workspaceType, "workspace-type", accessbootstrap.DefaultWorkspaceType,
 		"WorkspaceType for any workspace this creates.")
 	cmd.Flags().StringSliceVar(&serverUsers, "server-user", nil,

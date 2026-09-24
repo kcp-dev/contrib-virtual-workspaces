@@ -28,6 +28,7 @@ import (
 	vwoptions "github.com/kcp-dev/virtual-workspace-framework/pkg/options"
 
 	accessserver "github.com/kcp-dev/contrib-virtual-workspaces/access/pkg/server"
+	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/bootstrap"
 )
 
 // Options configures the tenancy virtual workspace server.
@@ -54,10 +55,11 @@ type Options struct {
 	// workspace endpoints in review answers.
 	EndpointBase string
 
-	// APIExportEndpointSlice is the endpoint slice of the tenancy
-	// APIExport; the directory provider follows it to find organization
-	// workspaces.
-	APIExportEndpointSlice string
+	// PlatformSlice and TenancySlice are the endpoint slices the directory
+	// is fed from: Tenants come from the platform tier, Projects and
+	// Memberships from inside each tenant's workspace.
+	PlatformSlice string
+	TenancySlice  string
 
 	// WorkspacePath retargets the kubeconfig to the workspace holding the
 	// endpoint slice, for kubeconfigs that point elsewhere (for example an
@@ -89,9 +91,10 @@ func (o *Options) AddFlags(fs *pflag.FlagSet) {
 
 	fs.StringVar(&o.EndpointBase, "endpoint-base", "https://kcp.example.com/clusters/",
 		"FrontProxy URL prefix for workspace endpoints returned in review answers.")
-	fs.StringVar(&o.APIExportEndpointSlice, "apiexport-endpointslice", "tenancy.contrib.kcp.io",
-		"Name of the APIExportEndpointSlice for the tenancy APIExport; organization "+
-			"workspaces are discovered through it.")
+	fs.StringVar(&o.PlatformSlice, "platform-endpointslice", bootstrap.ExportPlatform,
+		"APIExportEndpointSlice serving Tenants.")
+	fs.StringVar(&o.TenancySlice, "tenancy-endpointslice", bootstrap.ExportTenancy,
+		"APIExportEndpointSlice serving Projects and Memberships.")
 	fs.StringVar(&o.WorkspacePath, "workspace-path", "",
 		"Workspace path the kubeconfig is retargeted to, e.g. root:tenancy:controllers. "+
 			"Must be the workspace containing the APIExportEndpointSlice. "+
@@ -107,9 +110,10 @@ func (o *Options) Complete() error {
 		return fmt.Errorf("--kubeconfig is required")
 	}
 
-	if !o.Authentication.OIDCEnabled() && !o.Authentication.RequestHeaderEnabled() {
-		return fmt.Errorf("no authentication method configured: set --authentication-config or --oidc-issuer-url " +
-			"for direct callers, and/or --requestheader-client-ca-file when running behind kcp's front-proxy")
+	if !o.Authentication.OIDCEnabled() && !o.Authentication.RequestHeaderEnabled() && !o.Authentication.ClientCertEnabled() {
+		return fmt.Errorf("no authentication method configured: set --client-ca-file or " +
+			"--authentication-config / --oidc-issuer-url for direct callers, and/or " +
+			"--requestheader-client-ca-file when running behind kcp's front-proxy")
 	}
 
 	return nil
@@ -123,8 +127,11 @@ func (o *Options) Validate() error {
 	errs = append(errs, o.Authentication.Validate()...)
 	errs = append(errs, o.Authorization.Validate()...)
 
-	if o.APIExportEndpointSlice == "" {
-		errs = append(errs, fmt.Errorf("--apiexport-endpointslice must not be empty"))
+	if o.PlatformSlice == "" {
+		errs = append(errs, fmt.Errorf("--platform-endpointslice must not be empty"))
+	}
+	if o.TenancySlice == "" {
+		errs = append(errs, fmt.Errorf("--tenancy-endpointslice must not be empty"))
 	}
 	if o.WorkspacePath != "" {
 		if p := logicalcluster.NewPath(o.WorkspacePath); !p.IsValid() {

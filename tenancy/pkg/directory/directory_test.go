@@ -33,18 +33,20 @@ func group(name string) tenancyv1alpha1.Subject {
 	return tenancyv1alpha1.Subject{Kind: tenancyv1alpha1.SubjectKindGroup, Name: name}
 }
 
-// A directory with one org cluster, one tenant, two projects.
+// A directory shaped like the real tiers: the Tenant lives in the platform
+// cluster, its Projects and Memberships inside the tenant's OWN workspace
+// cluster (ws-acme), and each project has a workspace of its own.
 func fixture() *Directory {
 	d := New()
-	d.UpsertTenant(Key{"org1", "acme"}, Tenant{DisplayName: "Acme", WorkspaceCluster: "ws-acme"})
-	d.UpsertProject(Key{"org1", "web"}, Project{Tenant: "acme", DisplayName: "Web", WorkspaceCluster: "ws-web"})
-	d.UpsertProject(Key{"org1", "api"}, Project{Tenant: "acme", DisplayName: "API", WorkspaceCluster: "ws-api"})
+	d.UpsertTenant(Key{"platform", "acme"}, Tenant{DisplayName: "Acme", WorkspaceCluster: "ws-acme"})
+	d.UpsertProject(Key{"ws-acme", "web"}, Project{Tenant: "acme", DisplayName: "Web", WorkspaceCluster: "ws-web"})
+	d.UpsertProject(Key{"ws-acme", "api"}, Project{Tenant: "acme", DisplayName: "API", WorkspaceCluster: "ws-api"})
 	return d
 }
 
 func TestTenantWideRoleReachesEveryProject(t *testing.T) {
 	d := fixture()
-	d.UpsertMembership(Key{"org1", "m1"}, Membership{Subject: user("alice"), Role: "edit", Tenant: "acme"})
+	d.UpsertMembership(Key{"ws-acme", "m1"}, Membership{Subject: user("alice"), Role: "edit", Tenant: "acme"})
 
 	claims := d.ReviewFor("alice", nil, endpoint)
 	if len(claims) != 1 {
@@ -69,7 +71,7 @@ func TestTenantWideRoleReachesEveryProject(t *testing.T) {
 
 func TestProjectScopedGrantReachesOneProject(t *testing.T) {
 	d := fixture()
-	d.UpsertMembership(Key{"org1", "m1"}, Membership{Subject: user("bob"), Role: "view", Tenant: "acme", Project: "web"})
+	d.UpsertMembership(Key{"ws-acme", "m1"}, Membership{Subject: user("bob"), Role: "view", Tenant: "acme", Project: "web"})
 
 	claims := d.ReviewFor("bob", nil, endpoint)
 	if len(claims) != 1 {
@@ -86,8 +88,8 @@ func TestProjectScopedGrantReachesOneProject(t *testing.T) {
 
 func TestGroupAndUserGrantsUnion(t *testing.T) {
 	d := fixture()
-	d.UpsertMembership(Key{"org1", "m1"}, Membership{Subject: group("devs"), Role: "view", Tenant: "acme"})
-	d.UpsertMembership(Key{"org1", "m2"}, Membership{Subject: user("carol"), Role: "admin", Tenant: "acme", Project: "web"})
+	d.UpsertMembership(Key{"ws-acme", "m1"}, Membership{Subject: group("devs"), Role: "view", Tenant: "acme"})
+	d.UpsertMembership(Key{"ws-acme", "m2"}, Membership{Subject: user("carol"), Role: "admin", Tenant: "acme", Project: "web"})
 
 	claims := d.ReviewFor("carol", []string{"devs"}, endpoint)
 	if len(claims) != 1 {
@@ -113,7 +115,7 @@ func TestGroupAndUserGrantsUnion(t *testing.T) {
 
 func TestIdentitiesAreIsolated(t *testing.T) {
 	d := fixture()
-	d.UpsertMembership(Key{"org1", "m1"}, Membership{Subject: user("alice"), Role: "admin", Tenant: "acme"})
+	d.UpsertMembership(Key{"ws-acme", "m1"}, Membership{Subject: user("alice"), Role: "admin", Tenant: "acme"})
 
 	if claims := d.ReviewFor("mallory", []string{"other"}, endpoint); len(claims) != 0 {
 		t.Errorf("mallory should see nothing, got %+v", claims)
@@ -122,7 +124,7 @@ func TestIdentitiesAreIsolated(t *testing.T) {
 
 func TestRemovalRevokes(t *testing.T) {
 	d := fixture()
-	k := Key{"org1", "m1"}
+	k := Key{"ws-acme", "m1"}
 	d.UpsertMembership(k, Membership{Subject: user("alice"), Role: "admin", Tenant: "acme"})
 	d.RemoveMembership(k)
 
@@ -131,19 +133,22 @@ func TestRemovalRevokes(t *testing.T) {
 	}
 }
 
-func TestMembershipToUnknownTenantClaimsNothing(t *testing.T) {
+func TestMembershipInAnUnknownWorkspaceClaimsNothing(t *testing.T) {
 	d := New()
-	d.UpsertMembership(Key{"org1", "m1"}, Membership{Subject: user("alice"), Role: "admin", Tenant: "ghost"})
+	d.UpsertMembership(Key{"ws-acme", "m1"}, Membership{Subject: user("alice"), Role: "admin", Tenant: "ghost"})
 
 	if claims := d.ReviewFor("alice", nil, endpoint); len(claims) != 0 {
-		t.Errorf("expected no claims for a tenant the directory has not seen, got %+v", claims)
+		t.Errorf("expected no claims for a workspace whose Tenant the directory has not seen, got %+v", claims)
 	}
 }
 
 func TestForgetClusterDropsEverything(t *testing.T) {
 	d := fixture()
-	d.UpsertMembership(Key{"org1", "m1"}, Membership{Subject: user("alice"), Role: "admin", Tenant: "acme"})
-	d.ForgetCluster("org1")
+	d.UpsertMembership(Key{"ws-acme", "m1"}, Membership{Subject: user("alice"), Role: "admin", Tenant: "acme"})
+	// The platform cluster going away takes the Tenant with it, and with it
+	// every claim that resolved through it.
+	d.ForgetCluster("platform")
+	d.ForgetCluster("ws-acme")
 
 	if claims := d.ReviewFor("alice", nil, endpoint); len(claims) != 0 {
 		t.Errorf("expected no claims after ForgetCluster, got %+v", claims)
@@ -154,14 +159,19 @@ func TestForgetClusterDropsEverything(t *testing.T) {
 	}
 }
 
-func TestSameTenantNameInTwoOrgsStaysSeparate(t *testing.T) {
+func TestSameTenantNameInTwoPlatformsStaysSeparate(t *testing.T) {
 	d := New()
-	d.UpsertTenant(Key{"org1", "acme"}, Tenant{DisplayName: "Acme One", WorkspaceCluster: "ws-1"})
-	d.UpsertTenant(Key{"org2", "acme"}, Tenant{DisplayName: "Acme Two", WorkspaceCluster: "ws-2"})
-	d.UpsertMembership(Key{"org1", "m1"}, Membership{Subject: user("alice"), Role: "view", Tenant: "acme"})
+	d.UpsertTenant(Key{"platform1", "acme"}, Tenant{DisplayName: "Acme One", WorkspaceCluster: "ws-1"})
+	d.UpsertTenant(Key{"platform2", "acme"}, Tenant{DisplayName: "Acme Two", WorkspaceCluster: "ws-2"})
+	// The grant lives in the first tenant's workspace, so it can only
+	// resolve to that tenant however many share the name.
+	d.UpsertMembership(Key{"ws-1", "m1"}, Membership{Subject: user("alice"), Role: "view", Tenant: "acme"})
 
 	claims := d.ReviewFor("alice", nil, endpoint)
 	if len(claims) != 1 || claims[0].Cluster != "ws-1" {
-		t.Errorf("expected only the org1 tenant, got %+v", claims)
+		t.Errorf("expected only the first tenant, got %+v", claims)
+	}
+	if claims[0].DisplayName != "Acme One" {
+		t.Errorf("resolved the wrong Tenant object: %+v", claims[0])
 	}
 }
