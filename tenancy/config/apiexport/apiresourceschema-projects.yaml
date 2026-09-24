@@ -1,0 +1,72 @@
+apiVersion: apis.kcp.io/v1alpha1
+kind: APIResourceSchema
+metadata:
+  name: v1alpha1.projects.tenancy.contrib.kcp.io
+spec:
+  group: tenancy.contrib.kcp.io
+  names:
+    kind: Project
+    listKind: ProjectList
+    plural: projects
+    singular: project
+  scope: Cluster
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      schema:
+        description: |
+          Project asks for a workspace nested under a tenant's workspace.
+          Projects are the unit teams actually work in; tenant-wide
+          Memberships reach every project, project Memberships reach one.
+        type: object
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            type: object
+            required:
+              - tenant
+              - displayName
+            properties:
+              tenant:
+                description: |
+                  Name of the Tenant (in the same workspace) this project
+                  belongs to.
+                type: string
+                minLength: 1
+              displayName:
+                description: |
+                  Human name of the project; seeds the workspace name the
+                  same way a tenant's does.
+                type: string
+                minLength: 1
+              description:
+                description: Free text for humans.
+                type: string
+          status:
+            type: object
+            properties:
+              phase:
+                description: Pending, Ready or Error.
+                type: string
+              message:
+                description: Detail when phase is not Ready.
+                type: string
+              workspace:
+                description: Name of the provisioned Workspace object.
+                type: string
+              workspaceCluster:
+                description: Logical cluster backing the provisioned workspace.
+                type: string
+              url:
+                description: Direct address of the provisioned workspace.
+                type: string
+        required:
+          - spec

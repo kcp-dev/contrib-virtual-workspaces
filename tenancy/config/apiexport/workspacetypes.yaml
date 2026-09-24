@@ -1,0 +1,83 @@
+# The two workspace shapes the operator provisions. Their defaultAPIBindings
+# are what make this system claim-based rather than admin-based: kcp's
+# default-apibinding controller copies every claim off the referenced export
+# into the binding it creates, already Accepted and with a matchAll selector
+# (identityHash included), so no initializer of ours has to stamp anything.
+#
+# A non-empty defaultAPIBindings also makes kcp add its own
+# WorkspaceAPIBindingsInitializer, which kcp clears once the bindings exist —
+# the workspace is not Ready until it is fully bound. That is the guarantee a
+# custom initializer would give, without a controller to write and without an
+# initializer only we can clear (which would wedge every new workspace
+# whenever this operator is down).
+apiVersion: tenancy.kcp.io/v1alpha1
+kind: WorkspaceType
+metadata:
+  name: tenant
+spec:
+  extend:
+    with:
+      - name: universal
+        path: root
+  defaultChildWorkspaceType:
+    name: project
+    path: __EXPORTS_REF__
+  # `tenancy` makes every tenant's Projects and Memberships visible to one
+  # fleet-wide informer over that export's virtual workspace.
+  #
+  # `tenancy-provisioner` carries the accepted `create workspaces` claim that
+  # lets project workspaces be created inside this tenant.
+  #
+  # DELIBERATELY NOT `tenancy-access`. That export carries the RBAC claims,
+  # and binding it here would let the operator write ClusterRoleBindings into
+  # the tenant workspace — useful only for granting a tenant access to this
+  # tier, which no tenant may have. This workspace holds the Memberships that
+  # decide who can reach what; a tenant able to write here could grant
+  # themselves anything, behind the virtual workspace rather than through it.
+  #
+  # The tier stays unreachable not because something refuses the request but
+  # because no binding in this logical cluster names any tenant identity —
+  # which survives a new client, a forgotten code path and a misconfigured
+  # route, because it is not a check at all.
+  defaultAPIBindings:
+    - export: tenancy
+      path: __EXPORTS_REF__
+    - export: tenancy-provisioner
+      path: __EXPORTS_REF__
+---
+apiVersion: tenancy.kcp.io/v1alpha1
+kind: WorkspaceType
+metadata:
+  name: project
+spec:
+  # A project may only be created under a tenant.
+  # __EXPORTS_PATH__, not __EXPORTS_REF__: kcp matches this against the
+  # parent Workspace's own spec.type.path, which it always writes as a
+  # canonical path. A logical cluster id is accepted at install time and
+  # only fails later, when the first child Workspace is created.
+  limitAllowedParents:
+    types:
+      - name: tenant
+        path: __EXPORTS_PATH__
+  # Leaves. Nesting projects structurally would mean a Workspace object
+  # inside a project workspace, which requires binding tenancy-provisioner
+  # here — handing every project the `create workspaces` claim just so the
+  # platform can nest. A project gets exactly one binding and nothing that
+  # lets anything create workspaces inside it.
+  limitAllowedChildren:
+    none: true
+  # TWO DELIBERATE OMISSIONS DO MOST OF THE WORK:
+  #
+  # 1. No `extend: root:universal`. Universal would pull tenancy.kcp.io
+  #    (Workspace, WorkspaceType) and topology.kcp.io into the TENANT's API
+  #    surface, letting a tenant spawn arbitrary child workspaces and inspect
+  #    cluster topology. Both are platform surfaces. The cost: kcp no longer
+  #    auto-creates the `default` namespace, so the operator creates it —
+  #    which is what the namespaces claim on tenancy-access is for.
+  #
+  # 2. One defaultAPIBindings entry, and it adds no tenant-facing API. A
+  #    fresh project workspace exposes nothing beyond kcp built-ins; every
+  #    API a tenant can use arrives by explicitly enabling a provider.
+  defaultAPIBindings:
+    - export: tenancy-access
+      path: __EXPORTS_REF__

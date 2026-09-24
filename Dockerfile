@@ -14,13 +14,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# One Dockerfile, three images. Every component shares the builder below, so
+# One Dockerfile, one image per component. Every component shares the builder below, so
 # `go mod download` and the build cache are paid for once; the final stage is
 # selected with --target:
 #
 #   docker build --target access-vw    -t access-vw .
 #   docker build --target mcp-vw       -t mcp-vw .
 #   docker build --target ephemeral-vw -t ephemeral-vw .
+#   docker build --target tenancy-vw   -t tenancy-vw .
 
 # Pinned to the build platform so multi-arch builds cross-compile instead of
 # running the toolchain under emulation.
@@ -75,3 +76,18 @@ FROM gcr.io/distroless/static:nonroot AS ephemeral-vw
 COPY --from=build-ephemeral /out/ /
 USER 65532:65532
 ENTRYPOINT ["/ephemeral-virtual-workspace"]
+
+# ── tenancy ──────────────────────────────────────────────────────────
+FROM builder AS build-tenancy
+# One server binary with subcommands (init, operator, virtualworkspace), so
+# the deployment's init container and both long-running processes share it,
+# plus tenancyctl so an operator can drive the model from inside the image.
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -o /out/tenancy-vw ./tenancy/ && \
+    go build -o /out/tenancyctl ./tenancy/cmd/tenancyctl/
+
+FROM gcr.io/distroless/static:nonroot AS tenancy-vw
+COPY --from=build-tenancy /out/ /
+USER 65532:65532
+ENTRYPOINT ["/tenancy-vw"]

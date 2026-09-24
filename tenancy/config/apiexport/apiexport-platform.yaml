@@ -1,0 +1,16 @@
+# tenancy-platform — the platform tier's own API.
+#
+# Bound once, into the platform workspace, by init. Tenants live here and
+# nowhere else: a Tenant is a fleet-level object, and no tenant identity
+# holds any binding in this logical cluster.
+apiVersion: apis.kcp.io/v1alpha2
+kind: APIExport
+metadata:
+  name: tenancy-platform
+spec:
+  resources:
+    - name: tenants
+      group: tenancy.contrib.kcp.io
+      schema: v1alpha1.tenants.tenancy.contrib.kcp.io
+      storage:
+        crd: {}

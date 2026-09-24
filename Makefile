@@ -28,7 +28,7 @@ help: ## Show available targets
 # ── Build ────────────────────────────────────────────────────────────
 
 .PHONY: build
-build: build-access build-mcp build-ephemeral ## Build every binary into bin/
+build: build-access build-mcp build-ephemeral build-tenancy ## Build every binary into bin/
 
 .PHONY: build-access
 build-access: ## Build the access virtual workspace binaries
@@ -45,6 +45,11 @@ build-ephemeral: ## Build the ephemeral resources virtual workspace binaries
 	$(GO) build -o $(BIN_DIR)/ephemeral-virtual-workspace ./ephemeral/cmd/ephemeral-virtual-workspace
 	$(GO) build -o $(BIN_DIR)/endpointslice-controller ./ephemeral/cmd/endpointslice-controller
 	$(GO) build -o $(BIN_DIR)/example-webhook ./ephemeral/examples/webhook
+
+.PHONY: build-tenancy
+build-tenancy: ## Build the tenancy server binary and the tenancyctl client
+	$(GO) build -o $(BIN_DIR)/tenancy-vw ./tenancy
+	$(GO) build -o $(BIN_DIR)/tenancyctl ./tenancy/cmd/tenancyctl
 
 # ── Test & verify ────────────────────────────────────────────────────
 
@@ -63,7 +68,7 @@ lint: ## Run golangci-lint (configuration in .golangci.yml)
 .PHONY: vet
 vet: ## Run go vet, including the e2e build tag so the tests cannot rot
 	$(GO) vet ./...
-	$(GO) vet -tags e2e ./test/... ./access/test/... ./mcp/test/... ./ephemeral/test/...
+	$(GO) vet -tags e2e ./test/... ./access/test/... ./mcp/test/... ./ephemeral/test/... ./tenancy/test/...
 
 .PHONY: tidy
 tidy: ## Sync go.mod / go.sum
@@ -90,7 +95,7 @@ verify-fork-pin: ## Check the kcp Kubernetes fork pin matches virtual-workspace-
 # Each component owns its e2e harness; these are the entry points CI uses.
 
 .PHONY: test-e2e
-test-e2e: test-e2e-access test-e2e-mcp test-e2e-ephemeral ## Run every component's e2e tests in sequence
+test-e2e: test-e2e-access test-e2e-mcp test-e2e-ephemeral test-e2e-tenancy ## Run every component's e2e tests in sequence
 
 .PHONY: test-e2e-access
 test-e2e-access: ## Run the access VW e2e tests (throwaway kind cluster via kcp-operator)
@@ -104,6 +109,10 @@ test-e2e-mcp: ## Run the MCP VW e2e tests (kind cluster with access VW alongside
 test-e2e-ephemeral: ## Run the ephemeral VW e2e tests (local processes against a real kcp)
 	cd ephemeral && ./hack/ci/run-e2e-tests.sh
 
+.PHONY: test-e2e-tenancy
+test-e2e-tenancy: ## Run the tenancy e2e tests (local processes against a real kcp)
+	cd tenancy && ./hack/ci/run-e2e-tests.sh
+
 # ── Images ───────────────────────────────────────────────────────────
 # One Dockerfile, one shared builder stage, three image targets.
 
@@ -111,7 +120,7 @@ IMAGE_PREFIX ?= ghcr.io/kcp-dev/contrib-virtual-workspaces
 IMAGE_TAG    ?= latest
 
 .PHONY: images
-images: image-access image-mcp image-ephemeral ## Build all three container images
+images: image-access image-mcp image-ephemeral image-tenancy ## Build every container image
 
 .PHONY: image-access
 image-access: ## Build the access-vw container image
@@ -124,6 +133,10 @@ image-mcp: ## Build the mcp-vw container image
 .PHONY: image-ephemeral
 image-ephemeral: ## Build the ephemeral-vw container image
 	docker build --target ephemeral-vw -t $(IMAGE_PREFIX)/ephemeral-vw:$(IMAGE_TAG) .
+
+.PHONY: image-tenancy
+image-tenancy: ## Build the tenancy-vw container image
+	docker build --target tenancy-vw -t $(IMAGE_PREFIX)/tenancy-vw:$(IMAGE_TAG) .
 
 .PHONY: clean
 clean: ## Remove build artifacts

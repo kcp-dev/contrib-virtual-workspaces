@@ -1,0 +1,31 @@
+# tenancy-provisioner — the capability to MAKE a workspace.
+#
+# Declares no resources on purpose. `resources` is optional, and permission
+# claims cover resources outside an export's own schemas, so an export with
+# no schemas is exactly the "grant a capability, add no API" primitive:
+# binding it gives a workspace zero new tenant-visible API and gives the
+# operator one specific reach.
+#
+# A Workspace object lives in its PARENT's logical cluster, so "create
+# workspaces here" belongs to exactly two tiers: the platform workspace,
+# whose children are tenants, and each tenant workspace, whose children are
+# projects. It is bound in those two places and nowhere else.
+#
+# Kept separate from tenancy-access deliberately: provisioning a workspace
+# and reaching inside one are the two most dangerous powers here, so they
+# are named, granted and revoked separately.
+#
+# identityHash is substituted at apply time. kcp rejects a claim on a
+# non-built-in type without one, and `workspaces` is served by the root
+# tenancy.kcp.io APIExport rather than being built in, so the hash pins
+# this claim to that export's schema. It is per kcp install.
+apiVersion: apis.kcp.io/v1alpha2
+kind: APIExport
+metadata:
+  name: tenancy-provisioner
+spec:
+  permissionClaims:
+    - group: tenancy.kcp.io
+      resource: workspaces
+      identityHash: __TENANCY_KCP_IO_IDENTITY_HASH__
+      verbs: [get, list, watch, create, delete]
