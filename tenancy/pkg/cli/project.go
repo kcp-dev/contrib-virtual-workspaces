@@ -41,10 +41,11 @@ func newProjectCommand() *cobra.Command {
 	o.addFlags(cmd)
 
 	var (
-		tenant      string
-		displayName string
-		description string
-		wait_       bool
+		tenant       string
+		displayName  string
+		description  string
+		wait_        bool
+		ifNotPresent bool
 	)
 
 	create := &cobra.Command{
@@ -73,12 +74,17 @@ func newProjectCommand() *cobra.Command {
 				},
 			}
 			if err := c.Create(cmd.Context(), project); err != nil {
-				if apierrors.IsAlreadyExists(err) {
-					return fmt.Errorf("project %q already exists in %s", name, o.workspace)
+				switch {
+				case apierrors.IsAlreadyExists(err) && ifNotPresent:
+					fmt.Printf("project/%s already exists in tenant %s\n", name, tenant)
+				case apierrors.IsAlreadyExists(err):
+					return fmt.Errorf("project %q already exists in tenant %s", name, tenant)
+				default:
+					return fmt.Errorf("create project: %w", err)
 				}
-				return fmt.Errorf("create project: %w", err)
+			} else {
+				fmt.Printf("project/%s created in tenant %s\n", name, tenant)
 			}
-			fmt.Printf("project/%s created in tenant %s\n", name, tenant)
 
 			if !wait_ {
 				return nil
@@ -91,6 +97,8 @@ func newProjectCommand() *cobra.Command {
 		"Human name of the project; seeds the workspace name. Defaults to NAME.")
 	create.Flags().StringVar(&description, "description", "", "Free text for humans.")
 	create.Flags().BoolVar(&wait_, "wait", true, "Wait until the project's workspace is ready.")
+	create.Flags().BoolVar(&ifNotPresent, "if-not-present", false,
+		"Succeed (and still wait) when the project already exists, for idempotent seeding.")
 
 	var listTenant string
 	list := &cobra.Command{

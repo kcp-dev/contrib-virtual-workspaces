@@ -17,6 +17,7 @@ limitations under the License.
 package cli
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -69,50 +70,7 @@ identity provider's job, and this only records what that identity may do.`,
 			if asGroup {
 				kind = tenancyv1alpha1.SubjectKindGroup
 			}
-			subject := args[0]
-			name := membershipName(subject, tenant, project)
-
-			membership := &tenancyv1alpha1.Membership{
-				ObjectMeta: metav1.ObjectMeta{Name: name},
-				Spec: tenancyv1alpha1.MembershipSpec{
-					Subject: tenancyv1alpha1.Subject{Kind: kind, Name: subject},
-					Role:    tenancyv1alpha1.Role(role),
-					Tenant:  tenant,
-					Project: project,
-				},
-			}
-
-			err = c.Create(cmd.Context(), membership)
-			if apierrors.IsAlreadyExists(err) {
-				// The name is derived from (subject, tenant, project), so
-				// an existing object is the same grant: re-granting is a
-				// role change, not a duplicate.
-				var existing tenancyv1alpha1.Membership
-				if err := c.Get(cmd.Context(), client.ObjectKey{Name: name}, &existing); err != nil {
-					return fmt.Errorf("get existing membership: %w", err)
-				}
-				if existing.Spec.Role == tenancyv1alpha1.Role(role) {
-					fmt.Printf("membership/%s already grants %s\n", name, role)
-					return nil
-				}
-				previous := existing.Spec.Role
-				existing.Spec.Role = tenancyv1alpha1.Role(role)
-				if err := c.Update(cmd.Context(), &existing); err != nil {
-					return fmt.Errorf("update membership: %w", err)
-				}
-				fmt.Printf("membership/%s changed from %s to %s\n", name, previous, role)
-				return nil
-			}
-			if err != nil {
-				return fmt.Errorf("create membership: %w", err)
-			}
-
-			scope := "every project of tenant " + tenant
-			if project != "" {
-				scope = "project " + project + " of tenant " + tenant
-			}
-			fmt.Printf("membership/%s created: %s %q is %s in %s\n", name, kind, subject, role, scope)
-			return nil
+			return upsertMembership(cmd.Context(), c, kind, args[0], tenancyv1alpha1.Role(role), tenant, project)
 		},
 	}
 	o.addFlags(cmd)
@@ -190,4 +148,51 @@ With --list it prints every grant instead of removing one.`,
 	cmd.Flags().BoolVar(&list, "list", false, "List grants instead of revoking one.")
 
 	return cmd
+}
+
+// upsertMembership creates a grant, or — because the name is derived from
+// (subject, tenant, project), so an existing object IS the same grant —
+// updates its role in place. Re-granting is a role change, never a
+// duplicate, which is what makes grant and seed idempotent.
+func upsertMembership(ctx context.Context, c client.Client, kind tenancyv1alpha1.SubjectKind, subject string, role tenancyv1alpha1.Role, tenant, project string) error {
+	name := membershipName(subject, tenant, project)
+
+	membership := &tenancyv1alpha1.Membership{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Spec: tenancyv1alpha1.MembershipSpec{
+			Subject: tenancyv1alpha1.Subject{Kind: kind, Name: subject},
+			Role:    role,
+			Tenant:  tenant,
+			Project: project,
+		},
+	}
+
+	err := c.Create(ctx, membership)
+	if apierrors.IsAlreadyExists(err) {
+		var existing tenancyv1alpha1.Membership
+		if err := c.Get(ctx, client.ObjectKey{Name: name}, &existing); err != nil {
+			return fmt.Errorf("get existing membership: %w", err)
+		}
+		if existing.Spec.Role == role {
+			fmt.Printf("membership/%s already grants %s\n", name, role)
+			return nil
+		}
+		previous := existing.Spec.Role
+		existing.Spec.Role = role
+		if err := c.Update(ctx, &existing); err != nil {
+			return fmt.Errorf("update membership: %w", err)
+		}
+		fmt.Printf("membership/%s changed from %s to %s\n", name, previous, role)
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("create membership: %w", err)
+	}
+
+	scope := "every project of tenant " + tenant
+	if project != "" {
+		scope = "project " + project + " of tenant " + tenant
+	}
+	fmt.Printf("membership/%s created: %s %q is %s in %s\n", name, kind, subject, role, scope)
+	return nil
 }

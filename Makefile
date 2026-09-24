@@ -28,7 +28,7 @@ help: ## Show available targets
 # ── Build ────────────────────────────────────────────────────────────
 
 .PHONY: build
-build: build-access build-mcp build-ephemeral build-tenancy build-marketplace ## Build every binary into bin/
+build: build-access build-mcp build-ephemeral build-tenancy build-marketplace build-cli ## Build every binary into bin/
 
 .PHONY: build-access
 build-access: ## Build the access virtual workspace binaries
@@ -117,6 +117,10 @@ test-e2e-tenancy: ## Run the tenancy e2e tests (local processes against a real k
 generate: ## Regenerate the APIResourceSchemas from the sdk Go types (controller-gen + kcp apigen)
 	./hack/update-apiresourceschemas.sh
 
+.PHONY: build-cli
+build-cli: ## Build contribctl, the repo-wide CLI bundling every component's client
+	$(GO) build -o $(BIN_DIR)/contribctl ./cmd/cli
+
 .PHONY: build-marketplace
 build-marketplace: ## Build the marketplace server binary
 	$(GO) build -o $(BIN_DIR)/marketplace-vw ./marketplace
@@ -157,6 +161,10 @@ image-tenancy: ## Build the tenancy-vw container image
 .PHONY: image-marketplace
 image-marketplace: ## Build the marketplace-vw container image
 	docker build --target marketplace-vw -t $(IMAGE_PREFIX)/marketplace-vw:$(IMAGE_TAG) .
+
+.PHONY: tilt-up
+tilt-up: ## Bring up kcp (from $(KCP_DIR), default ../kcp) plus this repo's components under Tilt
+	./hack/tilt/up.sh
 
 .PHONY: clean
 clean: ## Remove build artifacts

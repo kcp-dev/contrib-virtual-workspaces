@@ -11,6 +11,7 @@ cover.out
 .local/
 pki/
 .dex/
+.tilt/
 
 # Kubeconfigs the README walkthrough writes (`tenancyctl kubeconfig -o ...`).
 *.kubeconfig

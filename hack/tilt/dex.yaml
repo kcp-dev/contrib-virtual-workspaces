@@ -1,0 +1,122 @@
+# Dex for the Tilt setup: the OIDC issuer kcp and the virtual workspaces
+# share. It runs in the same kind cluster, terminates its own TLS (secret
+# dex-tls, minted by dex-pki.sh) and is reachable as
+# https://dex.kcp.localhost:8443/dex both from the host (the ingress
+# port-forward) and from the kcp pods (hostAliases -> the envoy gateway).
+#
+# The identities mirror hack/dex/dex.sh: alice/bob/mallory, one shared
+# password ("password"), a public client "kcp" for PKCE and the password
+# grant. With kcp's operator-side claim mapping (usernameClaim: email, no
+# prefix) the resulting kcp username is the plain email,
+# e.g. alice@team-a.example.com.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dex
+  namespace: default
+data:
+  config.yaml: |
+    issuer: https://dex.kcp.localhost:8443/dex
+    storage:
+      type: memory
+    web:
+      https: 0.0.0.0:5556
+      tlsCert: /etc/dex/tls/tls.crt
+      tlsKey: /etc/dex/tls/tls.key
+    oauth2:
+      # The password grant needs a nominated connector and a public
+      # client; PKCE (contribctl tenancy login without --username) works
+      # with the same client.
+      passwordConnector: local
+      skipApprovalScreen: true
+    staticClients:
+      - id: kcp
+        public: true
+        name: kcp
+        redirectURIs: ['http://localhost:8000/callback']
+    enablePasswordDB: true
+    # All hashes are bcrypt("password").
+    staticPasswords:
+      - email: alice@team-a.example.com
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: alice
+        userID: "1"
+      - email: bob@team-b.example.com
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: bob
+        userID: "2"
+      - email: mallory@strangers.example.com
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: mallory
+        userID: "3"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dex
+  namespace: default
+  labels:
+    app: dex
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dex
+  template:
+    metadata:
+      labels:
+        app: dex
+    spec:
+      containers:
+        - name: dex
+          image: ghcr.io/dexidp/dex:v2.44.0
+          command: ["/usr/local/bin/dex", "serve", "/etc/dex/cfg/config.yaml"]
+          ports:
+            - containerPort: 5556
+          volumeMounts:
+            - name: config
+              mountPath: /etc/dex/cfg
+              readOnly: true
+            - name: tls
+              mountPath: /etc/dex/tls
+              readOnly: true
+          readinessProbe:
+            tcpSocket:
+              port: 5556
+      volumes:
+        - name: config
+          configMap:
+            name: dex
+        - name: tls
+          secret:
+            secretName: dex-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dex
+  namespace: default
+spec:
+  selector:
+    app: dex
+  ports:
+    - port: 5556
+      targetPort: 5556
+---
+# SNI-routed through the same envoy gateway and 8443 port-forward as the
+# kcp shards; dex terminates the TLS itself (mode Passthrough upstream).
+apiVersion: gateway.networking.k8s.io/v1alpha3
+kind: TLSRoute
+metadata:
+  name: dex
+  namespace: default
+spec:
+  parentRefs:
+    - name: eg
+      namespace: envoy-gateway-system
+  hostnames:
+    - dex.kcp.localhost
+  rules:
+    - backendRefs:
+        - name: dex
+          port: 5556

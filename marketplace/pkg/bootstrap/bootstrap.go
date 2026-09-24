@@ -333,6 +333,26 @@ func applyManifests(ctx context.Context, dyn dynamic.Interface, mapper *restmapp
 
 		client := dyn.Resource(mapping.Resource)
 		if _, err := client.Create(ctx, &obj, metav1.CreateOptions{}); err != nil {
+			// A hand-bound tier can land on a different shard than the
+			// exports, and the `bind` RBAC applied moments ago reaches that
+			// shard through cache replication — so a Forbidden here is
+			// usually a propagation lag, not a verdict. Retry it briefly.
+			if apierrors.IsForbidden(err) && gvk.Kind == "APIBinding" {
+				retryErr := wait.PollUntilContextTimeout(ctx, 3*time.Second, 2*time.Minute, false, func(ctx context.Context) (bool, error) {
+					_, err := client.Create(ctx, &obj, metav1.CreateOptions{})
+					if err == nil || apierrors.IsAlreadyExists(err) {
+						return true, nil
+					}
+					if apierrors.IsForbidden(err) {
+						return false, nil
+					}
+					return false, err
+				})
+				if retryErr != nil {
+					return fmt.Errorf("create %s %s (after retrying propagation of the bind grant): %w", gvk.Kind, obj.GetName(), retryErr)
+				}
+				continue
+			}
 			if !apierrors.IsAlreadyExists(err) {
 				return fmt.Errorf("create %s %s: %w", gvk.Kind, obj.GetName(), err)
 			}
