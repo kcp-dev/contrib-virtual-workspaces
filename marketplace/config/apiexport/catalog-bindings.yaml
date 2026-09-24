@@ -1,0 +1,12 @@
+# Applied into the CATALOG workspace: the registry of Provider records.
+# It binds the Provider API and nothing else - the record tier cannot
+# provision a workspace and cannot reach into anyone's.
+apiVersion: apis.kcp.io/v1alpha2
+kind: APIBinding
+metadata:
+  name: marketplace-catalog
+spec:
+  reference:
+    export:
+      path: __EXPORTS_PATH__
+      name: marketplace-catalog

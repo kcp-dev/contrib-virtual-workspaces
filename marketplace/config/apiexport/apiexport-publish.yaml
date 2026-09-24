@@ -1,0 +1,43 @@
+# marketplace-publish - the provider-side export.
+#
+# Serves Offerings, and claims exactly what the publish flow needs inside a
+# provider workspace:
+#
+#   - read apiexports and their endpoint slices, so an Offering is
+#     validated against the export it names rather than trusted;
+#   - read the LogicalCluster, so the workspace's canonical path can be
+#     matched against the Provider record that names it (that match is how
+#     an external provider's workspace is recognized);
+#   - write ClusterRoles and ClusterRoleBindings, to materialize the ONE
+#     grant registration means: `bind` on the offering's export, to the
+#     operator. Delete is load-bearing - deleting the Offering revokes it.
+#
+# Binding this export IS a provider's consent: kcp auto-accepts these
+# claims on binding, and deleting the binding revokes every one of them.
+apiVersion: apis.kcp.io/v1alpha2
+kind: APIExport
+metadata:
+  name: marketplace-publish
+spec:
+  resources:
+    - name: offerings
+      group: marketplace.contrib.kcp.io
+      schema: v260924-7813b03.offerings.marketplace.contrib.kcp.io
+      storage:
+        crd: {}
+  permissionClaims:
+    - group: apis.kcp.io
+      resource: apiexports
+      verbs: [get, list, watch]
+    - group: apis.kcp.io
+      resource: apiexportendpointslices
+      verbs: [get, list, watch]
+    - group: core.kcp.io
+      resource: logicalclusters
+      verbs: [get, list, watch]
+    - group: rbac.authorization.k8s.io
+      resource: clusterroles
+      verbs: [get, list, watch, create, update, delete]
+    - group: rbac.authorization.k8s.io
+      resource: clusterrolebindings
+      verbs: [get, list, watch, create, update, delete]

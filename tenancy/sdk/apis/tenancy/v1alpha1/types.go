@@ -64,6 +64,7 @@ const (
 // Subject identifies who a Membership is for.
 type Subject struct {
 	// Kind is User or Group.
+	// +kubebuilder:validation:Enum=User;Group
 	Kind SubjectKind `json:"kind"`
 	// Name is the username or group name, compared verbatim against the
 	// identity kcp authenticates. No issuer prefixes are added or stripped
@@ -77,6 +78,9 @@ type Subject struct {
 // Tenant object lives in and reports it in Status.
 //
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:scope=Cluster
+// +kubebuilder:subresource:status
 type Tenant struct {
 	metav1.TypeMeta `json:",inline"`
 	// +optional
@@ -120,6 +124,7 @@ type TenantStatus struct {
 // TenantList is the list form of Tenant.
 //
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:object:root=true
 type TenantList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
@@ -132,6 +137,9 @@ type TenantList struct {
 // project, project Memberships reach one.
 //
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:scope=Cluster
+// +kubebuilder:subresource:status
 type Project struct {
 	metav1.TypeMeta `json:",inline"`
 	// +optional
@@ -177,6 +185,7 @@ type ProjectStatus struct {
 // ProjectList is the list form of Project.
 //
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:object:root=true
 type ProjectList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
@@ -189,6 +198,9 @@ type ProjectList struct {
 // workspace; deleting the Membership removes that RBAC again.
 //
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:scope=Cluster
+// +kubebuilder:subresource:status
 type Membership struct {
 	metav1.TypeMeta `json:",inline"`
 	// +optional
@@ -204,6 +216,7 @@ type MembershipSpec struct {
 	// Subject is who the grant is for.
 	Subject Subject `json:"subject"`
 	// Role is the access level granted: view, edit or admin.
+	// +kubebuilder:validation:Enum=view;edit;admin
 	Role Role `json:"role"`
 	// Tenant names the Tenant (in the same workspace) the grant applies to.
 	Tenant string `json:"tenant"`
@@ -225,6 +238,7 @@ type MembershipStatus struct {
 // MembershipList is the list form of Membership.
 //
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:object:root=true
 type MembershipList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

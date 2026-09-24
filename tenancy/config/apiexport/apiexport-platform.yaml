@@ -11,6 +11,6 @@ spec:
   resources:
     - name: tenants
       group: tenancy.contrib.kcp.io
-      schema: v1alpha1.tenants.tenancy.contrib.kcp.io
+      schema: v260924-7813b03.tenants.tenancy.contrib.kcp.io
       storage:
         crd: {}

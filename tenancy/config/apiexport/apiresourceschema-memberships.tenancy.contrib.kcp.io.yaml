@@ -1,0 +1,101 @@
+apiVersion: apis.kcp.io/v1alpha1
+kind: APIResourceSchema
+metadata:
+  name: v260924-7813b03.memberships.tenancy.contrib.kcp.io
+spec:
+  group: tenancy.contrib.kcp.io
+  names:
+    kind: Membership
+    listKind: MembershipList
+    plural: memberships
+    singular: membership
+  scope: Cluster
+  versions:
+  - name: v1alpha1
+    schema:
+      description: |-
+        Membership grants one subject one role in one tenant, or in one project
+        of that tenant. The operator materializes it as RBAC in the target
+        workspace; deleting the Membership removes that RBAC again.
+      properties:
+        apiVersion:
+          description: |-
+            APIVersion defines the versioned schema of this representation of an object.
+            Servers should convert recognized schemas to the latest internal value, and
+            may reject unrecognized values.
+            More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+          type: string
+        kind:
+          description: |-
+            Kind is a string value representing the REST resource this object represents.
+            Servers may infer this from the endpoint the client submits requests to.
+            Cannot be updated.
+            In CamelCase.
+            More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+          type: string
+        metadata:
+          type: object
+        spec:
+          description: MembershipSpec is the desired state of a Membership.
+          properties:
+            project:
+              description: |-
+                Project optionally narrows the grant to one project of the tenant.
+                Empty means the grant applies to the tenant's workspace, which every
+                project workspace nests under.
+              type: string
+            role:
+              description: 'Role is the access level granted: view, edit or admin.'
+              enum:
+              - view
+              - edit
+              - admin
+              type: string
+            subject:
+              description: Subject is who the grant is for.
+              properties:
+                kind:
+                  description: Kind is User or Group.
+                  enum:
+                  - User
+                  - Group
+                  type: string
+                name:
+                  description: |-
+                    Name is the username or group name, compared verbatim against the
+                    identity kcp authenticates. No issuer prefixes are added or stripped
+                    here; the deployment's authentication configuration must agree with
+                    kcp's.
+                  type: string
+              required:
+              - kind
+              - name
+              type: object
+            tenant:
+              description: Tenant names the Tenant (in the same workspace) the grant
+                applies to.
+              type: string
+          required:
+          - role
+          - subject
+          - tenant
+          type: object
+        status:
+          description: MembershipStatus is the observed state of a Membership.
+          properties:
+            message:
+              type: string
+            phase:
+              description: |-
+                Phase describes where a tenancy object is in its lifecycle. It is a
+                coarse, human-first signal; Message carries the detail when a phase is
+                not Ready.
+              type: string
+          type: object
+      required:
+      - spec
+      type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

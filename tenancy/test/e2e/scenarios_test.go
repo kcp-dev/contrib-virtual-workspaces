@@ -72,13 +72,23 @@ func TestScenarioInstallIsIdempotent(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{
-		"v1alpha1.tenants.tenancy.contrib.kcp.io",
-		"v1alpha1.projects.tenancy.contrib.kcp.io",
-		"v1alpha1.memberships.tenancy.contrib.kcp.io",
-	} {
-		if _, err := dyn.Resource(apiResourceSchemaGVR).Get(ctx, name, metav1.GetOptions{}); err != nil {
-			t.Errorf("APIResourceSchema %s missing: %v", name, err)
+	// Schema names are generated (content-addressed by `make generate`),
+	// so assert what the exports actually reference rather than a spelling.
+	for _, exportName := range []string{exportPlatform, exportTenancy} {
+		export, err := dyn.Resource(apiExportGVR).Get(ctx, exportName, metav1.GetOptions{})
+		if err != nil {
+			t.Fatalf("get %s: %v", exportName, err)
+		}
+		resources, _, _ := unstructured.NestedSlice(export.Object, "spec", "resources")
+		if len(resources) == 0 {
+			t.Errorf("APIExport %s serves no resources", exportName)
+		}
+		for _, r := range resources {
+			m, _ := r.(map[string]any)
+			schemaName, _ := m["schema"].(string)
+			if _, err := dyn.Resource(apiResourceSchemaGVR).Get(ctx, schemaName, metav1.GetOptions{}); err != nil {
+				t.Errorf("APIResourceSchema %s referenced by %s missing: %v", schemaName, exportName, err)
+			}
 		}
 	}
 

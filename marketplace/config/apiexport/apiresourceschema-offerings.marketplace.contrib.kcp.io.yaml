@@ -1,0 +1,178 @@
+apiVersion: apis.kcp.io/v1alpha1
+kind: APIResourceSchema
+metadata:
+  name: v260924-7813b03.offerings.marketplace.contrib.kcp.io
+spec:
+  group: marketplace.contrib.kcp.io
+  names:
+    kind: Offering
+    listKind: OfferingList
+    plural: offerings
+    singular: offering
+  scope: Cluster
+  versions:
+  - name: v1alpha1
+    schema:
+      description: |-
+        Offering is the catalog card: one orderable unit, published by a
+        provider in its own workspace, next to the APIExport it references.
+      properties:
+        apiVersion:
+          description: |-
+            APIVersion defines the versioned schema of this representation of an object.
+            Servers should convert recognized schemas to the latest internal value, and
+            may reject unrecognized values.
+            More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+          type: string
+        kind:
+          description: |-
+            Kind is a string value representing the REST resource this object represents.
+            Servers may infer this from the endpoint the client submits requests to.
+            Cannot be updated.
+            In CamelCase.
+            More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+          type: string
+        metadata:
+          type: object
+        spec:
+          description: OfferingSpec is the desired state of an Offering.
+          properties:
+            claims:
+              description: |-
+                Claims are the tenant-side permission claims consumers accept when
+                enabling. Each must be declared on the export too; the operator
+                records the validated intersection in status.
+              items:
+                description: |-
+                  OfferingClaim is one tenant-side permission claim an offering carries:
+                  what a consumer accepts when they enable it. The operator validates
+                  every claim against the provider's real APIExport and records the
+                  intersection — declaring here grants nothing.
+                properties:
+                  group:
+                    description: Group and Resource name what is claimed, as kcp permission
+                      claims do.
+                    type: string
+                  identityHash:
+                    description: |-
+                      IdentityHash is required when the claimed resource is itself served
+                      by an APIExport. The operator fills it from the provider's export;
+                      setting it here is not trusted.
+                    type: string
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      MatchLabels narrows the claim to objects carrying these labels.
+                      Empty means the claim covers all objects (matchAll). A claim on a
+                      sensitive core resource such as secrets should never be unscoped.
+                    type: object
+                  resource:
+                    type: string
+                  verbs:
+                    description: |-
+                      Verbs are the verbs claimed. They come from the declaration, never
+                      from an enablement request.
+                    items:
+                      type: string
+                    type: array
+                required:
+                - resource
+                - verbs
+                type: object
+              type: array
+            description:
+              description: Description is free text for humans.
+              type: string
+            displayName:
+              description: DisplayName is the human name of the offering, shown in
+                the catalog.
+              type: string
+            export:
+              description: |-
+                Export names the APIExport, in this same workspace, that enabling
+                this offering binds.
+              minLength: 1
+              type: string
+          required:
+          - displayName
+          - export
+          type: object
+        status:
+          description: OfferingStatus is the observed state of an Offering.
+          properties:
+            appliedClaims:
+              description: |-
+                AppliedClaims is the validated claim set at Revision: the
+                intersection of spec.claims with what the export really declares.
+                This — never spec — is what an enablement materializes.
+              items:
+                description: |-
+                  OfferingClaim is one tenant-side permission claim an offering carries:
+                  what a consumer accepts when they enable it. The operator validates
+                  every claim against the provider's real APIExport and records the
+                  intersection — declaring here grants nothing.
+                properties:
+                  group:
+                    description: Group and Resource name what is claimed, as kcp permission
+                      claims do.
+                    type: string
+                  identityHash:
+                    description: |-
+                      IdentityHash is required when the claimed resource is itself served
+                      by an APIExport. The operator fills it from the provider's export;
+                      setting it here is not trusted.
+                    type: string
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      MatchLabels narrows the claim to objects carrying these labels.
+                      Empty means the claim covers all objects (matchAll). A claim on a
+                      sensitive core resource such as secrets should never be unscoped.
+                    type: object
+                  resource:
+                    type: string
+                  verbs:
+                    description: |-
+                      Verbs are the verbs claimed. They come from the declaration, never
+                      from an enablement request.
+                    items:
+                      type: string
+                    type: array
+                required:
+                - resource
+                - verbs
+                type: object
+              type: array
+            identityHash:
+              description: IdentityHash is the identity of the referenced export.
+              type: string
+            message:
+              type: string
+            phase:
+              description: |-
+                Phase describes where a marketplace object is in its lifecycle. It is a
+                coarse, human-first signal; Message carries the detail when a phase is
+                not Ready.
+              type: string
+            provider:
+              description: |-
+                Provider is the catalog Provider record this workspace publishes
+                under, resolved by the operator from the workspace's canonical path.
+              type: string
+            revision:
+              description: |-
+                Revision counts changes to the applied claim surface. An Enablement
+                accepts a revision; a widened offering waits at a new revision until
+                consumers accept it.
+              format: int64
+              type: integer
+          type: object
+      required:
+      - spec
+      type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

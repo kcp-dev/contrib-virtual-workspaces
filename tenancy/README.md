@@ -490,6 +490,15 @@ Reading the answers:
 - `403 ... authentication required` means no certificate was presented at
   all; the review is only served to an authenticated caller.
 
+## Regenerating the schemas
+
+The `apiresourceschema-*.yaml` assets are generated from the Go types by
+`make generate` (controller-gen + kcp's `apigen`; see
+[../hack/update-apiresourceschemas.sh](../hack/update-apiresourceschemas.sh)).
+After changing anything under `sdk/apis/`, run it and commit the result —
+and if a schema's name changed, update `ExportsOrder` in
+[config/apiexport/bootstrap.go](config/apiexport/bootstrap.go).
+
 ## Testing
 
 From the repository root:

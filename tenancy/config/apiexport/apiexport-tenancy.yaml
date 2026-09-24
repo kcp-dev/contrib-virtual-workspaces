@@ -11,11 +11,11 @@ spec:
   resources:
     - name: projects
       group: tenancy.contrib.kcp.io
-      schema: v1alpha1.projects.tenancy.contrib.kcp.io
+      schema: v260924-7813b03.projects.tenancy.contrib.kcp.io
       storage:
         crd: {}
     - name: memberships
       group: tenancy.contrib.kcp.io
-      schema: v1alpha1.memberships.tenancy.contrib.kcp.io
+      schema: v260924-7813b03.memberships.tenancy.contrib.kcp.io
       storage:
         crd: {}
