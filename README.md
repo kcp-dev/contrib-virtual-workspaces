@@ -70,47 +70,16 @@ live-reloading local processes.
   marketplace VW on :9446, with a dev client CA in `.tilt/pki`.
 - `TENANCY_ENABLED=false` / `MARKETPLACE_ENABLED=false` skip a component.
 - Dex runs in the same kind cluster as the shared OIDC issuer
-  (`https://dex.kcp.localhost:8443/dex`, SNI-routed through the same
-  envoy gateway and `:8443` port-forward; add `dex.kcp.localhost` to the
-  `127.0.0.1` line in `/etc/hosts`). kcp and both virtual workspaces
-  validate its JWTs with the same mapping — `usernameClaim: email`, no
-  prefix — so a token names the same user everywhere.
-  `DEX_ENABLED=false` turns it off.
+  (`https://dex.kcp.localhost:8443/dex`), trusted by kcp and both virtual
+  workspaces, so a token names the same user everywhere. The environment
+  is seeded with a demo tenant and project, so `whoami` has something to
+  say right after login. `DEX_ENABLED=false` / `SEED_ENABLED=false` turn
+  either off.
 
-  The users (all with password `password`; log in with the full email):
-
-  | login (email) | kcp/VW username |
-  |---|---|
-  | `alice@team-a.example.com` | `alice@team-a.example.com` |
-  | `bob@team-b.example.com` | `bob@team-b.example.com` |
-  | `mallory@strangers.example.com` | `mallory@strangers.example.com` |
-
-  ```sh
-  # browser flow: dex shows a login page, enter the email + "password"
-  bin/contribctl tenancy login \
-    --issuer https://dex.kcp.localhost:8443/dex --ca-file .tilt/dex/ca.crt
-
-  # scripted: password grant, no browser
-  echo password | bin/contribctl tenancy login \
-    --issuer https://dex.kcp.localhost:8443/dex --ca-file .tilt/dex/ca.crt \
-    --username alice@team-a.example.com --password-stdin
-  ```
-
-  The environment is seeded with demo tenancy data
-  ([hack/tilt/seed.sh](hack/tilt/seed.sh), idempotent — re-run with
-  `tilt trigger tenancy-seed`, skip with `SEED_ENABLED=false`): tenant
-  `acme` with project `web`; alice is admin of the tenant and bob has
-  view on the project, each under both identities (dex email and
-  dev-cert CN). So right after login, `contribctl tenancy whoami` has
-  something to say.
-
-  Unlike the manual [hack/dex](hack/dex/) walkthrough (which maps
-  `alice@team-a.example.com` → `alice`/`team-a` with CEL in an
-  `AuthenticationConfiguration`), the kcp-operator only speaks the legacy
-  `--oidc-*` claim mapping: the identity under Tilt is the **plain
-  email**, with no groups. Memberships and RBAC here must name
-  `alice@team-a.example.com` — while the `.tilt/pki` client certificates
-  still authenticate at the VWs as `alice`/`bob`.
+[hack/tilt/README.md](hack/tilt/README.md) walks the stack end to end:
+bringing it up, logging in with Dex, and an ordinary user going from a
+password to a working kubeconfig for exactly the workspaces they were
+granted.
 
 ## Testing
 

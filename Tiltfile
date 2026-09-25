@@ -63,6 +63,12 @@ else:
 
 # ── this repo's components ───────────────────────────────────────────
 
+# The components share the frontproxy kubeconfig, whose identity is
+# system:kcp:admin WITHOUT system:masters (kcp's tilt mints it that way):
+# admin on every shard via RBAC, but not system-privileged — so workspace
+# admission records it as the owner (spec.createdBy), which the apibinder
+# initializer impersonates. A system:masters creator would leave new
+# workspaces ownerless and stuck Initializing.
 KUBECONFIG = TILT_DIR + '/tilt-frontproxy.kubeconfig'
 FRONT_PROXY_URL = os.getenv('KCP_FRONT_PROXY_URL', 'https://kcp.localhost:8443')
 
@@ -102,7 +108,8 @@ if DEX_ENABLED:
         print('WARNING: dex.kcp.localhost missing from /etc/hosts — add it to the 127.0.0.1 line for login to work')
 
     print('dex → %s (alice@team-a.example.com / bob@team-b.example.com / mallory@strangers.example.com, password "password")' % DEX_ISSUER)
-    print('login: bin/contribctl tenancy login --issuer %s --ca-file %s/dex/ca.crt' % (DEX_ISSUER, TILT_DIR))
+    print('login: bin/contribctl tenancy login --issuer %s --certificate-authority %s/dex/ca.crt' % (DEX_ISSUER, TILT_DIR))
+    print('walkthrough: hack/tilt/README.md')
     print('JWT usernames arrive as the plain email, e.g. alice@team-a.example.com')
 
 # The flags every virtual workspace shares when dex is on, mirroring the
@@ -168,13 +175,17 @@ if enabled('TENANCY'):
                 '--endpoint-base %s/clusters/' % FRONT_PROXY_URL,
     )
     # Demo data, so a fresh environment answers whoami with something:
-    # tenant acme + project web, alice admin / bob view — each granted
-    # under both identities (dex email and dev-cert CN). Idempotent;
-    # re-run anytime with `tilt trigger tenancy-seed`. SEED_ENABLED=false
-    # skips it.
+    # the component's own `tenancy seed` command converges on tenant acme
+    # + project web, alice admin / bob view — each granted under both
+    # identities (dex email and dev-cert CN). Idempotent; re-run anytime
+    # with `tilt trigger tenancy-seed`. SEED_ENABLED=false skips it.
     if os.getenv('SEED_ENABLED', 'true').lower() not in ('false', '0', 'no', 'off'):
         local_resource('tenancy-seed',
-            cmd='make --no-print-directory build-cli && hack/tilt/seed.sh ' + KUBECONFIG,
+            cmd='make --no-print-directory build-cli && ' +
+                'bin/contribctl tenancy seed --kubeconfig ' + KUBECONFIG +
+                ' --tenant acme --display-name "Acme Corp" --project web' +
+                ' --admin alice@team-a.example.com --admin alice' +
+                ' --view bob@team-b.example.com --view bob',
             resource_deps=['tenancy-operator'],
             labels=['tenancy'],
         )

@@ -410,8 +410,12 @@ is for a self-signed local serving certificate; in a deployment pass
 `--certificate-authority` instead.
 
 `kubeconfig` is the other half of a login: it asks the virtual workspace
-what the caller can reach and writes one context per tenant and per
-project, each pointing at that workspace's own URL. There is still no user
+what the caller can reach and writes one context per **project**, each
+pointing at that workspace's own URL. Projects only, because a tenant
+workspace is where this system keeps its own records — a Membership
+materializes RBAC in that tenant's projects, never in the tenant itself,
+so no member can enter it and a context for it would only ever answer
+`Forbidden`. There is still no user
 registry to enrol into — `login` obtains a credential, it does not create
 an identity. Issuing identities belongs to your provider, and a
 `Membership` only records what one may do.

@@ -35,7 +35,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/discovery"
@@ -44,6 +43,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/restmapper"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 
 	"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/config/apiexport"
@@ -87,12 +87,6 @@ const (
 	// marketplace objects at all.
 	DefaultProvidersWorkspace = "providers"
 )
-
-// NudgeAnnotation is bumped on an endpoint slice to make kcp recompute its
-// URLs. kcp's URLs controller runs when the slice object is reconciled, and
-// a consumer binding the export is not a slice event, so a slice created
-// before its first consumer would otherwise stay URL-less indefinitely.
-const NudgeAnnotation = marketplacev1alpha1.GroupName + "/nudged-at"
 
 // Options configures Bootstrap.
 type Options struct {
@@ -356,12 +350,16 @@ func applyManifests(ctx context.Context, dyn dynamic.Interface, mapper *restmapp
 			if !apierrors.IsAlreadyExists(err) {
 				return fmt.Errorf("create %s %s: %w", gvk.Kind, obj.GetName(), err)
 			}
-			existing, err := client.Get(ctx, obj.GetName(), metav1.GetOptions{})
+			err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+				existing, err := client.Get(ctx, obj.GetName(), metav1.GetOptions{})
+				if err != nil {
+					return err
+				}
+				obj.SetResourceVersion(existing.GetResourceVersion())
+				_, err = client.Update(ctx, &obj, metav1.UpdateOptions{})
+				return err
+			})
 			if err != nil {
-				return fmt.Errorf("get existing %s %s: %w", gvk.Kind, obj.GetName(), err)
-			}
-			obj.SetResourceVersion(existing.GetResourceVersion())
-			if _, err := client.Update(ctx, &obj, metav1.UpdateOptions{}); err != nil {
 				// Some kcp objects reject spec updates (APIResourceSchemas
 				// are immutable); existing is as good as applied.
 				if apierrors.IsInvalid(err) || apierrors.IsForbidden(err) {
@@ -390,13 +388,6 @@ func applyServerIdentity(ctx context.Context, kube kubernetes.Interface, users, 
 				APIGroups: []string{"apis.kcp.io"},
 				Resources: []string{"apiexports", "apiexportendpointslices", "apibindings"},
 				Verbs:     []string{"get", "list", "watch"},
-			},
-			{
-				// The operator nudges a URL-less endpoint slice to work
-				// around kcp not reconciling slices on new bindings.
-				APIGroups: []string{"apis.kcp.io"},
-				Resources: []string{"apiexportendpointslices"},
-				Verbs:     []string{"patch"},
 			},
 			{
 				APIGroups: []string{"apis.kcp.io"},
@@ -464,14 +455,6 @@ func waitForEndpointSlice(ctx context.Context, dyn dynamic.Interface, sliceName 
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-
-	// See NudgeAnnotation: without a write to the slice, the URLs for a
-	// freshly bound export never appear and this wait is 30 seconds of
-	// nothing.
-	patch := fmt.Sprintf(`{"metadata":{"annotations":{%q:%q}}}`, NudgeAnnotation, time.Now().UTC().Format(time.RFC3339))
-	if _, err := dyn.Resource(endpointSliceGVR).Patch(ctx, sliceName, types.MergePatchType, []byte(patch), metav1.PatchOptions{}); err != nil {
-		logger.V(2).Info("could not nudge the endpoint slice", "slice", sliceName, "error", err.Error())
-	}
 
 	var urls []string
 	err := wait.PollUntilContextCancel(ctx, 2*time.Second, true, func(ctx context.Context) (bool, error) {

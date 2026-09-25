@@ -52,10 +52,8 @@ import (
 	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -196,17 +194,6 @@ func Run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("build membership controller: %w", err)
 	}
 
-	// Every slice needs the same nudge: kcp computes a slice's URLs when
-	// the slice object is reconciled, and a consumer binding the export is
-	// not a slice event.
-	for _, slice := range []string{opts.PlatformSlice, opts.TenancySlice, opts.ProvisionerSlice, opts.AccessSlice} {
-		if err := m.platform.GetLocalManager().Add(manager.RunnableFunc(func(ctx context.Context) error {
-			return nudgeEndpointSlice(ctx, opts.RestConfig, slice, logger)
-		})); err != nil {
-			return fmt.Errorf("register endpoint slice nudger for %s: %w", slice, err)
-		}
-	}
-
 	logger.Info("tenancy operator running",
 		"tenantStore", "(the clusters bound to "+opts.PlatformSlice+")",
 		"provisioningParent", opts.TenantsPath+" ("+tenantsCluster+")",
@@ -318,43 +305,4 @@ func requeueAfterStatus(err error) (ctrl.Result, error) {
 		return ctrl.Result{}, err
 	}
 	return requeue()
-}
-
-var endpointSliceGVR = schema.GroupVersionResource{
-	Group: "apis.kcp.io", Version: "v1alpha1", Resource: "apiexportendpointslices",
-}
-
-func nudgeEndpointSlice(ctx context.Context, cfg *rest.Config, sliceName string, logger logr.Logger) error {
-	dyn, err := dynamic.NewForConfig(cfg)
-	if err != nil {
-		return fmt.Errorf("build dynamic client: %w", err)
-	}
-
-	ticker := time.NewTicker(20 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-ticker.C:
-		}
-
-		slice, err := dyn.Resource(endpointSliceGVR).Get(ctx, sliceName, metav1.GetOptions{})
-		if err != nil {
-			logger.V(2).Info("endpoint slice nudge: get failed", "slice", sliceName, "error", err.Error())
-			continue
-		}
-		endpoints, _, _ := unstructured.NestedSlice(slice.Object, "status", "endpoints")
-		if len(endpoints) > 0 {
-			continue
-		}
-
-		patch := fmt.Sprintf(`{"metadata":{"annotations":{%q:%q}}}`, bootstrap.NudgeAnnotation, time.Now().UTC().Format(time.RFC3339))
-		if _, err := dyn.Resource(endpointSliceGVR).Patch(ctx, sliceName, types.MergePatchType, []byte(patch), metav1.PatchOptions{}); err != nil {
-			logger.V(2).Info("endpoint slice nudge: patch failed", "slice", sliceName, "error", err.Error())
-			continue
-		}
-		logger.V(2).Info("nudged URL-less endpoint slice", "slice", sliceName)
-	}
 }

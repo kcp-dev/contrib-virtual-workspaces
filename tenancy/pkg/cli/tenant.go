@@ -42,10 +42,9 @@ func newTenantCommand() *cobra.Command {
 	o.addFlags(cmd)
 
 	var (
-		displayName  string
-		description  string
-		wait_        bool
-		ifNotPresent bool
+		displayName string
+		description string
+		wait_       bool
 	)
 
 	create := &cobra.Command{
@@ -70,17 +69,12 @@ func newTenantCommand() *cobra.Command {
 				},
 			}
 			if err := c.Create(cmd.Context(), tenant); err != nil {
-				switch {
-				case apierrors.IsAlreadyExists(err) && ifNotPresent:
-					fmt.Printf("tenant/%s already exists in %s\n", name, o.workspace)
-				case apierrors.IsAlreadyExists(err):
+				if apierrors.IsAlreadyExists(err) {
 					return fmt.Errorf("tenant %q already exists in %s", name, o.workspace)
-				default:
-					return fmt.Errorf("create tenant: %w", err)
 				}
-			} else {
-				fmt.Printf("tenant/%s created in %s\n", name, o.workspace)
+				return fmt.Errorf("create tenant: %w", err)
 			}
+			fmt.Printf("tenant/%s created in %s\n", name, o.workspace)
 
 			if !wait_ {
 				return nil
@@ -92,8 +86,6 @@ func newTenantCommand() *cobra.Command {
 		"Human name of the tenant; seeds the workspace name. Defaults to NAME.")
 	create.Flags().StringVar(&description, "description", "", "Free text for humans.")
 	create.Flags().BoolVar(&wait_, "wait", true, "Wait until the tenant's workspace is ready.")
-	create.Flags().BoolVar(&ifNotPresent, "if-not-present", false,
-		"Succeed (and still wait) when the tenant already exists, for idempotent seeding.")
 
 	list := &cobra.Command{
 		Use:     "list",
