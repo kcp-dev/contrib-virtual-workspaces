@@ -1,9 +1,9 @@
 apiVersion: apis.kcp.io/v1alpha1
 kind: APIResourceSchema
 metadata:
-  name: v260924-7813b03.providers.marketplace.contrib.kcp.io
+  name: v260924-7813b03.providers.marketplace.platform.kcp.io
 spec:
-  group: marketplace.contrib.kcp.io
+  group: marketplace.platform.kcp.io
   names:
     kind: Provider
     listKind: ProviderList

@@ -66,9 +66,9 @@ const (
 //   - the workspace types after the exports they default-bind, so the
 //     references resolve.
 var ExportsOrder = []string{
-	"apiresourceschema-tenants.tenancy.contrib.kcp.io.yaml",
-	"apiresourceschema-projects.tenancy.contrib.kcp.io.yaml",
-	"apiresourceschema-memberships.tenancy.contrib.kcp.io.yaml",
+	"apiresourceschema-tenants.tenancy.platform.kcp.io.yaml",
+	"apiresourceschema-projects.tenancy.platform.kcp.io.yaml",
+	"apiresourceschema-memberships.tenancy.platform.kcp.io.yaml",
 	"apiexport-platform.yaml",
 	"apiexport-tenancy.yaml",
 	"apiexport-provisioner.yaml",

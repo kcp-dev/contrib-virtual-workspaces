@@ -100,6 +100,21 @@ type TenantSpec struct {
 	// Description is free text for humans.
 	// +optional
 	Description string `json:"description,omitempty"`
+	// FirstAdmin is an identity granted the admin role on this tenant once
+	// its workspace is ready, as a Membership the operator creates.
+	//
+	// It exists because a tenant nobody administers is unusable, and the
+	// two writes cannot be one: the Membership lives in the tenant's own
+	// workspace, which does not exist when the Tenant is created. Naming
+	// the admin here lets whoever creates the tenant hand it over without
+	// waiting, and is what makes self-service possible — the virtual
+	// workspace sets it to the caller, so a caller cannot make someone
+	// else the admin of a tenant they asked for.
+	//
+	// Empty means nobody is seeded, which is the right answer when an
+	// administrator intends to grant access separately.
+	// +optional
+	FirstAdmin string `json:"firstAdmin,omitempty"`
 }
 
 // TenantStatus is the observed state of a Tenant.
@@ -322,4 +337,132 @@ type SelfTenancyReviewList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 
 	Items []SelfTenancyReview `json:"items"`
+}
+
+// SelfProjectRequest asks for a project in a tenant the caller
+// administers. It is the one write the tenancy virtual workspace does on
+// a caller's behalf, and it exists because the alternative is worse:
+// Projects live in the tenant's own workspace, which is the record store
+// that decides who may reach what, so letting a tenant admin write there
+// directly would hand them the Memberships governing themselves.
+//
+// The virtual workspace therefore holds the only credential into that
+// tier. It authorizes the request against the caller's own Membership —
+// admin on that tenant — and creates the Project itself. Nothing is
+// relayed and no privilege is lent: a caller who is not an admin of the
+// named tenant is refused, and one who is gets exactly one object
+// created.
+//
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:object:root=true
+type SelfProjectRequest struct {
+	metav1.TypeMeta `json:",inline"`
+	// +optional
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec SelfProjectRequestSpec `json:"spec"`
+	// +optional
+	Status SelfProjectRequestStatus `json:"status,omitempty"`
+}
+
+// SelfProjectRequestSpec names the project to create.
+type SelfProjectRequestSpec struct {
+	// Tenant is the tenant to create the project in. The caller must hold
+	// the admin role there.
+	Tenant string `json:"tenant"`
+	// Name is the project's object name, which also seeds its workspace
+	// name.
+	Name string `json:"name"`
+	// DisplayName is the project's human name. Defaults to Name.
+	// +optional
+	DisplayName string `json:"displayName,omitempty"`
+	// Description is free text for humans.
+	// +optional
+	Description string `json:"description,omitempty"`
+}
+
+// SelfProjectRequestStatus reports what the request produced.
+type SelfProjectRequestStatus struct {
+	// Created is true when the Project was created by this request, and
+	// false when it already existed — the request is idempotent, so
+	// asking twice is not an error.
+	// +optional
+	Created bool `json:"created,omitempty"`
+	// Project is the created object's name.
+	// +optional
+	Project string `json:"project,omitempty"`
+	// Message explains the outcome in a sentence.
+	// +optional
+	Message string `json:"message,omitempty"`
+}
+
+// SelfProjectRequestList is the list form, which exists because the API
+// machinery requires it; the resource is create-only.
+//
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:object:root=true
+type SelfProjectRequestList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []SelfProjectRequest `json:"items"`
+}
+
+// SelfTenantRequest asks for a tenant, with the caller as its first
+// admin. It is how someone who is a member of nothing gets started.
+//
+// Unlike every other self-service path here, there is no Membership to
+// authorize against — that is the point — so the gate is the
+// deployment's: self-service is off unless enabled, and may be limited
+// to groups the identity provider asserts.
+//
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:object:root=true
+type SelfTenantRequest struct {
+	metav1.TypeMeta `json:",inline"`
+	// +optional
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec SelfTenantRequestSpec `json:"spec"`
+	// +optional
+	Status SelfTenantRequestStatus `json:"status,omitempty"`
+}
+
+// SelfTenantRequestSpec names the tenant to create. The first admin is
+// not here: it is the caller, and the server sets it.
+type SelfTenantRequestSpec struct {
+	// Name is the tenant's object name, which also seeds its workspace
+	// name.
+	Name string `json:"name"`
+	// DisplayName is the tenant's human name. Defaults to Name.
+	// +optional
+	DisplayName string `json:"displayName,omitempty"`
+	// Description is free text for humans.
+	// +optional
+	Description string `json:"description,omitempty"`
+}
+
+// SelfTenantRequestStatus reports what the request produced.
+type SelfTenantRequestStatus struct {
+	// Created is true when this request created the tenant, and false
+	// when one of that name already existed — which does not mean the
+	// caller can reach it.
+	// +optional
+	Created bool `json:"created,omitempty"`
+	// Tenant is the tenant's name.
+	// +optional
+	Tenant string `json:"tenant,omitempty"`
+	// Message explains the outcome in a sentence.
+	// +optional
+	Message string `json:"message,omitempty"`
+}
+
+// SelfTenantRequestList is the list form, which the API machinery
+// requires; the resource is create-only.
+//
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:object:root=true
+type SelfTenantRequestList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []SelfTenantRequest `json:"items"`
 }

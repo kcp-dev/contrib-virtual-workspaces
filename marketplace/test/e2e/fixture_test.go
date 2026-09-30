@@ -53,6 +53,7 @@ import (
 	corev1alpha1 "github.com/kcp-dev/sdk/apis/core/v1alpha1"
 	kcptenancyv1alpha1 "github.com/kcp-dev/sdk/apis/tenancy/v1alpha1"
 
+	"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/pkg/offering"
 	marketplacev1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1"
 )
 
@@ -258,7 +259,7 @@ const thingSchemaJSON = `{
 
 // installThingsExport stands up the test provider's own API in its
 // workspace: a schema and an APIExport named exportName that also declares
-// tenant-side claims on configmaps and secrets — the consent surface the
+// a tenant-side claim on configmaps — the consent surface the
 // offering scenarios exercise.
 func installThingsExport(t *testing.T, ctx context.Context, c client.Client, exportName string) {
 	t.Helper()
@@ -292,7 +293,6 @@ func installThingsExport(t *testing.T, ctx context.Context, c client.Client, exp
 			}},
 			PermissionClaims: []apisv1alpha2.PermissionClaim{
 				{GroupResource: apisv1alpha2.GroupResource{Group: "", Resource: "configmaps"}, Verbs: []string{"get", "list", "watch"}},
-				{GroupResource: apisv1alpha2.GroupResource{Group: "", Resource: "secrets"}, Verbs: []string{"get", "list", "watch"}},
 			},
 		},
 	}
@@ -301,44 +301,78 @@ func installThingsExport(t *testing.T, ctx context.Context, c client.Client, exp
 	}
 }
 
-// publishOffering creates an Offering in the provider's workspace and
-// waits for the operator to validate it. Returns the offering at its
-// current revision.
-func publishOffering(t *testing.T, ctx context.Context, c client.Client, name, exportName string, claims []marketplacev1alpha1.OfferingClaim) *marketplacev1alpha1.Offering {
+// publishExport puts the offering annotations on an existing APIExport and
+// waits for the bind grant that publishing materializes.
+//
+// There is no object to wait on and no status to poll: the export IS the
+// offering. What tells us the operator has seen it is the one thing
+// publishing produces — `bind` on that export.
+func publishExport(t *testing.T, ctx context.Context, c client.Client, exportName, displayName string) *apisv1alpha2.APIExport {
 	t.Helper()
-	offering := &marketplacev1alpha1.Offering{
-		ObjectMeta: metav1.ObjectMeta{Name: name},
-		Spec: marketplacev1alpha1.OfferingSpec{
-			DisplayName: name,
-			Export:      exportName,
-			Claims:      claims,
-		},
-	}
-	if err := c.Create(ctx, offering); err != nil {
-		t.Fatalf("create offering %s: %v", name, err)
-	}
+	export := annotateExport(t, ctx, c, exportName, map[string]string{
+		marketplacev1alpha1.AnnotationPublish:     "true",
+		marketplacev1alpha1.AnnotationDisplayName: displayName,
+	})
 	t.Cleanup(func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
-		_ = c.Delete(cleanupCtx, &marketplacev1alpha1.Offering{ObjectMeta: metav1.ObjectMeta{Name: name}})
+		_ = unannotate(cleanupCtx, c, exportName)
 	})
-	waitFor(t, ctx, "offering "+name+" ready", func(ctx context.Context) (bool, error) {
-		if err := c.Get(ctx, client.ObjectKey{Name: name}, offering); err != nil {
-			return false, nil
-		}
-		return offering.Status.Phase == marketplacev1alpha1.PhaseReady, nil
+	waitFor(t, ctx, "the bind grant for "+exportName, func(ctx context.Context) (bool, error) {
+		var role rbacv1.ClusterRole
+		err := c.Get(ctx, client.ObjectKey{Name: "marketplace:bind:" + exportName}, &role)
+		return err == nil, nil
 	})
-	return offering
+	return export
 }
 
-// acceptedClaimsFrom mirrors, on the consumer side, the offering's
-// validated claim surface — what a consumer consents to when they enable.
-// Verbs and identity hashes come from status.appliedClaims, i.e. from the
-// declaration; selectors come from the claim's matchLabels or default to
-// matchAll.
-func acceptedClaimsFrom(offering *marketplacev1alpha1.Offering) []apisv1alpha2.AcceptablePermissionClaim {
+// unpublishExport removes the publish annotation, which is how an offering
+// comes off the catalog.
+func unpublishExport(t *testing.T, ctx context.Context, c client.Client, exportName string) {
+	t.Helper()
+	if err := unannotate(ctx, c, exportName); err != nil {
+		t.Fatalf("unpublish %s: %v", exportName, err)
+	}
+}
+
+// annotateExport merges annotations onto an export, retrying the read the
+// update raced.
+func annotateExport(t *testing.T, ctx context.Context, c client.Client, exportName string, annotations map[string]string) *apisv1alpha2.APIExport {
+	t.Helper()
+	var export apisv1alpha2.APIExport
+	waitFor(t, ctx, "annotate export "+exportName, func(ctx context.Context) (bool, error) {
+		if err := c.Get(ctx, client.ObjectKey{Name: exportName}, &export); err != nil {
+			return false, nil
+		}
+		if export.Annotations == nil {
+			export.Annotations = map[string]string{}
+		}
+		for k, v := range annotations {
+			export.Annotations[k] = v
+		}
+		return c.Update(ctx, &export) == nil, nil
+	})
+	return &export
+}
+
+func unannotate(ctx context.Context, c client.Client, exportName string) error {
+	var export apisv1alpha2.APIExport
+	if err := c.Get(ctx, client.ObjectKey{Name: exportName}, &export); err != nil {
+		return client.IgnoreNotFound(err)
+	}
+	delete(export.Annotations, marketplacev1alpha1.AnnotationPublish)
+	return c.Update(ctx, &export)
+}
+
+// acceptedClaimsFrom mirrors, on the consumer side, the claim surface the
+// catalog advertises — what a consumer consents to when they enable.
+//
+// It projects the export's own permission claims with the same function
+// the catalog serves them through, so the test accepts exactly what a
+// person reading the catalog would have been shown.
+func acceptedClaimsFrom(export *apisv1alpha2.APIExport) []apisv1alpha2.AcceptablePermissionClaim {
 	var out []apisv1alpha2.AcceptablePermissionClaim
-	for _, claim := range offering.Status.AppliedClaims {
+	for _, claim := range offering.Claims(export.Spec.PermissionClaims) {
 		selector := apisv1alpha2.PermissionClaimSelector{MatchAll: true}
 		if len(claim.MatchLabels) > 0 {
 			selector = apisv1alpha2.PermissionClaimSelector{
@@ -361,28 +395,28 @@ func acceptedClaimsFrom(offering *marketplacev1alpha1.Offering) []apisv1alpha2.A
 }
 
 // bindingFor is the APIBinding enabling an offering means: a plain kcp
-// bind, authored by the consumer, referencing the provider's export with
-// the offering's claims accepted.
-func bindingFor(name, providerPath string, offering *marketplacev1alpha1.Offering) *apisv1alpha2.APIBinding {
+// bind, authored by the consumer, referencing the published export with
+// its claims accepted.
+func bindingFor(name, providerPath string, export *apisv1alpha2.APIExport) *apisv1alpha2.APIBinding {
 	return &apisv1alpha2.APIBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec: apisv1alpha2.APIBindingSpec{
 			Reference: apisv1alpha2.BindingReference{
 				Export: &apisv1alpha2.ExportBindingReference{
 					Path: providerPath,
-					Name: offering.Spec.Export,
+					Name: export.Name,
 				},
 			},
-			PermissionClaims: acceptedClaimsFrom(offering),
+			PermissionClaims: acceptedClaimsFrom(export),
 		},
 	}
 }
 
 // bindOffering enables natively as whoever c authenticates as, and waits
 // for the binding to be bound. Cleaned up with the test.
-func bindOffering(t *testing.T, ctx context.Context, c client.Client, name, providerPath string, offering *marketplacev1alpha1.Offering) {
+func bindOffering(t *testing.T, ctx context.Context, c client.Client, name, providerPath string, export *apisv1alpha2.APIExport) {
 	t.Helper()
-	binding := bindingFor(name, providerPath, offering)
+	binding := bindingFor(name, providerPath, export)
 	waitFor(t, ctx, "binding "+name+" to be accepted", func(ctx context.Context) (bool, error) {
 		err := c.Create(ctx, binding.DeepCopy())
 		return err == nil || apierrors.IsAlreadyExists(err), nil

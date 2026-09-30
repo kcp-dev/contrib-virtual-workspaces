@@ -40,7 +40,7 @@ func newOperatorCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "operator",
-		Short: "Reconcile Providers and Offerings into workspaces and bind grants",
+		Short: "Reconcile Providers into workspaces, and published APIExports into bind grants",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if kubeconfig == "" {
 				return fmt.Errorf("--kubeconfig is required")

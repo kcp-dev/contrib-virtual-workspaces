@@ -10,6 +10,40 @@
 # prefix) the resulting kcp username is the plain email,
 # e.g. alice@team-a.example.com.
 apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dex
+  namespace: default
+---
+# Kubernetes storage means dex creates its own CRDs on first start and
+# then reads and writes them — including the signing keys whose survival
+# across restarts is the whole point.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dex
+rules:
+  - apiGroups: ["dex.coreos.com"]
+    resources: ["*"]
+    verbs: ["*"]
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["create", "get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dex
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dex
+subjects:
+  - kind: ServiceAccount
+    name: dex
+    namespace: default
+---
+apiVersion: v1
 kind: ConfigMap
 metadata:
   name: dex
@@ -17,12 +51,38 @@ metadata:
 data:
   config.yaml: |
     issuer: https://dex.kcp.localhost:8443/dex
+    # Kubernetes storage, not memory, because dex mints its signing keys
+    # on first start and keeps them in storage. With memory storage every
+    # restart produces new keys, which invalidates every token already
+    # issued AND leaves the front-proxy, both shards and both virtual
+    # workspaces holding a JWKS that no longer verifies anything — the
+    # whole stack rejects logins until each of them is restarted too.
+    # Persisting the keys in the cluster makes a dex restart a non-event.
     storage:
-      type: memory
+      type: kubernetes
+      config:
+        inCluster: true
     web:
       https: 0.0.0.0:5556
       tlsCert: /etc/dex/tls/tls.crt
       tlsKey: /etc/dex/tls/tls.key
+      # The browser fetches discovery and exchanges the code from the UI's
+      # own origin, which is a different one than dex — so dex has to say
+      # those origins may read its answers. Without this the sign-in fails
+      # at the first request, before anything reaches kcp.
+      #
+      # A few ports, because vite moves up one when the last is taken.
+      allowedOrigins:
+        - http://localhost:5173
+        - http://localhost:5174
+        - http://localhost:5175
+      # The token exchange itself needs none of these — form-encoded POSTs
+      # are CORS-safelisted and never preflight — but anything that adds a
+      # header later would be refused with a bare 403 at the preflight,
+      # which is a confusing way to find out.
+      allowedHeaders:
+        - Content-Type
+        - Authorization
     oauth2:
       # The password grant needs a nominated connector and a public
       # client; PKCE (contribctl tenancy login without --username) works
@@ -33,7 +93,14 @@ data:
       - id: kcp
         public: true
         name: kcp
-        redirectURIs: ['http://localhost:8000/callback']
+        # The CLI's loopback listener, and the UI's dev server. Both are
+        # public clients doing authorization-code + PKCE: neither has a
+        # secret to keep, which is what PKCE is for.
+        redirectURIs:
+          - 'http://localhost:8000/callback'
+          - 'http://localhost:5173/callback'
+          - 'http://localhost:5174/callback'
+          - 'http://localhost:5175/callback'
     enablePasswordDB: true
     # All hashes are bcrypt("password").
     staticPasswords:
@@ -67,6 +134,7 @@ spec:
       labels:
         app: dex
     spec:
+      serviceAccountName: dex
       containers:
         - name: dex
           image: ghcr.io/dexidp/dex:v2.44.0

@@ -63,13 +63,48 @@ else:
 
 # ── this repo's components ───────────────────────────────────────────
 
-# The components share the frontproxy kubeconfig, whose identity is
-# system:kcp:admin WITHOUT system:masters (kcp's tilt mints it that way):
-# admin on every shard via RBAC, but not system-privileged — so workspace
-# admission records it as the owner (spec.createdBy), which the apibinder
-# initializer impersonates. A system:masters creator would leave new
-# workspaces ownerless and stuck Initializing.
-KUBECONFIG = TILT_DIR + '/tilt-frontproxy.kubeconfig'
+# The components get their own credential rather than borrowing kcp's
+# admin kubeconfig, because the group it carries matters:
+#
+# kcp's workspace admission records the creator as the workspace owner
+# (LogicalCluster.spec.createdBy) only for identities that are NOT
+# system-privileged, and the apibinder initializer impersonates that owner
+# to bind a new workspace's defaultAPIBindings. A workspace created by a
+# system:masters client therefore has no owner and sticks in Initializing
+# on system:apibindings forever.
+#
+# kcp's own tilt mints its admin kubeconfigs with system:masters, and the
+# front-proxy hides the problem by dropping that group on ingress — but
+# our operators also talk to shard-direct APIExport URLs, where it is not
+# dropped. So we mint system:kcp:admin without it: admin everywhere
+# through RBAC, recorded as an owner, and not dependent on how the kcp
+# checkout happens to be configured.
+k8s_yaml(blob("""
+apiVersion: operator.kcp.io/v1alpha1
+kind: Kubeconfig
+metadata:
+  name: contrib
+  namespace: default
+spec:
+  username: contrib-admin
+  groups: ["system:kcp:admin"]
+  validity: 8766h
+  secretRef:
+    name: kcp-contrib-kubeconfig
+  target:
+    frontProxyRef:
+      name: frontproxy
+"""))
+local_resource('contrib-kubeconfig',
+    cmd='kubectl wait kubeconfig/contrib --for=create --timeout=5m && ' +
+        'kubectl wait secret/kcp-contrib-kubeconfig --for=create --timeout=5m && ' +
+        "kubectl get secret/kcp-contrib-kubeconfig -o jsonpath='{.data.kubeconfig}' | base64 -d > " +
+        TILT_DIR + '/tilt-contrib.kubeconfig',
+    resource_deps=['kcp-admin extract'],
+    labels=['contrib'],
+)
+
+KUBECONFIG = TILT_DIR + '/tilt-contrib.kubeconfig'
 FRONT_PROXY_URL = os.getenv('KCP_FRONT_PROXY_URL', 'https://kcp.localhost:8443')
 
 # A throwaway client CA + alice/bob, so the virtual workspaces can
@@ -115,23 +150,188 @@ if DEX_ENABLED:
 # The flags every virtual workspace shares when dex is on, mirroring the
 # shard-side mapping exactly (usernameClaim email, no prefix — the
 # operator's documented "oidc:" default is not actually rendered) so a
-# JWT names the same user at kcp and at a VW.
-OIDC_VW_ARGS = ''
+# JWT names the same user at kcp and at a VW. The issuer's CA comes from
+# the same dex-tls secret the shards mount, since these now run in the
+# cluster rather than on the host.
+OIDC_VW_ARGS_LIST = []
 if DEX_ENABLED:
-    OIDC_VW_ARGS = ('--oidc-issuer-url %s --oidc-client-id kcp ' +
-                    '--oidc-username-claim email --oidc-groups-claim groups ' +
-                    '--oidc-ca-file %s/dex/ca.crt ') % (DEX_ISSUER, TILT_DIR)
+    OIDC_VW_ARGS_LIST = [
+        '--oidc-issuer-url=' + DEX_ISSUER,
+        '--oidc-client-id=kcp',
+        '--oidc-username-claim=email',
+        '--oidc-groups-claim=groups',
+        '--oidc-ca-file=/etc/dex/ca.crt',
+    ]
+
+DEX_VW_VOLUMES = ''
+if DEX_ENABLED:
+    DEX_VW_VOLUMES = """  extraVolumes:
+    - name: dex-ca
+      secret:
+        secretName: dex-tls
+        items:
+          - key: ca.crt
+            path: ca.crt
+  extraVolumeMounts:
+    - name: dex-ca
+      mountPath: /etc/dex
+      readOnly: true"""
 
 def enabled(name):
     return os.getenv(name + '_ENABLED', 'true').lower() not in ('false', '0', 'no', 'off')
 
-def component(name, binary, init_args, operator_args, vw_args):
-    """One contrib component: build + init + operator + virtual workspace.
+# Every virtual workspace answers on the front-proxy, at the path it
+# owns — so a client needs exactly one address for all of kcp. The
+# operator does the wiring: it deploys each virtual workspace from a
+# VirtualWorkspace object (Deployment + Service on :6443), issues its
+# serving certificate from the shard CA and mounts the requestheader
+# client CA, and the front-proxy mappings below forward the caller's
+# identity to it in X-Remote-* headers over its own client certificate.
+#
+# Mappings are collected here and applied to the FrontProxy at the end,
+# because one patch has to carry them all.
+VW_PATH_MAPPINGS = []
 
-    Everything hangs off the built binary as a file dependency: a source
-    change rebuilds it, which re-runs init (the kcp-side assets are
-    embedded, so a changed asset must be re-applied) and restarts both
-    long-running processes.
+# The kind cluster images are side-loaded into; matches hack/tilt/up.sh.
+KIND_CLUSTER = os.getenv('CLUSTER_NAME', 'kcp-tilt')
+
+def virtual_workspace(name, image_target, service, init_args, vw_args):
+    """Deploy one component's virtual workspace through the operator."""
+
+    # Built and side-loaded by hand rather than with docker_build: the
+    # operator composes the image as "<repository>:<tag>", so there is no
+    # single field for Tilt to inject a ref into. A fixed tag plus an
+    # explicit rollout restart gets the new image running.
+    local_resource('%s-image' % name,
+        cmd=('docker build --target %s -t %s:dev . && ' % (image_target, image_target) +
+             'kind load docker-image %s:dev --name %s && ' % (image_target, KIND_CLUSTER) +
+             'kubectl rollout restart deploy/%s-virtual-workspace 2>/dev/null || true' % name),
+        deps=['go.mod', 'go.sum', 'Dockerfile',
+              name + '/main.go', name + '/cmd', name + '/pkg', name + '/config', name + '/sdk'],
+        ignore=['**/*_test.go'],
+        labels=[name],
+        allow_parallel=True,
+    )
+
+    # Two credentials, because bootstrapping and serving want different
+    # ones: init walks the workspace tree and installs exports (admin),
+    # while the server only reads what its exports give it — init grants
+    # that identity the server role with --server-user.
+    k8s_yaml(blob("""
+apiVersion: operator.kcp.io/v1alpha1
+kind: Kubeconfig
+metadata:
+  name: %(name)s-vw-bootstrap
+  namespace: default
+spec:
+  username: kcp-admin
+  groups: ["system:kcp:admin"]
+  validity: 8766h
+  secretRef:
+    name: %(name)s-vw-bootstrap-kubeconfig
+  target:
+    frontProxyRef:
+      name: frontproxy
+---
+apiVersion: operator.kcp.io/v1alpha1
+kind: Kubeconfig
+metadata:
+  name: %(name)s-vw-server
+  namespace: default
+spec:
+  username: %(name)s-vw
+  validity: 8766h
+  targetWorkspace: root:%(name)s:controllers
+  secretRef:
+    name: %(name)s-vw-server-kubeconfig
+  target:
+    frontProxyRef:
+      name: frontproxy
+---
+apiVersion: operator.kcp.io/v1alpha1
+kind: VirtualWorkspace
+metadata:
+  name: %(name)s
+  namespace: default
+spec:
+  target:
+    rootShardRef:
+      name: root
+  external:
+    hostname: kcp.localhost
+    port: 8443
+  image:
+    repository: %(image)s
+    tag: dev
+  command: ["/%(image)s", "virtualworkspace"]
+  kubeconfigSecretRef:
+    name: %(name)s-vw-server-kubeconfig
+  initContainers:
+    - name: init
+      kubeconfigSecretRef:
+        name: %(name)s-vw-bootstrap-kubeconfig
+      command: ["/%(image)s", "init"]
+      args:
+        - --kubeconfig=/etc/kcp/init-kubeconfig/kubeconfig
+        - --server-user=%(name)s-vw
+%(init_args)s
+  extraArgs:
+%(vw_args)s
+%(dex_volumes)s
+  deploymentTemplate:
+    spec:
+      template:
+        spec:
+          # The kubeconfigs address the front-proxy by its external
+          # hostname, so it has to resolve in here too.
+          hostAliases:
+            - ip: 10.96.2.2
+              hostnames: ["kcp.localhost", "root.kcp.localhost", "theseus.kcp.localhost", "dex.kcp.localhost"]
+""" % {
+        'name': name,
+        'image': image_target,
+        'init_args': init_args,
+        'vw_args': vw_args,
+        'dex_volumes': DEX_VW_VOLUMES,
+    }))
+
+    # The VirtualWorkspace is not a workload Tilt recognises — the
+    # Deployment and Service behind it are the operator's doing — so it
+    # gets no resource of its own unless one is assembled from the object.
+    #
+    # Deliberately NOT waiting on the two Kubeconfig resources: they have
+    # no pods, so their runtime status never leaves "pending" and a
+    # dependent would wait forever. The pod just stays in
+    # ContainerCreating until the operator has minted their secrets.
+    k8s_resource(
+        new_name='%s-vw' % name,
+        objects=['%s:VirtualWorkspace' % name],
+        resource_deps=['%s-image' % name, 'contrib-kubeconfig'],
+        labels=[name],
+    )
+    for kubeconfig in ['%s-vw-bootstrap' % name, '%s-vw-server' % name]:
+        k8s_resource(kubeconfig, labels=[name])
+
+    VW_PATH_MAPPINGS.append({
+        'path': '/services/' + service,
+        'backend': 'https://%s-virtual-workspace.default.svc.cluster.local:6443' % name,
+        # The serving certificate chains up to the root CA the front-proxy
+        # already mounts, and the requestheader client certificate is how
+        # the virtual workspace knows to trust the forwarded identity.
+        # This is the path the operator's own default mappings use; the
+        # /etc/kcp-front-proxy/tls/ca/tls.crt in its docs does not exist
+        # in the deployment, and the front-proxy exits on a CA it cannot
+        # read rather than serving without it.
+        'backend_server_ca': '/etc/kcp/tls/ca/tls.crt',
+        'proxy_client_cert': '/etc/kcp-front-proxy/requestheader-client/tls.crt',
+        'proxy_client_key': '/etc/kcp-front-proxy/requestheader-client/tls.key',
+    })
+
+
+def component(name, binary, operator_args):
+    """The component's operator, which runs as a local process: it serves
+    no path, so nothing about it needs the front-proxy's routing — only
+    its client credential, which is the same one everything else uses.
     """
     bin_path = 'bin/' + binary
 
@@ -143,36 +343,31 @@ def component(name, binary, init_args, operator_args, vw_args):
         allow_parallel=True,
     )
 
-    local_resource('%s-init' % name,
-        cmd='%s init --kubeconfig %s %s' % (bin_path, KUBECONFIG, init_args),
-        deps=[bin_path],
-        resource_deps=['%s-build' % name, 'kcp-admin extract'],
-        labels=[name],
-    )
-
     local_resource('%s-operator' % name,
         serve_cmd='%s operator --kubeconfig %s %s --v=4' % (bin_path, KUBECONFIG, operator_args),
         deps=[bin_path],
-        resource_deps=['%s-init' % name],
-        labels=[name],
-    )
-
-    local_resource('%s-vw' % name,
-        serve_cmd='%s virtualworkspace --kubeconfig %s --client-ca-file %s/pki/ca.crt %s%s --v=4' % (
-            bin_path, KUBECONFIG, TILT_DIR, OIDC_VW_ARGS, vw_args),
-        deps=[bin_path],
-        resource_deps=['%s-init' % name, 'dev-pki'],
+        # The exports it reconciles are installed by the virtual
+        # workspace's init container.
+        resource_deps=['%s-build' % name, '%s-vw' % name, 'contrib-kubeconfig'],
         labels=[name],
     )
 
 if enabled('TENANCY'):
-    component('tenancy', 'tenancy-vw',
+    virtual_workspace('tenancy', 'tenancy-vw', 'tenancy',
         init_args='',
+        # No --workspace-path: the server kubeconfig is already scoped to
+        # root:tenancy:controllers by targetWorkspace, and retargeting it
+        # would append a second /clusters/ segment.
+        # Self-service tenants are off by default in the component; a dev
+        # stack wants them on, so a fresh identity can get started without
+        # an administrator.
+        vw_args='    - --endpoint-base=%s/clusters/\n' % FRONT_PROXY_URL +
+                '    - --self-service-tenants\n' +
+                ''.join(['    - %s\n' % a for a in OIDC_VW_ARGS_LIST]),
+    )
+    component('tenancy', 'tenancy-vw',
         operator_args='--workspace-path root:tenancy:controllers ' +
                       '--tenants-workspace root:tenancy:tenants',
-        vw_args='--workspace-path root:tenancy:controllers ' +
-                '--secure-port 9445 ' +
-                '--endpoint-base %s/clusters/' % FRONT_PROXY_URL,
     )
     # Demo data, so a fresh environment answers whoami with something:
     # the component's own `tenancy seed` command converges on tenant acme
@@ -189,15 +384,77 @@ if enabled('TENANCY'):
             resource_deps=['tenancy-operator'],
             labels=['tenancy'],
         )
-    print('tenancy VW → https://localhost:9445/services/tenancy (alice/bob certs in .tilt/pki)')
+    print('tenancy VW → %s/services/tenancy' % FRONT_PROXY_URL)
 
 if enabled('MARKETPLACE'):
-    component('marketplace', 'marketplace-vw',
+    virtual_workspace('marketplace', 'marketplace-vw', 'marketplace',
         init_args='',
+        vw_args=''.join(['    - %s\n' % a for a in OIDC_VW_ARGS_LIST]),
+    )
+    component('marketplace', 'marketplace-vw',
         operator_args='--workspace-path root:marketplace:controllers ' +
                       '--catalog-workspace root:marketplace:catalog ' +
                       '--providers-workspace root:marketplace:providers',
-        vw_args='--workspace-path root:marketplace:controllers ' +
-                '--secure-port 9446',
     )
-    print('marketplace VW → https://localhost:9446/services/marketplace (alice/bob certs in .tilt/pki)')
+    # Example offerings, on demand: `tilt trigger marketplace-examples`.
+    #
+    # Ad-hoc rather than automatic because an empty catalog is a legitimate
+    # state to develop against — and because publishing grants `bind` to
+    # every authenticated user in this stack, which should be something
+    # someone asked for. auto_init=False keeps it out of `tilt up`;
+    # TRIGGER_MODE_MANUAL keeps editing the examples from re-running it
+    # behind your back.
+    local_resource('marketplace-examples',
+        cmd='KUBECONFIG=%s KCP_FRONT_PROXY_URL=%s marketplace/config/examples/apply.sh'
+            % (KUBECONFIG, FRONT_PROXY_URL),
+        deps=['marketplace/config/examples'],
+        resource_deps=['marketplace-operator'],
+        trigger_mode=TRIGGER_MODE_MANUAL,
+        auto_init=False,
+        labels=['marketplace'],
+    )
+    print('marketplace VW → %s/services/marketplace' % FRONT_PROXY_URL)
+    print('  example offerings: tilt trigger marketplace-examples')
+
+# The web UI, served by vite in dev mode. It talks only to the
+# front-proxy — the dev server proxies /services and /clusters there — so
+# the browser stays on one origin and kcp needs no CORS configuration.
+# UI_ENABLED=false skips it.
+if enabled('UI'):
+    # Dependencies are a resource of their own so the dev server is not
+    # restarted by an install, and an install re-runs only when the
+    # manifests change. `npm ci` when there is a lockfile, because a dev
+    # environment that drifts from it is a class of bug nobody enjoys.
+    local_resource('ui-deps',
+        cmd='cd ui && if [ -f package-lock.json ]; then npm ci --silent; else npm install --silent; fi',
+        deps=['ui/package.json', 'ui/package-lock.json'],
+        labels=['ui'],
+        allow_parallel=True,
+    )
+
+    # Vite watches the sources itself, so Tilt starts it and stays out of
+    # the way: no deps here, or every keystroke would restart the server.
+    local_resource('ui',
+        serve_cmd='npm run dev --silent',
+        serve_dir='ui',
+        resource_deps=['ui-deps'] + (['dex'] if DEX_ENABLED else []),
+        labels=['ui'],
+        links=['http://localhost:5173'],
+        readiness_probe=probe(
+            period_secs=5,
+            http_get=http_get_action(port=5173, path='/'),
+        ),
+        allow_parallel=True,
+    )
+    print('UI → http://localhost:5173 (sign in with the dex users above)')
+
+# One patch carries every mapping: the front-proxy matches the longest
+# prefix, so these win over the default /services/ route to the shards.
+if VW_PATH_MAPPINGS:
+    local_resource('frontproxy-path-mappings',
+        cmd="kubectl patch frontproxy frontproxy --type=merge -p '%s'" % encode_json(
+            {'spec': {'additionalPathMappings': VW_PATH_MAPPINGS}}),
+        resource_deps=['frontproxy'],
+        labels=['contrib'],
+    )
+    print('front-proxy routes: %s' % ', '.join([m['path'] for m in VW_PATH_MAPPINGS]))

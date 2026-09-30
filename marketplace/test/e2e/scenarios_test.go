@@ -33,6 +33,7 @@ import (
 
 	apisv1alpha2 "github.com/kcp-dev/sdk/apis/apis/v1alpha2"
 
+	"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/pkg/offering"
 	marketplacev1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1"
 )
 
@@ -113,33 +114,27 @@ func TestScenarioProvisionedProviderGetsAWorkspace(t *testing.T) {
 	}
 }
 
-// Publishing validates against the real export and materializes exactly
-// one grant: `bind` on that export, to the configured consumers.
-func TestScenarioOfferingBecomesReadyAndGrantsBind(t *testing.T) {
+// Publishing is annotating the export, and it materializes exactly one
+// grant: `bind` on that export, to the configured consumers.
+func TestScenarioAnnotatingAnExportPublishesAndGrantsBind(t *testing.T) {
 	ctx := testContext(t)
 	sfx := randomSuffix(t)
 	name := "prov-" + sfx
-	exportName := "things.e2e-" + sfx + ".marketplace.contrib.kcp.io"
+	exportName := "things.e2e-" + sfx + ".marketplace.platform.kcp.io"
 
 	provider := registerProvider(t, ctx, name, marketplacev1alpha1.ProviderModeProvisioned, "")
 	ws := adminClient(t, provider.Status.WorkspacePath)
 	installThingsExport(t, ctx, ws, exportName)
 
-	offering := publishOffering(t, ctx, ws, "things", exportName, []marketplacev1alpha1.OfferingClaim{
-		{Resource: "configmaps", Verbs: []string{"get", "list", "watch"}},
-	})
-
-	if offering.Status.Provider != name {
-		t.Fatalf("offering resolved to provider %q, want %q", offering.Status.Provider, name)
-	}
-	if offering.Status.Revision != 1 {
-		t.Fatalf("first revision = %d, want 1", offering.Status.Revision)
-	}
-	if len(offering.Status.AppliedClaims) != 1 || offering.Status.AppliedClaims[0].Resource != "configmaps" {
-		t.Fatalf("applied claims = %+v, want exactly the configmaps claim", offering.Status.AppliedClaims)
-	}
-
+	// Before the annotation there is no grant: an export is not on the
+	// catalog merely by existing in a registered provider's workspace.
 	var role rbacv1.ClusterRole
+	if err := ws.Get(ctx, client.ObjectKey{Name: "marketplace:bind:" + exportName}, &role); !apierrors.IsNotFound(err) {
+		t.Fatalf("an unannotated export already has a bind grant (%v)", err)
+	}
+
+	export := publishExport(t, ctx, ws, exportName, "things")
+
 	if err := ws.Get(ctx, client.ObjectKey{Name: "marketplace:bind:" + exportName}, &role); err != nil {
 		t.Fatalf("the bind ClusterRole was not materialized: %v", err)
 	}
@@ -147,66 +142,47 @@ func TestScenarioOfferingBecomesReadyAndGrantsBind(t *testing.T) {
 		t.Fatalf("bind role grants %+v, want bind on %s only", role.Rules, exportName)
 	}
 
-	// An offering that requests a claim the export never declared is
-	// refused, not trimmed silently.
-	bad := publishOfferingExpectError(t, ctx, ws, "things-bad", exportName, []marketplacev1alpha1.OfferingClaim{
-		{Resource: "clusterrolebindings", Group: "rbac.authorization.k8s.io", Verbs: []string{"*"}},
-	})
-	if bad.Status.Phase != marketplacev1alpha1.PhaseError {
-		t.Fatalf("undeclared claim produced phase %s, want Error", bad.Status.Phase)
+	// The claim surface is the export's own: there is no second place to
+	// declare it, so there is nothing that could disagree with it.
+	claims := offering.Claims(export.Spec.PermissionClaims)
+	if len(claims) != 1 || claims[0].Resource != "configmaps" {
+		t.Fatalf("claims = %+v, want exactly the export's configmaps claim", claims)
 	}
-}
 
-func publishOfferingExpectError(t *testing.T, ctx context.Context, c client.Client, name, exportName string, claims []marketplacev1alpha1.OfferingClaim) *marketplacev1alpha1.Offering {
-	t.Helper()
-	offering := &marketplacev1alpha1.Offering{
-		ObjectMeta: metav1.ObjectMeta{Name: name},
-		Spec:       marketplacev1alpha1.OfferingSpec{DisplayName: name, Export: exportName, Claims: claims},
-	}
-	if err := c.Create(ctx, offering); err != nil {
-		t.Fatalf("create offering %s: %v", name, err)
-	}
-	t.Cleanup(func() {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
-		defer cancel()
-		_ = c.Delete(cleanupCtx, &marketplacev1alpha1.Offering{ObjectMeta: metav1.ObjectMeta{Name: name}})
+	// Un-publishing revokes it, without deleting anything.
+	unpublishExport(t, ctx, ws, exportName)
+	waitFor(t, ctx, "the bind grant to be revoked on un-publish", func(ctx context.Context) (bool, error) {
+		err := ws.Get(ctx, client.ObjectKey{Name: "marketplace:bind:" + exportName}, &role)
+		return apierrors.IsNotFound(err), nil
 	})
-	waitFor(t, ctx, "offering "+name+" to error", func(ctx context.Context) (bool, error) {
-		if err := c.Get(ctx, client.ObjectKey{Name: name}, offering); err != nil {
-			return false, nil
-		}
-		return offering.Status.Phase == marketplacev1alpha1.PhaseError, nil
-	})
-	return offering
 }
 
 // standUpOffering is the shared spine: a provisioned provider publishing a
 // things offering, and a PLAIN consumer workspace — the marketplace needs
 // nothing bound there, which is the point.
-func standUpOffering(t *testing.T, ctx context.Context) (providerPath string, offering *marketplacev1alpha1.Offering, consumer client.Client, consumerPath, consumerCluster string) {
+func standUpOffering(t *testing.T, ctx context.Context) (providerPath, providerName string, export *apisv1alpha2.APIExport, consumer client.Client, consumerPath, consumerCluster string) {
 	t.Helper()
 	sfx := randomSuffix(t)
-	providerName := "prov-" + sfx
-	exportName := "things.e2e-" + sfx + ".marketplace.contrib.kcp.io"
+	providerName = "prov-" + sfx
+	exportName := "things.e2e-" + sfx + ".marketplace.platform.kcp.io"
 
 	provider := registerProvider(t, ctx, providerName, marketplacev1alpha1.ProviderModeProvisioned, "")
 	ws := adminClient(t, provider.Status.WorkspacePath)
 	installThingsExport(t, ctx, ws, exportName)
-	offering = publishOffering(t, ctx, ws, "things", exportName, []marketplacev1alpha1.OfferingClaim{
-		{Resource: "configmaps", Verbs: []string{"get", "list", "watch"}},
-	})
+	export = publishExport(t, ctx, ws, exportName, "things")
 
 	consumerWS := createWorkspace(t, ctx, "consumer-"+sfx, "", "")
-	return provider.Status.WorkspacePath, offering, adminClient(t, "root:"+consumerWS.Name), "root:" + consumerWS.Name, consumerWS.Spec.Cluster
+	return provider.Status.WorkspacePath, providerName, export,
+		adminClient(t, "root:"+consumerWS.Name), "root:" + consumerWS.Name, consumerWS.Spec.Cluster
 }
 
 // Enabling is a plain kcp APIBinding the consumer creates: kcp checks the
 // bind grant publishing materialized, and the provider's API serves.
 func TestScenarioNativeBindEnablesAnOffering(t *testing.T) {
 	ctx := testContext(t)
-	providerPath, offering, consumer, consumerPath, _ := standUpOffering(t, ctx)
+	providerPath, _, export, consumer, consumerPath, _ := standUpOffering(t, ctx)
 
-	bindOffering(t, ctx, consumer, "things", providerPath, offering)
+	bindOffering(t, ctx, consumer, "things", providerPath, export)
 
 	var binding apisv1alpha2.APIBinding
 	if err := consumer.Get(ctx, client.ObjectKey{Name: "things"}, &binding); err != nil {
@@ -221,7 +197,7 @@ func TestScenarioNativeBindEnablesAnOffering(t *testing.T) {
 		t.Fatalf("dynamic client: %v", err)
 	}
 	gvr := schema.GroupVersionResource{
-		Group:    offering.Spec.Export[len("things."):],
+		Group:    export.Name[len("things."):],
 		Version:  "v1alpha1",
 		Resource: "things",
 	}
@@ -246,50 +222,67 @@ func TestScenarioNativeBindEnablesAnOffering(t *testing.T) {
 	})
 }
 
-// Any claim change is a new revision in the catalog — and the consumer's
-// existing binding is structurally untouchable: the claims live on THEIR
-// object, which nothing in the marketplace can write.
-func TestScenarioClaimChangesBumpTheRevision(t *testing.T) {
+// Widening the export's claims changes the revision the catalog
+// advertises — and the consumer's existing binding is structurally
+// untouchable: the claims live on THEIR object, which nothing in the
+// marketplace can write.
+func TestScenarioClaimChangesChangeTheRevision(t *testing.T) {
 	ctx := testContext(t)
-	providerPath, offering, consumer, _, _ := standUpOffering(t, ctx)
-	bindOffering(t, ctx, consumer, "things", providerPath, offering)
+	providerPath, providerName, export, consumer, _, _ := standUpOffering(t, ctx)
+	bindOffering(t, ctx, consumer, "things", providerPath, export)
 
-	catalog := adminClient(t, catalogPath)
-	var rec marketplacev1alpha1.Provider
-	if err := catalog.Get(ctx, client.ObjectKey{Name: offering.Status.Provider}, &rec); err != nil {
-		t.Fatal(err)
-	}
-	ws := adminClient(t, rec.Status.WorkspacePath)
+	alice := userVWClient(t, "alice", "")
+	entryName := providerName + "." + export.Name
 
-	var fresh marketplacev1alpha1.Offering
-	if err := ws.Get(ctx, client.ObjectKey{Name: offering.Name}, &fresh); err != nil {
-		t.Fatal(err)
-	}
-	fresh.Spec.Claims = append(fresh.Spec.Claims, marketplacev1alpha1.OfferingClaim{
-		Resource: "secrets", Verbs: []string{"get", "list", "watch"},
-		MatchLabels: map[string]string{"marketplace.contrib.kcp.io/owner": offering.Status.Provider},
-	})
-	if err := ws.Update(ctx, &fresh); err != nil {
-		t.Fatal(err)
-	}
-
-	waitFor(t, ctx, "the offering to reach revision 2", func(ctx context.Context) (bool, error) {
-		if err := ws.Get(ctx, client.ObjectKey{Name: offering.Name}, &fresh); err != nil {
+	var before marketplacev1alpha1.CatalogOffering
+	waitFor(t, ctx, "the catalog to list the offering", func(ctx context.Context) (bool, error) {
+		if err := alice.Get(ctx, client.ObjectKey{Name: entryName}, &before); err != nil {
 			return false, nil
 		}
-		return fresh.Status.Revision == 2, nil
+		return before.Ready && before.Revision != "", nil
 	})
-	found := false
-	for _, claim := range fresh.Status.AppliedClaims {
+
+	// The provider widens the consent surface by editing the export — the
+	// only place it is declared.
+	ws := adminClient(t, providerPath)
+	waitFor(t, ctx, "widen the export's claims", func(ctx context.Context) (bool, error) {
+		var fresh apisv1alpha2.APIExport
+		if err := ws.Get(ctx, client.ObjectKey{Name: export.Name}, &fresh); err != nil {
+			return false, nil
+		}
+		fresh.Spec.PermissionClaims = append(fresh.Spec.PermissionClaims, apisv1alpha2.PermissionClaim{
+			GroupResource: apisv1alpha2.GroupResource{Group: "", Resource: "secrets"},
+			Verbs:         []string{"get", "list", "watch"},
+			DefaultSelector: &apisv1alpha2.PermissionClaimSelector{
+				LabelSelector: metav1.LabelSelector{
+					MatchLabels: map[string]string{"marketplace.platform.kcp.io/owner": providerName},
+				},
+			},
+		})
+		return ws.Update(ctx, &fresh) == nil, nil
+	})
+
+	var after marketplacev1alpha1.CatalogOffering
+	waitFor(t, ctx, "the catalog to advertise the wider surface", func(ctx context.Context) (bool, error) {
+		if err := alice.Get(ctx, client.ObjectKey{Name: entryName}, &after); err != nil {
+			return false, nil
+		}
+		return len(after.Claims) == 2, nil
+	})
+	if after.Revision == before.Revision {
+		t.Fatalf("the claim surface changed but the revision did not (%q)", after.Revision)
+	}
+	scoped := false
+	for _, claim := range after.Claims {
 		if claim.Resource == "secrets" && len(claim.MatchLabels) > 0 {
-			found = true
+			scoped = true
 		}
 	}
-	if !found {
-		t.Fatalf("revision 2 applied claims lost the scoped secrets claim: %+v", fresh.Status.AppliedClaims)
+	if !scoped {
+		t.Fatalf("the catalog lost the provider's suggested scope: %+v", after.Claims)
 	}
 
-	// The consumer's binding still carries revision 1's claims, verbatim.
+	// The consumer's binding still carries what they accepted, verbatim.
 	var binding apisv1alpha2.APIBinding
 	if err := consumer.Get(ctx, client.ObjectKey{Name: "things"}, &binding); err != nil {
 		t.Fatal(err)
@@ -299,14 +292,14 @@ func TestScenarioClaimChangesBumpTheRevision(t *testing.T) {
 	}
 }
 
-// Deleting the Offering revokes the bind grant: an offering off the
-// catalog is an offering no USER can newly enable — being admin of one's
-// own workspace grants nothing on the provider's side. (The shard admin
-// is exempt: system:masters bypasses authorization, here as everywhere
-// in Kubernetes — which this test found out the hard way.)
-func TestScenarioDeletingTheOfferingRevokesBind(t *testing.T) {
+// Un-publishing revokes the bind grant: an offering off the catalog is an
+// offering no USER can newly enable — being admin of one's own workspace
+// grants nothing on the provider's side. (The shard admin is exempt:
+// system:masters bypasses authorization, here as everywhere in Kubernetes
+// — which this test found out the hard way.)
+func TestScenarioUnpublishingRevokesBind(t *testing.T) {
 	ctx := testContext(t)
-	providerPath, offering, consumer, consumerPath, _ := standUpOffering(t, ctx)
+	providerPath, _, export, consumer, consumerPath, _ := standUpOffering(t, ctx)
 
 	// alice is full admin of the consumer workspace...
 	grantWorkspaceAdmin(t, ctx, consumer, "alice")
@@ -315,24 +308,20 @@ func TestScenarioDeletingTheOfferingRevokesBind(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	catalog := adminClient(t, catalogPath)
-	var rec marketplacev1alpha1.Provider
-	if err := catalog.Get(ctx, client.ObjectKey{Name: offering.Status.Provider}, &rec); err != nil {
-		t.Fatal(err)
-	}
-	ws := adminClient(t, rec.Status.WorkspacePath)
-	if err := ws.Delete(ctx, &marketplacev1alpha1.Offering{ObjectMeta: metav1.ObjectMeta{Name: offering.Name}}); err != nil {
-		t.Fatal(err)
-	}
+	// The provider takes it off the catalog by removing one annotation.
+	// The export itself, and everyone already bound to it, stay exactly as
+	// they were.
+	ws := adminClient(t, providerPath)
+	unpublishExport(t, ctx, ws, export.Name)
 	waitFor(t, ctx, "the bind grant to be revoked", func(ctx context.Context) (bool, error) {
 		var role rbacv1.ClusterRole
-		err := ws.Get(ctx, client.ObjectKey{Name: "marketplace:bind:" + offering.Spec.Export}, &role)
+		err := ws.Get(ctx, client.ObjectKey{Name: "marketplace:bind:" + export.Name}, &role)
 		return apierrors.IsNotFound(err), nil
 	})
 
 	// ...and it does not help: her rights end at her workspace, and the
 	// export side's grant is gone.
-	binding := bindingFor("too-late", providerPath, offering)
+	binding := bindingFor("too-late", providerPath, export)
 	waitFor(t, ctx, "the unpublished export to refuse alice", func(ctx context.Context) (bool, error) {
 		err := alice.Create(ctx, binding.DeepCopy())
 		if err == nil {

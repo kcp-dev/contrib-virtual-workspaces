@@ -57,7 +57,8 @@ import (
 const (
 	// ExportCatalog serves Providers in the catalog workspace.
 	ExportCatalog = "marketplace-catalog"
-	// ExportPublish serves Offerings in provider workspaces, with the
+	// ExportPublish serves no resources; it carries the claims the publish
+	// flow needs in provider workspaces, with the
 	// publish-side claims.
 	ExportPublish = "marketplace-publish"
 	// ExportProvisioner grants the claim to create provider workspaces.

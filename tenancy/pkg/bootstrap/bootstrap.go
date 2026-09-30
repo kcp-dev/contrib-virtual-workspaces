@@ -168,9 +168,25 @@ func Bootstrap(ctx context.Context, cfg *rest.Config, exportsPath string, opts O
 
 // BindStore makes the workspace cfg points at the tenant registry: it
 // binds tenancy-platform, then waits until Tenants are actually servable.
-func BindStore(ctx context.Context, cfg *rest.Config, result *Result) error {
+func BindStore(ctx context.Context, cfg *rest.Config, result *Result, opts Options) error {
 	if err := applyTier(ctx, cfg, result, apiexport.StoreOrder); err != nil {
 		return err
+	}
+
+	// The virtual workspace writes a requested tenant here, through the
+	// platform export — which needs no standing in this workspace. What it
+	// does need is to know which logical cluster this is, because an
+	// export's virtual workspace addresses clusters and not paths. That is
+	// the whole grant: enter, and read the one object that says where you
+	// are.
+	if len(opts.ServerUsers)+len(opts.ServerGroups) > 0 {
+		kube, err := kubernetes.NewForConfig(cfg)
+		if err != nil {
+			return fmt.Errorf("build kubernetes client: %w", err)
+		}
+		if err := applyStoreLocator(ctx, kube, opts.ServerUsers, opts.ServerGroups); err != nil {
+			return fmt.Errorf("grant the server identities the store locator role: %w", err)
+		}
 	}
 
 	dyn, err := dynamic.NewForConfig(cfg)
@@ -374,6 +390,73 @@ func applyManifests(ctx context.Context, dyn dynamic.Interface, mapper *restmapp
 			}
 		}
 	}
+}
+
+// applyStoreLocator grants the least a server needs to find out which
+// logical cluster the store workspace is: kcp's workspace gate, and a read
+// of the LogicalCluster that names it. Deliberately not the Tenant API —
+// tenants are written through the platform export, not through here.
+func applyStoreLocator(ctx context.Context, kube kubernetes.Interface, users, groups []string) error {
+	role := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{Name: tenancyv1alpha1.GroupName + ":store-locator"},
+		Rules: []rbacv1.PolicyRule{
+			{
+				Verbs:           []string{"access"},
+				NonResourceURLs: []string{"/"},
+			},
+			{
+				APIGroups: []string{"core.kcp.io"},
+				Resources: []string{"logicalclusters"},
+				Verbs:     []string{"get"},
+			},
+		},
+	}
+	if _, err := kube.RbacV1().ClusterRoles().Create(ctx, role, metav1.CreateOptions{}); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			return err
+		}
+		if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			existing, err := kube.RbacV1().ClusterRoles().Get(ctx, role.Name, metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
+			existing.Rules = role.Rules
+			_, err = kube.RbacV1().ClusterRoles().Update(ctx, existing, metav1.UpdateOptions{})
+			return err
+		}); err != nil {
+			return err
+		}
+	}
+
+	subjects := make([]rbacv1.Subject, 0, len(users)+len(groups))
+	for _, u := range users {
+		subjects = append(subjects, rbacv1.Subject{Kind: rbacv1.UserKind, APIGroup: rbacv1.GroupName, Name: u})
+	}
+	for _, g := range groups {
+		subjects = append(subjects, rbacv1.Subject{Kind: rbacv1.GroupKind, APIGroup: rbacv1.GroupName, Name: g})
+	}
+
+	binding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: role.Name},
+		RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: role.Name},
+		Subjects:   subjects,
+	}
+	if _, err := kube.RbacV1().ClusterRoleBindings().Create(ctx, binding, metav1.CreateOptions{}); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			return err
+		}
+		return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			existing, err := kube.RbacV1().ClusterRoleBindings().Get(ctx, binding.Name, metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
+			existing.Subjects = subjects
+			existing.RoleRef = binding.RoleRef
+			_, err = kube.RbacV1().ClusterRoleBindings().Update(ctx, existing, metav1.UpdateOptions{})
+			return err
+		})
+	}
+	return nil
 }
 
 // applyServerIdentity grants the server role to the given identities.

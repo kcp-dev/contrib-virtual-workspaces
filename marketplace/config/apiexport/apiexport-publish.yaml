@@ -1,16 +1,18 @@
 # marketplace-publish - the provider-side export.
 #
-# Serves Offerings, and claims exactly what the publish flow needs inside a
-# provider workspace:
+# It serves NO resources: publishing is annotating an APIExport, so there
+# is no marketplace object in a provider workspace and nothing to serve.
+# What this export carries is the reach the publish flow needs inside one:
 #
-#   - read apiexports and their endpoint slices, so an Offering is
-#     validated against the export it names rather than trusted;
+#   - read apiexports, because an annotated export IS an offering: this is
+#     how one is noticed, read, and noticed again when un-annotated;
+#   - read their endpoint slices, to follow the exports that are published;
 #   - read the LogicalCluster, so the workspace's canonical path can be
 #     matched against the Provider record that names it (that match is how
 #     an external provider's workspace is recognized);
 #   - write ClusterRoles and ClusterRoleBindings, to materialize the ONE
-#     grant registration means: `bind` on the offering's export, to the
-#     operator. Delete is load-bearing - deleting the Offering revokes it.
+#     grant publishing means: `bind` on the annotated export. Delete is
+#     load-bearing - removing the annotation revokes it.
 #
 # Binding this export IS a provider's consent: kcp auto-accepts these
 # claims on binding, and deleting the binding revokes every one of them.
@@ -19,12 +21,6 @@ kind: APIExport
 metadata:
   name: marketplace-publish
 spec:
-  resources:
-    - name: offerings
-      group: marketplace.contrib.kcp.io
-      schema: v260924-7813b03.offerings.marketplace.contrib.kcp.io
-      storage:
-        crd: {}
   permissionClaims:
     - group: apis.kcp.io
       resource: apiexports

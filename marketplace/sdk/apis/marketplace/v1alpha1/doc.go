@@ -15,15 +15,20 @@ limitations under the License.
 */
 
 // Package v1alpha1 holds the API types for the marketplace component
-// (group marketplace.contrib.kcp.io).
+// (group marketplace.platform.kcp.io).
 //
-// Three persisted, cluster-scoped kinds, each living in a different tier:
-// Provider records live in the catalog workspace, an Offering lives in the
-// workspace of the provider that publishes it, and an Enablement lives in
-// the consumer workspace that orders one. One virtual kind —
-// CatalogOffering — is served read-only by the marketplace virtual
-// workspace and is the catalog as users browse it.
+// One persisted, cluster-scoped kind: Provider, the registration record,
+// in the catalog workspace. One virtual kind: CatalogOffering, served
+// read-only by the marketplace virtual workspace — the catalog as users
+// browse it.
+//
+// There is deliberately no kind for an offering and none for an
+// enablement, because neither needs one. Publishing is annotating an
+// APIExport (see AnnotationPublish), so the offering is the export.
+// Enabling is creating a plain kcp APIBinding, so the enablement is the
+// binding. Both are ordinary objects their own owner controls, which is
+// why the marketplace has no write path into either workspace.
 //
 // +k8s:openapi-gen=true
-// +groupName=marketplace.contrib.kcp.io
+// +groupName=marketplace.platform.kcp.io
 package v1alpha1

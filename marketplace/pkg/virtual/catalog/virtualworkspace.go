@@ -43,11 +43,11 @@ const VirtualWorkspaceName = "marketplace"
 
 // RootPath is the URL prefix the front-proxy routes to this VW.
 //
-//	GET  RootPath/apis/marketplace.contrib.kcp.io/v1alpha1/offerings
+//	GET  RootPath/apis/marketplace.platform.kcp.io/v1alpha1/offerings
 const RootPath = "/services/" + VirtualWorkspaceName
 
 // NewVirtualWorkspace builds the marketplace VW: a fixed-group-version
-// delegated apiserver serving marketplace.contrib.kcp.io/v1alpha1 with the
+// delegated apiserver serving marketplace.platform.kcp.io/v1alpha1 with the
 // read-only catalog, answered from the shared directory. Any authenticated
 // caller may browse.
 func NewVirtualWorkspace(d *directory.Directory) rootapiserver.NamedVirtualWorkspace {

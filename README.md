@@ -1,6 +1,13 @@
 # contrib-virtual-workspaces
 
-Contrib virtual workspaces for [kcp](https://github.com/kcp-dev/kcp).
+Virtual workspaces for [kcp](https://github.com/kcp-dev/kcp), and the
+platform built out of two of them.
+
+**kcp Platform** is [tenancy/](tenancy/) and [marketplace/](marketplace/)
+together — tenants, projects and memberships, plus a catalog of offerings
+to enable in them — served under the `*.platform.kcp.io` API groups, with
+[ui/](ui/) as its console. The other three components are standalone
+virtual workspaces that stand on their own.
 
 | Component | What it serves | Image |
 |---|---|---|
@@ -8,6 +15,7 @@ Contrib virtual workspaces for [kcp](https://github.com/kcp-dev/kcp).
 | [mcp/](mcp/) | [Model Context Protocol](https://modelcontextprotocol.io) as a virtual workspace, scoped to what the caller can see (uses the access VW) | `ghcr.io/kcp-dev/contrib-virtual-workspaces/mcp-vw` |
 | [ephemeral/](ephemeral/) | Non-persisted resources: `POST` in, a provider webhook answers, nothing reaches etcd | `ghcr.io/kcp-dev/contrib-virtual-workspaces/ephemeral-vw` |
 | [tenancy/](tenancy/) | Tenants, projects and memberships as kcp workspaces and RBAC, plus **SelfTenancyReview** — "which tenants am I in?" — and the `tenancyctl` client | `ghcr.io/kcp-dev/contrib-virtual-workspaces/tenancy-vw` |
+| [marketplace/](marketplace/) | Providers and offerings: a read-only catalog, where enabling is a plain kcp `APIBinding` the consumer authors themselves | `ghcr.io/kcp-dev/contrib-virtual-workspaces/marketplace-vw` |
 
 Each component's README documents its design, deployment and limits.
 
@@ -37,18 +45,41 @@ make image-mcp          # or per component
 
 ## One CLI
 
-Every component that ships a client exposes it as an importable cobra
-command, and `contribctl` (built by `make build-cli` into `bin/`) mounts
-them all under one root:
+Every component that ships a client exposes it as importable cobra
+commands, and `contribctl` (built by `make build-cli` into `bin/`)
+arranges them around what a person does rather than around which
+component implements it:
 
 ```sh
-contribctl tenancy tenant create acme --display-name "Acme Corp"   # tenancyctl
-contribctl scar-to-kubeconfig --token "$TOKEN"                     # access helper
+contribctl login --issuer https://dex.example.com --url https://kcp.example.com:8443
+contribctl use                     # pick a tenant and project
+contribctl tenants                 # what you can reach
+contribctl offers                  # what you could enable
+contribctl enable acme.things      # enable it here
+contribctl membership add alice@example.com --role admin
 ```
 
+The user-facing commands need no kubeconfig at all — the virtual
+workspaces authenticate the caller and answer for the identity they hold.
+`contribctl admin` is the other side, writing to kcp with a kubeconfig.
+`login --url` remembers the server in `~/.kube/contribctl.json`, so
+nothing after it has to be told where kcp is.
+
 The standalone binaries (`tenancyctl`, `scar-to-kubeconfig`) remain the
-same code under their own names. A new component adds one
-`AddCommand(...)` line in [cmd/cli/main.go](cmd/cli/main.go).
+same code under their own names.
+
+## One UI
+
+[ui/](ui/) is a web console over exactly the same surfaces: sign in with
+the same identity provider, see your tenants and projects, browse the
+catalog and enable from it, and look at what a workspace serves. It is
+static files talking to the front-proxy with the user's own token — no
+backend of ours, nothing privileged, and so it can never show more than
+kcp would answer for that person.
+
+`make tilt-up` starts it with the rest of the stack, on
+http://localhost:5173; `cd ui && npm install && npm run dev` runs it
+against a stack that is already up.
 
 ## Development with Tilt
 
@@ -63,11 +94,13 @@ live-reloading local processes.
 - `KCP_DIR` points at the kcp clone (default `../kcp`).
 - Admin kubeconfigs land in `.tilt/` (`tilt-frontproxy.kubeconfig`, per
   shard), extracted by kcp's own tooling.
-- Per component you get build → init → operator → virtual workspace
-  resources; a source change rebuilds the binary, re-runs `init` (the
-  kcp-side assets are embedded, so a changed asset must be re-applied)
-  and restarts both processes. The tenancy VW serves on :9445, the
-  marketplace VW on :9446, with a dev client CA in `.tilt/pki`.
+- Each component's virtual workspace is deployed **in the cluster** by the
+  kcp-operator (a `VirtualWorkspace` object: Deployment, Service, serving
+  certificate, and the component's own `init` as an init container) and
+  routed by the front-proxy, so everything answers on one address —
+  `https://kcp.localhost:8443`, kcp under `/clusters/` and each virtual
+  workspace under `/services/<name>`. The operators run as local
+  processes, which is where the fast iteration is.
 - `TENANCY_ENABLED=false` / `MARKETPLACE_ENABLED=false` skip a component.
 - Dex runs in the same kind cluster as the shared OIDC issuer
   (`https://dex.kcp.localhost:8443/dex`), trusted by kcp and both virtual

@@ -37,10 +37,10 @@ import (
 // the workspace path to reference, and the claims at the current revision.
 func TestScenarioVWListsTheCatalog(t *testing.T) {
 	ctx := testContext(t)
-	providerPath, offering, _, _, _ := standUpOffering(t, ctx)
+	providerPath, providerName, export, _, _, _ := standUpOffering(t, ctx)
 
 	alice := userVWClient(t, "alice", "")
-	entryName := offering.Status.Provider + "." + offering.Name
+	entryName := providerName + "." + export.Name
 
 	var entry marketplacev1alpha1.CatalogOffering
 	waitFor(t, ctx, "the catalog to list the offering", func(ctx context.Context) (bool, error) {
@@ -49,10 +49,12 @@ func TestScenarioVWListsTheCatalog(t *testing.T) {
 		}
 		return entry.Ready, nil
 	})
-	if entry.Provider != offering.Status.Provider || entry.Offering != offering.Name {
+	if entry.Provider != providerName || entry.Offering != export.Name {
 		t.Fatalf("catalog entry misjoined: %+v", entry)
 	}
-	if entry.WorkspacePath != providerPath || entry.Export != offering.Spec.Export {
+	// The offering and the export are the same object, so the entry names
+	// the export twice over: as what it is, and as what to bind.
+	if entry.WorkspacePath != providerPath || entry.Export != export.Name {
 		t.Fatalf("catalog entry does not carry the bind coordinates: %+v", entry)
 	}
 	if len(entry.Claims) == 0 || entry.Claims[0].Resource != "configmaps" {
@@ -80,7 +82,7 @@ func TestScenarioVWListsTheCatalog(t *testing.T) {
 // no marketplace machinery in the path at all.
 func TestScenarioAUserBindsWithTheirOwnCredential(t *testing.T) {
 	ctx := testContext(t)
-	providerPath, offering, consumer, consumerPath, _ := standUpOffering(t, ctx)
+	providerPath, _, export, consumer, consumerPath, _ := standUpOffering(t, ctx)
 
 	aliceCfg := userKcpConfig(t, "alice", consumerPath)
 	alice, err := client.New(aliceCfg, client.Options{Scheme: testScheme})
@@ -93,7 +95,7 @@ func TestScenarioAUserBindsWithTheirOwnCredential(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	binding := bindingFor("things", providerPath, offering)
+	binding := bindingFor("things", providerPath, export)
 
 	// No grant yet: alice cannot even enter the workspace.
 	if err := alice.Create(ctx, binding.DeepCopy()); err == nil {
@@ -121,7 +123,7 @@ func TestScenarioAUserBindsWithTheirOwnCredential(t *testing.T) {
 	})
 
 	// bob holds nothing there: refused, by the workspace, not by us.
-	if err := bob.Create(ctx, bindingFor("bobs", providerPath, offering)); err == nil {
+	if err := bob.Create(ctx, bindingFor("bobs", providerPath, export)); err == nil {
 		t.Fatal("bob bound with no RBAC in the consumer workspace")
 	}
 
@@ -140,7 +142,7 @@ func TestScenarioExternalProviderPublishesByBinding(t *testing.T) {
 	sfx := randomSuffix(t)
 	wsName := "byo-" + sfx
 	providerName := "byo-prov-" + sfx
-	exportName := "things.byo-" + sfx + ".marketplace.contrib.kcp.io"
+	exportName := "things.byo-" + sfx + ".marketplace.platform.kcp.io"
 
 	ws := createWorkspace(t, ctx, wsName, "", "")
 	byo := adminClient(t, "root:"+wsName)
@@ -163,14 +165,7 @@ func TestScenarioExternalProviderPublishesByBinding(t *testing.T) {
 
 	registerProvider(t, ctx, providerName, marketplacev1alpha1.ProviderModeExternal, "root:"+wsName)
 	installThingsExport(t, ctx, byo, exportName)
-	waitFor(t, ctx, "the Offering API to be servable after the hand-bind", func(ctx context.Context) (bool, error) {
-		var offerings marketplacev1alpha1.OfferingList
-		return byo.List(ctx, &offerings) == nil, nil
-	})
-	offering := publishOffering(t, ctx, byo, "things", exportName, nil)
-	if offering.Status.Provider != providerName {
-		t.Fatalf("offering resolved to %q, want %q", offering.Status.Provider, providerName)
-	}
+	export := publishExport(t, ctx, byo, exportName, "things")
 
 	// Publishing taught the Provider record its cluster.
 	catalog := adminClient(t, catalogPath)
@@ -186,7 +181,7 @@ func TestScenarioExternalProviderPublishesByBinding(t *testing.T) {
 	// workspace, a plain bind.
 	consumerWS := createWorkspace(t, ctx, "consumer-"+sfx, "", "")
 	consumer := adminClient(t, "root:"+consumerWS.Name)
-	bindOffering(t, ctx, consumer, "things", "root:"+wsName, offering)
+	bindOffering(t, ctx, consumer, "things", "root:"+wsName, export)
 }
 
 // acceptedPublishClaims mirrors, on the consumer side, every claim the

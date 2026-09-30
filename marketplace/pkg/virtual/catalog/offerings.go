@@ -29,10 +29,10 @@ import (
 	marketplacev1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1"
 )
 
-// OfferingsREST is the read-only catalog: every published, resolved
-// offering joined with its provider, named "<provider>.<offering>".
-// Reading it is reading the consent form — Claims is exactly what enabling
-// at Revision accepts.
+// OfferingsREST is the read-only catalog: every published APIExport joined
+// with the Provider record that owns its workspace, named
+// "<provider>.<export>". Reading it is reading the consent form — Claims is
+// exactly what enabling accepts, and Revision identifies that surface.
 type OfferingsREST struct {
 	directory *directory.Directory
 	tables    rest.TableConvertor

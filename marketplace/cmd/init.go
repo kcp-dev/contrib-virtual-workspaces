@@ -149,12 +149,12 @@ created. Idempotent: safe to run on every pod start and every upgrade.`,
 				"provisionerUrls", sliceURLs[bootstrap.ExportProvisioner],
 			)
 			if catalogPath != "" {
-				logger.Info("register Providers here; a provider's Offerings live inside its own workspace",
+				logger.Info("register Providers here; a provider publishes by annotating an APIExport in its own workspace",
 					"catalog", catalogPath, "provisionedUnder", providersPath,
 				)
 			}
 			logger.Info("provider workspaces get marketplace-publish through the `provider` type, or bind "+
-				"it by hand to register BYO; consumers need nothing bound — enabling an offering is a "+
+				"it by hand to register BYO; consumers need nothing bound - enabling an offering is a "+
 				"plain kcp APIBinding they create themselves",
 				"exportsPath", workspacePath,
 				"workspaceTypes", []string{bootstrap.WorkspaceTypeProvider},

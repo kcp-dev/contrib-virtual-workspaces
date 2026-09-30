@@ -74,7 +74,13 @@ project is given). Safe to run on every environment start.`,
 			}
 			t := &tenancyv1alpha1.Tenant{
 				ObjectMeta: metav1.ObjectMeta{Name: tenant},
-				Spec:       tenancyv1alpha1.TenantSpec{DisplayName: displayName},
+				Spec: tenancyv1alpha1.TenantSpec{
+					DisplayName: displayName,
+					// The first --admin also seeds the tenant, so the
+					// grant exists the moment the workspace does rather
+					// than after the projects below it.
+					FirstAdmin: firstOf(admins),
+				},
 			}
 			switch err := platform.Create(ctx, t); {
 			case err == nil:
@@ -147,4 +153,12 @@ project is given). Safe to run on every environment start.`,
 	cmd.Flags().BoolVar(&wait_, "wait", true, "Wait until the workspaces are ready.")
 
 	return cmd
+}
+
+// firstOf returns the first element, or "".
+func firstOf(ss []string) string {
+	if len(ss) == 0 {
+		return ""
+	}
+	return ss[0]
 }

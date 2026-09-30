@@ -47,7 +47,7 @@ root
           │     │
           │     ├── web ................... WorkspaceType: project
           │     │     APIBinding tenancy-access ... from the WorkspaceType
-          │     │     ClusterRole  tenancy.contrib.kcp.io:role:admin
+          │     │     ClusterRole  tenancy.platform.kcp.io:role:admin
           │     │     ClusterRoleBinding ...:membership:alice-admin
           │     │     Namespace "default" ... created by the operator
           │     │
@@ -304,7 +304,7 @@ Workspace names are DNS labels; display names are arbitrary UTF-8. The
 - `slug` (default): lowercase the display name, collapse everything else to
   dashes ("Acme Corp" → `acme-corp`). On collision with a workspace owned by
   a different object, fall back to the slug plus a hash of the object's UID.
-  Ownership is tracked with a `tenancy.contrib.kcp.io/owner-uid` label, so
+  Ownership is tracked with a `tenancy.platform.kcp.io/owner-uid` label, so
   reconciles converge without storing decisions anywhere.
 - `uid`: always name by UID hash. Opaque, but immune to display-name games.
 
@@ -317,7 +317,7 @@ always proposes the same candidates.
 front-proxy:
 
 ```
-POST /services/tenancy/apis/tenancy.contrib.kcp.io/v1alpha1/selftenancyreviews
+POST /services/tenancy/apis/tenancy.platform.kcp.io/v1alpha1/selftenancyreviews
 ```
 
 The caller POSTs an empty object; the answer lists their tenants with
@@ -475,8 +475,8 @@ PKI=$PWD/pki   # or tenancy/.e2e/pki
 # ask who you are:
 curl -ks --cert "$PKI/alice.crt" --key "$PKI/alice.key" \
   -X POST -H 'Content-Type: application/json' \
-  -d '{"apiVersion":"tenancy.contrib.kcp.io/v1alpha1","kind":"SelfTenancyReview"}' \
-  https://localhost:9445/services/tenancy/apis/tenancy.contrib.kcp.io/v1alpha1/selftenancyreviews
+  -d '{"apiVersion":"tenancy.platform.kcp.io/v1alpha1","kind":"SelfTenancyReview"}' \
+  https://localhost:9445/services/tenancy/apis/tenancy.platform.kcp.io/v1alpha1/selftenancyreviews
 
 # ...and whether the directory is being fed at all:
 curl -ks --cert "$PKI/alice.crt" --key "$PKI/alice.key" \

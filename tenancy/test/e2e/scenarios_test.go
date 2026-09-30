@@ -290,7 +290,7 @@ func TestScenarioMembershipMaterializesInProjectsOnly(t *testing.T) {
 			if err != nil {
 				return false, nil
 			}
-			return crb.RoleRef.Name == "tenancy.contrib.kcp.io:role:admin", nil
+			return crb.RoleRef.Name == "tenancy.platform.kcp.io:role:admin", nil
 		})
 	}
 
@@ -372,7 +372,7 @@ func TestScenarioChangingTheRoleReplacesTheBinding(t *testing.T) {
 		if err != nil {
 			return false, nil
 		}
-		return crb.RoleRef.Name == "tenancy.contrib.kcp.io:role:edit", nil
+		return crb.RoleRef.Name == "tenancy.platform.kcp.io:role:edit", nil
 	})
 }
 

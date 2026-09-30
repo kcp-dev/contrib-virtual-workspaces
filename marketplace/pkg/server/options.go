@@ -80,7 +80,7 @@ func (o *Options) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&o.CatalogSlice, "catalog-endpointslice", bootstrap.ExportCatalog,
 		"APIExportEndpointSlice serving Providers.")
 	fs.StringVar(&o.PublishSlice, "publish-endpointslice", bootstrap.ExportPublish,
-		"APIExportEndpointSlice serving Offerings.")
+		"APIExportEndpointSlice reaching the APIExports in provider workspaces.")
 	fs.StringVar(&o.WorkspacePath, "workspace-path", "",
 		"Workspace path the kubeconfig is retargeted to, e.g. root:marketplace:controllers. "+
 			"Must be the workspace containing the APIExportEndpointSlices. "+
@@ -88,6 +88,27 @@ func (o *Options) AddFlags(fs *pflag.FlagSet) {
 	if fs.Lookup("kubeconfig") == nil {
 		fs.StringVar(&o.Kubeconfig, "kubeconfig", "", "Path to the kubeconfig for the target kcp (required).")
 	}
+
+	addIgnoredOperatorFlags(fs)
+}
+
+// addIgnoredOperatorFlags accepts, and ignores, flags the kcp-operator
+// puts on every VirtualWorkspace deployment.
+//
+// --shard-external-url is one of kcp's own virtual-workspace server's
+// flags and means nothing here, but the operator appends it
+// unconditionally (internal/resources/compiledvirtualworkspace:
+// "TODO(ntnn): We need a way to shut this off if it isn't required"),
+// even though the API type documents spec.command as suppressing it
+// "because a custom server would reject the unknown flags and refuse to
+// start". An apiserver built on pflag exits on a flag it does not know,
+// so accepting it is what lets this server be deployed by the operator
+// at all. Remove once the operator stops sending it.
+func addIgnoredOperatorFlags(fs *pflag.FlagSet) {
+	var ignored string
+	fs.StringVar(&ignored, "shard-external-url", "",
+		"Ignored. Accepted only because the kcp-operator passes it to every virtual workspace.")
+	_ = fs.MarkHidden("shard-external-url")
 }
 
 // Complete fills in derived defaults.

@@ -1,22 +1,22 @@
 apiVersion: apis.kcp.io/v1alpha1
 kind: APIResourceSchema
 metadata:
-  name: v260924-7813b03.tenants.tenancy.contrib.kcp.io
+  name: v260924-7813b03.projects.tenancy.platform.kcp.io
 spec:
-  group: tenancy.contrib.kcp.io
+  group: tenancy.platform.kcp.io
   names:
-    kind: Tenant
-    listKind: TenantList
-    plural: tenants
-    singular: tenant
+    kind: Project
+    listKind: ProjectList
+    plural: projects
+    singular: project
   scope: Cluster
   versions:
   - name: v1alpha1
     schema:
       description: |-
-        Tenant asks for an isolated kcp workspace for one organizational unit.
-        The operator provisions a workspace under the organization workspace the
-        Tenant object lives in and reports it in Status.
+        Project asks for a workspace nested under a tenant's workspace. Projects
+        are the unit teams actually work in; tenant-wide Memberships reach every
+        project, project Memberships reach one.
       properties:
         apiVersion:
           description: |-
@@ -36,22 +36,27 @@ spec:
         metadata:
           type: object
         spec:
-          description: TenantSpec is the desired state of a Tenant.
+          description: ProjectSpec is the desired state of a Project.
           properties:
             description:
               description: Description is free text for humans.
               type: string
             displayName:
               description: |-
-                DisplayName is the human name of the tenant. It seeds the workspace
-                name (subject to the operator's naming strategy) and is returned in
-                SelfTenancyReview answers. It is not required to be unique.
+                DisplayName is the human name of the project; it seeds the workspace
+                name the same way a tenant's does.
+              type: string
+            tenant:
+              description: |-
+                Tenant names the Tenant (in the same workspace) this project belongs
+                to. The project's workspace is created under that tenant's workspace.
               type: string
           required:
           - displayName
+          - tenant
           type: object
         status:
-          description: TenantStatus is the observed state of a Tenant.
+          description: ProjectStatus is the observed state of a Project.
           properties:
             message:
               type: string
@@ -66,13 +71,13 @@ spec:
               type: string
             workspace:
               description: |-
-                Workspace is the name of the provisioned Workspace object, in the
-                same workspace the Tenant lives in.
+                Workspace is the name of the provisioned Workspace object, inside the
+                tenant's workspace.
               type: string
             workspaceCluster:
               description: |-
                 WorkspaceCluster is the logical cluster name backing the provisioned
-                workspace. It is the stable address of the tenant's workspace.
+                workspace.
               type: string
           type: object
       required:

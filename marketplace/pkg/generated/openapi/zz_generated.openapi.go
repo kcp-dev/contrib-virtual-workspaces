@@ -21,11 +21,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 	return map[string]common.OpenAPIDefinition{
 		"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.CatalogOffering":     schema_sdk_apis_marketplace_v1alpha1_CatalogOffering(ref),
 		"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.CatalogOfferingList": schema_sdk_apis_marketplace_v1alpha1_CatalogOfferingList(ref),
-		"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.Offering":            schema_sdk_apis_marketplace_v1alpha1_Offering(ref),
 		"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.OfferingClaim":       schema_sdk_apis_marketplace_v1alpha1_OfferingClaim(ref),
-		"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.OfferingList":        schema_sdk_apis_marketplace_v1alpha1_OfferingList(ref),
-		"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.OfferingSpec":        schema_sdk_apis_marketplace_v1alpha1_OfferingSpec(ref),
-		"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.OfferingStatus":      schema_sdk_apis_marketplace_v1alpha1_OfferingStatus(ref),
 		"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.Provider":            schema_sdk_apis_marketplace_v1alpha1_Provider(ref),
 		"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.ProviderList":        schema_sdk_apis_marketplace_v1alpha1_ProviderList(ref),
 		"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.ProviderSpec":        schema_sdk_apis_marketplace_v1alpha1_ProviderSpec(ref),
@@ -91,7 +87,7 @@ func schema_sdk_apis_marketplace_v1alpha1_CatalogOffering(ref common.ReferenceCa
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
-				Description: "CatalogOffering is the virtual, read-only view of one offering as the marketplace virtual workspace serves it: the offering joined with its provider, named \"<provider>.<offering>\". It carries everything needed to author the APIBinding that enabling means — the export, the workspace path it lives at, and the claims at Revision, identity hashes included. Reading the catalog is reading the consent form.",
+				Description: "CatalogOffering is the virtual, read-only view of one offering as the marketplace virtual workspace serves it: a published APIExport joined with the Provider record whose workspace it lives in, named \"<provider>.<export>\". It carries everything needed to author the APIBinding that enabling means — the export, the workspace path it lives at, and its claims, identity hashes included. Reading the catalog is reading the consent form.",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
 					"kind": {
@@ -124,7 +120,7 @@ func schema_sdk_apis_marketplace_v1alpha1_CatalogOffering(ref common.ReferenceCa
 					},
 					"offering": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Offering is the Offering object's name in the provider's workspace.",
+							Description: "Offering is the name of the published APIExport in the provider's workspace — the offering and the export are the same object.",
 							Default:     "",
 							Type:        []string{"string"},
 							Format:      "",
@@ -158,14 +154,14 @@ func schema_sdk_apis_marketplace_v1alpha1_CatalogOffering(ref common.ReferenceCa
 					},
 					"revision": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Revision is the current claim-surface revision — the number an Enablement's acceptedRevision must name.",
-							Type:        []string{"integer"},
-							Format:      "int64",
+							Description: "Revision identifies the claim surface below: it is a digest of Claims, so the same claims always produce the same revision and any change produces a different one.\n\nIt is derived rather than counted because there is no longer an object to keep a counter on — which turns out to be the better property anyway. A consumer who recorded the revision they accepted can compare it with this one to see whether the consent form has changed since, and the answer does not depend on how many times a controller happened to observe it.",
+							Type:        []string{"string"},
+							Format:      "",
 						},
 					},
 					"claims": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Claims is the validated claim surface at Revision.",
+							Description: "Claims is the claim surface a consumer accepts by enabling: the export's own permission claims, projected.",
 							Type:        []string{"array"},
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
@@ -241,59 +237,11 @@ func schema_sdk_apis_marketplace_v1alpha1_CatalogOfferingList(ref common.Referen
 	}
 }
 
-func schema_sdk_apis_marketplace_v1alpha1_Offering(ref common.ReferenceCallback) common.OpenAPIDefinition {
-	return common.OpenAPIDefinition{
-		Schema: spec.Schema{
-			SchemaProps: spec.SchemaProps{
-				Description: "Offering is the catalog card: one orderable unit, published by a provider in its own workspace, next to the APIExport it references.",
-				Type:        []string{"object"},
-				Properties: map[string]spec.Schema{
-					"kind": {
-						SchemaProps: spec.SchemaProps{
-							Description: "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds",
-							Type:        []string{"string"},
-							Format:      "",
-						},
-					},
-					"apiVersion": {
-						SchemaProps: spec.SchemaProps{
-							Description: "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources",
-							Type:        []string{"string"},
-							Format:      "",
-						},
-					},
-					"metadata": {
-						SchemaProps: spec.SchemaProps{
-							Default: map[string]interface{}{},
-							Ref:     ref(v1.ObjectMeta{}.OpenAPIModelName()),
-						},
-					},
-					"spec": {
-						SchemaProps: spec.SchemaProps{
-							Default: map[string]interface{}{},
-							Ref:     ref("github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.OfferingSpec"),
-						},
-					},
-					"status": {
-						SchemaProps: spec.SchemaProps{
-							Default: map[string]interface{}{},
-							Ref:     ref("github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.OfferingStatus"),
-						},
-					},
-				},
-				Required: []string{"spec"},
-			},
-		},
-		Dependencies: []string{
-			"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.OfferingSpec", "github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.OfferingStatus", v1.ObjectMeta{}.OpenAPIModelName()},
-	}
-}
-
 func schema_sdk_apis_marketplace_v1alpha1_OfferingClaim(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
-				Description: "OfferingClaim is one tenant-side permission claim an offering carries: what a consumer accepts when they enable it. The operator validates every claim against the provider's real APIExport and records the intersection — declaring here grants nothing.",
+				Description: "OfferingClaim is one permission claim as the catalog shows it: what a consumer accepts when they enable the offering.\n\nIt is a projection of the APIExport's own spec.permissionClaims, never a separate declaration — so what the catalog advertises and what the binding will carry cannot drift apart.",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
 					"group": {
@@ -312,7 +260,7 @@ func schema_sdk_apis_marketplace_v1alpha1_OfferingClaim(ref common.ReferenceCall
 					},
 					"verbs": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Verbs are the verbs claimed. They come from the declaration, never from an enablement request.",
+							Description: "Verbs are the verbs claimed, as the export declares them.",
 							Type:        []string{"array"},
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
@@ -326,14 +274,14 @@ func schema_sdk_apis_marketplace_v1alpha1_OfferingClaim(ref common.ReferenceCall
 					},
 					"identityHash": {
 						SchemaProps: spec.SchemaProps{
-							Description: "IdentityHash is required when the claimed resource is itself served by an APIExport. The operator fills it from the provider's export; setting it here is not trusted.",
+							Description: "IdentityHash is set when the claimed resource is itself served by an APIExport, copied from the claim.",
 							Type:        []string{"string"},
 							Format:      "",
 						},
 					},
 					"matchLabels": {
 						SchemaProps: spec.SchemaProps{
-							Description: "MatchLabels narrows the claim to objects carrying these labels. Empty means the claim covers all objects (matchAll). A claim on a sensitive core resource such as secrets should never be unscoped.",
+							Description: "MatchLabels is the scope the provider suggests for this claim, from the claim's defaultSelector. Empty means the claim covers every object of that resource, which is what a consumer accepts by default.",
 							Type:        []string{"object"},
 							AdditionalProperties: &spec.SchemaOrBool{
 								Allows: true,
@@ -350,167 +298,6 @@ func schema_sdk_apis_marketplace_v1alpha1_OfferingClaim(ref common.ReferenceCall
 				Required: []string{"resource", "verbs"},
 			},
 		},
-	}
-}
-
-func schema_sdk_apis_marketplace_v1alpha1_OfferingList(ref common.ReferenceCallback) common.OpenAPIDefinition {
-	return common.OpenAPIDefinition{
-		Schema: spec.Schema{
-			SchemaProps: spec.SchemaProps{
-				Description: "OfferingList is the list form of Offering.",
-				Type:        []string{"object"},
-				Properties: map[string]spec.Schema{
-					"kind": {
-						SchemaProps: spec.SchemaProps{
-							Description: "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds",
-							Type:        []string{"string"},
-							Format:      "",
-						},
-					},
-					"apiVersion": {
-						SchemaProps: spec.SchemaProps{
-							Description: "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources",
-							Type:        []string{"string"},
-							Format:      "",
-						},
-					},
-					"metadata": {
-						SchemaProps: spec.SchemaProps{
-							Default: map[string]interface{}{},
-							Ref:     ref(v1.ListMeta{}.OpenAPIModelName()),
-						},
-					},
-					"items": {
-						SchemaProps: spec.SchemaProps{
-							Type: []string{"array"},
-							Items: &spec.SchemaOrArray{
-								Schema: &spec.Schema{
-									SchemaProps: spec.SchemaProps{
-										Ref: ref("github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.Offering"),
-									},
-								},
-							},
-						},
-					},
-				},
-				Required: []string{"items"},
-			},
-		},
-		Dependencies: []string{
-			"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.Offering", v1.ListMeta{}.OpenAPIModelName()},
-	}
-}
-
-func schema_sdk_apis_marketplace_v1alpha1_OfferingSpec(ref common.ReferenceCallback) common.OpenAPIDefinition {
-	return common.OpenAPIDefinition{
-		Schema: spec.Schema{
-			SchemaProps: spec.SchemaProps{
-				Description: "OfferingSpec is the desired state of an Offering.",
-				Type:        []string{"object"},
-				Properties: map[string]spec.Schema{
-					"displayName": {
-						SchemaProps: spec.SchemaProps{
-							Description: "DisplayName is the human name of the offering, shown in the catalog.",
-							Default:     "",
-							Type:        []string{"string"},
-							Format:      "",
-						},
-					},
-					"description": {
-						SchemaProps: spec.SchemaProps{
-							Description: "Description is free text for humans.",
-							Type:        []string{"string"},
-							Format:      "",
-						},
-					},
-					"export": {
-						SchemaProps: spec.SchemaProps{
-							Description: "Export names the APIExport, in this same workspace, that enabling this offering binds.",
-							Default:     "",
-							Type:        []string{"string"},
-							Format:      "",
-						},
-					},
-					"claims": {
-						SchemaProps: spec.SchemaProps{
-							Description: "Claims are the tenant-side permission claims consumers accept when enabling. Each must be declared on the export too; the operator records the validated intersection in status.",
-							Type:        []string{"array"},
-							Items: &spec.SchemaOrArray{
-								Schema: &spec.Schema{
-									SchemaProps: spec.SchemaProps{
-										Ref: ref("github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.OfferingClaim"),
-									},
-								},
-							},
-						},
-					},
-				},
-				Required: []string{"displayName", "export"},
-			},
-		},
-		Dependencies: []string{
-			"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.OfferingClaim"},
-	}
-}
-
-func schema_sdk_apis_marketplace_v1alpha1_OfferingStatus(ref common.ReferenceCallback) common.OpenAPIDefinition {
-	return common.OpenAPIDefinition{
-		Schema: spec.Schema{
-			SchemaProps: spec.SchemaProps{
-				Description: "OfferingStatus is the observed state of an Offering.",
-				Type:        []string{"object"},
-				Properties: map[string]spec.Schema{
-					"phase": {
-						SchemaProps: spec.SchemaProps{
-							Type:   []string{"string"},
-							Format: "",
-						},
-					},
-					"message": {
-						SchemaProps: spec.SchemaProps{
-							Type:   []string{"string"},
-							Format: "",
-						},
-					},
-					"provider": {
-						SchemaProps: spec.SchemaProps{
-							Description: "Provider is the catalog Provider record this workspace publishes under, resolved by the operator from the workspace's canonical path.",
-							Type:        []string{"string"},
-							Format:      "",
-						},
-					},
-					"identityHash": {
-						SchemaProps: spec.SchemaProps{
-							Description: "IdentityHash is the identity of the referenced export.",
-							Type:        []string{"string"},
-							Format:      "",
-						},
-					},
-					"revision": {
-						SchemaProps: spec.SchemaProps{
-							Description: "Revision counts changes to the applied claim surface. An Enablement accepts a revision; a widened offering waits at a new revision until consumers accept it.",
-							Type:        []string{"integer"},
-							Format:      "int64",
-						},
-					},
-					"appliedClaims": {
-						SchemaProps: spec.SchemaProps{
-							Description: "AppliedClaims is the validated claim set at Revision: the intersection of spec.claims with what the export really declares. This — never spec — is what an enablement materializes.",
-							Type:        []string{"array"},
-							Items: &spec.SchemaOrArray{
-								Schema: &spec.Schema{
-									SchemaProps: spec.SchemaProps{
-										Ref: ref("github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.OfferingClaim"),
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-		Dependencies: []string{
-			"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.OfferingClaim"},
 	}
 }
 

@@ -22,8 +22,10 @@ limitations under the License.
 // write happens through exactly one claim someone accepted.
 //
 //	catalog      Providers, in the catalog workspace.
-//	publish      Offerings, in each provider workspace; materializes the
-//	             per-export `bind` grant that publishing means.
+//	publish      APIExports, in each provider workspace; materializes the
+//	             per-export `bind` grant that publishing means. It reads
+//	             those exports through a claim and never writes to them —
+//	             an offering is a provider's own object, annotated.
 //	provisioner  (client only) creates provider workspaces under the
 //	             providers parent.
 //
@@ -72,8 +74,15 @@ import (
 const requeueWhilePending = 3 * time.Second
 
 // finalizer marks objects whose materialized side effects must be removed
-// before the object may go.
+// before the object may go. It is used only on Provider records, which the
+// marketplace owns — never on a provider's own APIExport.
 const finalizer = marketplacev1alpha1.GroupName + "/cleanup"
+
+// requeueWhileUnregistered is the slower beat for a published export whose
+// workspace no Provider record names. Registering one happens in another
+// workspace, so no event here will report it — but it is a human action,
+// not a controller's, so looking every few seconds would be noise.
+const requeueWhileUnregistered = 30 * time.Second
 
 // Options configures the operator.
 type Options struct {
@@ -181,11 +190,15 @@ func Run(ctx context.Context, opts Options) error {
 		Complete(mcreconcile.Func(r.reconcileProvider)); err != nil {
 		return fmt.Errorf("build provider controller: %w", err)
 	}
+	// Every APIExport in every provider workspace comes through here,
+	// because the annotation that publishes one is on the export itself:
+	// there is no narrower thing to watch, and watching the exports is how
+	// un-publishing is noticed at all.
 	if err := mcbuilder.ControllerManagedBy(m.publish).
-		Named("marketplace-offering").
-		For(&marketplacev1alpha1.Offering{}).
-		Complete(mcreconcile.Func(r.reconcileOffering)); err != nil {
-		return fmt.Errorf("build offering controller: %w", err)
+		Named("marketplace-publish").
+		For(&apisv1alpha2.APIExport{}).
+		Complete(mcreconcile.Func(r.reconcileAPIExport)); err != nil {
+		return fmt.Errorf("build publish controller: %w", err)
 	}
 	logger.Info("marketplace operator running",
 		"catalog", opts.CatalogPath+" ("+catalogCluster+")",

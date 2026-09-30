@@ -15,9 +15,10 @@ limitations under the License.
 */
 
 // Package provider populates the marketplace directory: Providers from the
-// catalog tier's export, Offerings from the publish export — the same
-// multicluster discovery the operator runs, but read-only into the
-// in-memory directory the virtual workspace answers from.
+// catalog tier's export, offerings from the APIExports published in each
+// provider workspace — the same multicluster discovery the operator runs,
+// but read-only into the in-memory directory the virtual workspace answers
+// from.
 package provider
 
 import (
@@ -44,10 +45,12 @@ import (
 	"github.com/kcp-dev/multicluster-provider/apiexport"
 	"github.com/kcp-dev/multicluster-provider/pkg/handlers"
 	apisv1alpha1 "github.com/kcp-dev/sdk/apis/apis/v1alpha1"
+	apisv1alpha2 "github.com/kcp-dev/sdk/apis/apis/v1alpha2"
 	corev1alpha1 "github.com/kcp-dev/sdk/apis/core/v1alpha1"
 
 	"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/pkg/bootstrap"
 	"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/pkg/directory"
+	"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/pkg/offering"
 	marketplacev1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1"
 )
 
@@ -55,7 +58,8 @@ import (
 type Options struct {
 	// RestConfig reaches the kcp shard hosting the marketplace APIExports.
 	RestConfig *rest.Config
-	// CatalogSlice serves Providers; PublishSlice serves Offerings.
+	// CatalogSlice serves Providers; PublishSlice reaches the APIExports
+	// in provider workspaces.
 	CatalogSlice string
 	PublishSlice string
 }
@@ -80,6 +84,7 @@ func Run(ctx context.Context, opts Options, dir *directory.Directory) error {
 	utilruntime.Must(scheme.AddToScheme(sch))
 	utilruntime.Must(corev1alpha1.AddToScheme(sch))
 	utilruntime.Must(apisv1alpha1.AddToScheme(sch))
+	utilruntime.Must(apisv1alpha2.AddToScheme(sch))
 	utilruntime.Must(marketplacev1alpha1.AddToScheme(sch))
 
 	newMgr := func(slice string) (mcmanager.Manager, error) {
@@ -131,28 +136,40 @@ func Run(ctx context.Context, opts Options, dir *directory.Directory) error {
 		return fmt.Errorf("build provider mirror: %w", err)
 	}
 
+	// An offering is an APIExport that says it is one. Every export in
+	// every provider workspace is mirrored or dropped by that annotation
+	// alone, so un-publishing takes an entry off the catalog exactly as
+	// deleting the export does.
 	if err := mcbuilder.ControllerManagedBy(publish).
 		Named("marketplace-vw-offering").
-		For(&marketplacev1alpha1.Offering{}).
+		For(&apisv1alpha2.APIExport{}).
 		Complete(mcreconcile.Func(func(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
 			key := directory.Key{Cluster: string(req.ClusterName), Name: req.Name}
-			var o marketplacev1alpha1.Offering
-			if err := getFrom(ctx, publish, req, &o); err != nil {
+			var export apisv1alpha2.APIExport
+			if err := getFrom(ctx, publish, req, &export); err != nil {
 				if apierrors.IsNotFound(err) {
 					dir.RemoveOffering(key)
 					return ctrl.Result{}, nil
 				}
 				return ctrl.Result{}, err
 			}
+			if !offering.Published(&export) {
+				dir.RemoveOffering(key)
+				return ctrl.Result{}, nil
+			}
+			card := offering.From(&export)
 			dir.UpsertOffering(key, directory.Offering{
-				Provider:     o.Status.Provider,
-				DisplayName:  o.Spec.DisplayName,
-				Description:  o.Spec.Description,
-				Export:       o.Spec.Export,
-				Revision:     o.Status.Revision,
-				Claims:       o.Status.AppliedClaims,
-				Ready:        o.Status.Phase == marketplacev1alpha1.PhaseReady,
-				IdentityHash: o.Status.IdentityHash,
+				DisplayName:  card.DisplayName,
+				Description:  card.Description,
+				Export:       export.Name,
+				Revision:     card.Revision,
+				Claims:       card.Claims,
+				IdentityHash: card.IdentityHash,
+				// Ready means a consumer can act on this entry: kcp has
+				// given the export its identity. Whether a Provider record
+				// names this workspace is the other half, and the
+				// directory decides that when it joins the two.
+				Ready: card.IdentityHash != "",
 			})
 			return ctrl.Result{}, nil
 		})); err != nil {

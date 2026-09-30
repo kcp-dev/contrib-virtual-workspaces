@@ -1,15 +1,21 @@
 # Marketplace
 
 A provider/offering marketplace for [kcp](https://github.com/kcp-dev/kcp):
-two cluster-scoped resources — **Provider**, **Offering** — that an
-operator turns into provider workspaces and per-export `bind` grants, and
-a virtual workspace that serves the catalog read-only. Enabling an
-offering is **kcp itself**: the consumer creates a plain `APIBinding` in
-their own workspace, kcp checks the `bind` grant publishing materialized,
-and the marketplace has no footprint in consumer workspaces at all.
+**one** cluster-scoped resource — **Provider** — that an operator turns
+into provider workspaces, plus per-export `bind` grants, plus a virtual
+workspace that serves the catalog read-only.
 
-The design, and why every piece is shaped the way it is, lives in
-[DESIGN.md](DESIGN.md). This file is how to use it.
+An offering has no resource of its own. A provider publishes by annotating
+their **APIExport**, so the offering *is* the export. And enabling one is
+**kcp itself**: the consumer creates a plain `APIBinding` in their own
+workspace, kcp checks the `bind` grant publishing materialized, and the
+marketplace has no footprint in consumer workspaces at all.
+
+Why each piece is shaped this way is explained where it is enforced: the
+tiers in [config/apiexport/](config/apiexport/), the publish flow in
+[pkg/operator/publish.go](pkg/operator/publish.go), and what an annotated
+export means in [pkg/offering/](pkg/offering/). This file is how to use
+it.
 
 ## The model
 
@@ -22,7 +28,7 @@ root
 └── marketplace
     ├── controllers ..................... what init installs, bound by nobody
     │     APIExport marketplace-catalog ....... exports Providers
-    │     APIExport marketplace-publish ....... exports Offerings; claims RBAC,
+    │     APIExport marketplace-publish ....... NO resources; claims RBAC,
     │                                           apiexports (read), logicalclusters
     │     APIExport marketplace-provisioner ... NO resources; claims workspaces
     │     WorkspaceType provider .............. no tenancy, no topology
@@ -34,8 +40,8 @@ root
           │
           └── acme ...................... WorkspaceType: provider
                 APIBinding marketplace-publish  ... from the WorkspaceType
-                APIExport things.acme.example ..... the provider's OWN export
-                Offering "things" ................. published by the provider
+                APIExport things.acme.example ..... the provider's OWN export,
+                                                    annotated: it IS the offering
                 ClusterRole/CRB: bind on the export → consumers
 
 any workspace at all (a tenancy project, a plain workspace — no type needed)
@@ -46,22 +52,27 @@ any workspace at all (a tenancy project, a plain workspace — no type needed)
 | Object | Lives in | Written by | Reached through |
 |---|---|---|---|
 | `Provider` | the catalog | an admin | `marketplace-catalog` |
-| `Offering` | the provider's workspace | the provider | `marketplace-publish` |
+| the offering (annotations on an `APIExport`) | the provider's workspace | the provider | `marketplace-publish` claims |
 | bind ClusterRole/CRB | the provider's workspace | the operator | `marketplace-publish` claims |
 | the offering's `APIBinding` | the consumer's workspace | **the consumer**, natively | kcp, no marketplace involved |
 
 Three facts carry the security model:
 
-- **Registration is a `bind` grant.** Publishing an Offering materializes
-  `bind` on that one export in the provider's workspace, to the configured
-  consumers (default: any authenticated user; `--bind-user`/`--bind-group`
-  restrict it). kcp checks that verb on every APIBinding — deleting the
-  Offering revokes it, and being admin of one's own workspace grants
-  nothing on the provider's side.
-- **Consent is the consumer's own object.** The claims an offering asks
-  for are accepted on the APIBinding the consumer authors, which nothing
-  in the marketplace can write. A provider changing their claims bumps the
-  catalog revision; existing bindings are structurally untouchable.
+- **Registration is a `bind` grant.** Publishing materializes `bind` on
+  that one export in the provider's workspace, to the configured consumers
+  (default: any authenticated user; `--bind-user`/`--bind-group` restrict
+  it). kcp checks that verb on every APIBinding — removing the annotation
+  revokes it, and being admin of one's own workspace grants nothing on the
+  provider's side. A workspace no `Provider` record names gets no grant at
+  all, so annotating your own export is not a way onto the catalog.
+- **The offering cannot misdescribe the export.** It is the export: the
+  claim surface the catalog advertises is the export's own
+  `spec.permissionClaims`, read straight off it. There is no second
+  declaration to validate, to intersect, or to drift.
+- **Consent is the consumer's own object.** Those claims are accepted on
+  the APIBinding the consumer authors, which nothing in the marketplace can
+  write. A provider changing their claims changes the catalog's revision;
+  existing bindings are structurally untouchable.
 - **Who may enable is the workspace's RBAC, natively.** Creating an
   APIBinding needs the consumer's own rights in their own workspace —
   which is exactly what a [tenancy](../tenancy/) `admin` Membership
@@ -162,6 +173,12 @@ bin/marketplace-vw virtualworkspace --kubeconfig "$KUBECONFIG" \
 
 ### 7. Register a provider and publish an offering
 
+> Ready-made versions of everything in this step live in
+> [config/examples/](config/examples/), with a script that applies them to
+> the right workspaces: `marketplace/config/examples/apply.sh`, or
+> `tilt trigger marketplace-examples` under Tilt. The walkthrough below is
+> the same thing spelled out.
+
 As the administrator: a `Provider` record in the catalog makes the
 operator provision `root:marketplace:providers:acme` with the `provider`
 WorkspaceType, which carries the `marketplace-publish` binding — the
@@ -170,7 +187,7 @@ provider's whole surface.
 ```sh
 kubectl --server "https://localhost:6443/clusters/root:marketplace:catalog" \
   apply -f - <<'EOF'
-apiVersion: marketplace.contrib.kcp.io/v1alpha1
+apiVersion: marketplace.platform.kcp.io/v1alpha1
 kind: Provider
 metadata:
   name: acme
@@ -219,6 +236,11 @@ apiVersion: apis.kcp.io/v1alpha2
 kind: APIExport
 metadata:
   name: things.acme.example
+  # These three annotations are the offering. There is no other object.
+  annotations:
+    marketplace.platform.kcp.io/publish: "true"
+    marketplace.platform.kcp.io/display-name: "Things as a service"
+    marketplace.platform.kcp.io/description: "One Thing per workspace, batteries included."
 spec:
   resources:
     - name: things
@@ -226,40 +248,41 @@ spec:
       schema: v1alpha1.things.acme.example
       storage:
         crd: {}
+  # And these are the consent form: what the catalog advertises and what a
+  # consumer accepts are this list, not a copy of it.
   permissionClaims:
     - group: ""
       resource: configmaps
       verbs: [get, list, watch]
----
-apiVersion: marketplace.contrib.kcp.io/v1alpha1
-kind: Offering
-metadata:
-  name: things
-spec:
-  displayName: "Things as a service"
-  description: "One Thing per workspace, batteries included."
-  export: things.acme.example
-  claims:
-    - resource: configmaps
-      verbs: [get, list, watch]
 EOF
 
-kubectl --server "$PROVIDER" get offerings
+kubectl --server "$PROVIDER" get clusterrole marketplace:bind:things.acme.example
 ```
 
-When the offering reports `Ready`, the operator has validated
-`spec.claims` against the export (the intersection lands in
-`status.appliedClaims`, at `status.revision: 1`) and materialized the
-`bind` grant next to it. An offering claiming something the export never
-declared goes to `Error`, not to a silently trimmed catalog entry.
+That ClusterRole appearing is the operator having seen the annotation:
+publishing materializes `bind` on this one export, and nothing else. There
+is no status to wait for, because there is no object to carry one — the
+catalog derives everything it shows from the export itself.
+
+Only the exact value `"true"` publishes. A typo leaves the export off the
+catalog rather than on it, which is the safe direction: being on it is what
+hands `bind` to strangers.
+
+To take it off the catalog again, remove the annotation — the grant goes
+with it, and the export and everyone already bound to it are untouched:
+
+```sh
+kubectl --server "$PROVIDER" annotate apiexport things.acme.example \
+  marketplace.platform.kcp.io/publish-
+```
 
 ### 8. Create a consumer workspace and enable
 
 A consumer workspace is **any workspace** — no marketplace type, no
 marketplace bindings. Enabling is creating the APIBinding yourself: the
 reference comes from the catalog entry (workspace path + export), the
-claims are the offering's `status.appliedClaims`, accepted on **your**
-object — that acceptance is the consent, first-class in kcp.
+claims are the entry's `claims`, accepted on **your** object — that
+acceptance is the consent, first-class in kcp.
 
 ```sh
 kubectl --server "https://localhost:6443/clusters/root" apply -f - <<'EOF'
@@ -294,8 +317,8 @@ kubectl --server "$CONSUMER" get apibindings
 ```
 
 When it reports `Ready`, the provider's API serves here — kcp checked the
-`bind` grant in acme's workspace on the way, the one publishing the
-Offering materialized:
+`bind` grant in acme's workspace on the way, the one publishing
+materialized:
 
 ```sh
 kubectl --server "$CONSUMER" apply -f - <<'EOF'
@@ -308,10 +331,10 @@ spec:
 EOF
 ```
 
-Disabling is deleting the binding. If acme later changes the offering's
-claims, the catalog revision bumps — and your binding keeps exactly the
-claims you accepted, because they live on your object and nothing in the
-marketplace can write it.
+Disabling is deleting the binding. If acme later changes the export's
+claims, the catalog shows a different `revision` — and your binding keeps
+exactly the claims you accepted, because they live on your object and
+nothing in the marketplace can write it.
 
 ### 9. Be a user
 
@@ -417,7 +440,7 @@ and the workspace's canonical path:
 ```sh
 kubectl --server "https://localhost:6443/clusters/root:marketplace:catalog" \
   apply -f - <<'EOF'
-apiVersion: marketplace.contrib.kcp.io/v1alpha1
+apiVersion: marketplace.platform.kcp.io/v1alpha1
 kind: Provider
 metadata:
   name: byo
@@ -430,10 +453,10 @@ EOF
 
 Then, in `root:my-services`, bind the export (accepting its claims — see
 [test/e2e/scenarios_vw_test.go](test/e2e/scenarios_vw_test.go) for the
-full APIBinding shape) and publish Offerings exactly as in step 7. The
-operator learns the workspace's cluster from the first offering published
-there, matched against the record's path — a workspace no record names
-publishes into the void.
+full APIBinding shape) and annotate your APIExports exactly as in step 7.
+The operator learns the workspace's cluster from the first published
+export there, matched against the record's path — a workspace no record
+names publishes into the void, and gets no `bind` grant for trying.
 
 ## The virtual workspace
 
@@ -441,16 +464,18 @@ publishes into the void.
 standalone:
 
 ```
-GET  /services/marketplace/apis/marketplace.contrib.kcp.io/v1alpha1/offerings
+GET  /services/marketplace/apis/marketplace.platform.kcp.io/v1alpha1/offerings
 GET  /debug/directory
 ```
 
 Any authenticated caller may read the catalog; it answers 503 until both
-its feeds (Providers from the catalog export, Offerings from the publish
-export) have synced, rather than answering partially. Each entry carries
-the bind coordinates — `workspacePath`, `export` — and the claims at the
-current revision, so browsing the catalog is reading both the consent
-form and the APIBinding you would author. The VW writes nothing,
+its feeds (Providers from the catalog export, published APIExports through
+the publish export) have synced, rather than answering partially. Each
+entry carries the bind coordinates — `workspacePath`, `export` — and the
+claims, so browsing the catalog is reading both the consent form and the
+APIBinding you would author. `revision` is a digest of those claims: the
+same claims always give the same revision, so a consumer who kept theirs
+can tell whether the form moved. The VW writes nothing,
 anywhere: enabling is between the consumer and kcp.
 
 Authentication mirrors the other components — client certificates,
@@ -462,7 +487,7 @@ Probing by hand:
 
 ```sh
 curl -ks --cert pki/alice.crt --key pki/alice.key \
-  https://localhost:9446/services/marketplace/apis/marketplace.contrib.kcp.io/v1alpha1/offerings
+  https://localhost:9446/services/marketplace/apis/marketplace.platform.kcp.io/v1alpha1/offerings
 
 curl -ks --cert pki/alice.crt --key pki/alice.key \
   https://localhost:9446/debug/directory
@@ -494,16 +519,16 @@ From the repository root:
 make test-spike-marketplace   # the keystone alone: the binder composition
                               # against a real kcp, no component involved
 make test-e2e-marketplace     # full stack: real kcp + operator + VW as
-                              # local processes, 11 scenarios
+                              # local processes, 10 scenarios
 ```
 
 The suite asserts placement and absence, because — as with tenancy — the
 absence of a binding *is* the security model: which tiers carry which
 bindings, that a provider workspace serves neither tenancy.kcp.io nor
-topology.kcp.io, that `bind` follows the Offering and is revoked with it
-(a workspace admin cannot bind an unpublished export), that a claim
-change bumps the revision while the consumer's binding keeps exactly what
-they accepted, that a user with workspace RBAC binds natively with their
+topology.kcp.io, that `bind` follows the publish annotation and is revoked
+when it is removed (a workspace admin cannot bind an unpublished export),
+that a claim change changes the revision while the consumer's binding keeps
+exactly what they accepted, that a user with workspace RBAC binds natively with their
 own credential while one without cannot, and that a BYO provider is a
 first-class one.
 
@@ -514,29 +539,27 @@ throwaway client CA (`alice`, `bob`) for the virtual workspace scenarios.
 
 ## Limits, stated plainly
 
-1. **There is no CLI yet.** `marketplacectl` (`catalog`, `enable` — the
-   latter authoring the APIBinding for you from a catalog entry) is
-   designed in [DESIGN.md](DESIGN.md) but not built; today the interfaces
-   are `kubectl` against kcp and against the VW's catalog, as above.
-2. **Enabling means authoring an APIBinding.** The claims must be copied
-   from the catalog entry (identity hashes included) into the binding by
-   whoever enables. That is deliberate — the acceptance is the consent,
-   on the consumer's own object — but without the CLI it is manual.
-3. **The catalog revision is advisory.** A claim change bumps it so
+1. **Enabling means authoring an APIBinding.** `contribctl offers` and
+   `contribctl enable` (in [pkg/cli/](pkg/cli/)) do it for you from a
+   catalog entry; by hand, the claims must be copied from that entry —
+   identity hashes included — into the binding. Either way the acceptance
+   is the consent, on the consumer's own object, which is the point.
+2. **The catalog revision is advisory.** A claim change changes it so
    consumers can notice, but nothing tracks who is on which revision:
    bindings belong to consumers, and the marketplace does not read their
    workspaces.
-4. **The catalog is visible to every authenticated caller.** There is no
+3. **The catalog is visible to every authenticated caller.** There is no
    per-tenant catalog scoping; a deployment wanting it would filter in
    the directory.
-5. **`bind` defaults to everyone authenticated.** Publishing grants
+4. **`bind` defaults to everyone authenticated.** Publishing grants
    `bind` to `system:authenticated` unless the operator is started with
    `--bind-user`/`--bind-group`. Enabling still requires rights in a
    workspace of one's own — the grant only opens the export side.
-6. **Providers police their own maximal surface.** The operator
-   intersects offering claims with the export's declaration, but setting
-   a `MaximalPermissionPolicy` on the export — the hard cap kcp itself
+5. **Providers police their own maximal surface.** The catalog advertises
+   whatever the export declares — it is the provider's own object, so
+   there is nothing to check it against. Setting a
+   `MaximalPermissionPolicy` on the export — the hard cap kcp itself
    enforces — is the provider's job and is recommended, not automated.
-7. **Unbinding removes the API, not the provider's leftovers.** Objects a
+6. **Unbinding removes the API, not the provider's leftovers.** Objects a
    provider's controllers created through their claims are theirs to
    garbage-collect when the cluster leaves their endpoint slice.

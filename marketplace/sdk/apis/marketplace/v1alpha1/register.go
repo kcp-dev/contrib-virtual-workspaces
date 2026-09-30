@@ -22,7 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-const GroupName = "marketplace.contrib.kcp.io"
+const GroupName = "marketplace.platform.kcp.io"
 
 var (
 	SchemeBuilder      = runtime.NewSchemeBuilder(addKnownTypes)
@@ -42,8 +42,6 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(SchemeGroupVersion,
 		&Provider{},
 		&ProviderList{},
-		&Offering{},
-		&OfferingList{},
 		&CatalogOffering{},
 		&CatalogOfferingList{},
 	)

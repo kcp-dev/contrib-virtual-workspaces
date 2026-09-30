@@ -123,107 +123,66 @@ type ProviderList struct {
 	Items []Provider `json:"items"`
 }
 
-// OfferingClaim is one tenant-side permission claim an offering carries:
-// what a consumer accepts when they enable it. The operator validates
-// every claim against the provider's real APIExport and records the
-// intersection — declaring here grants nothing.
+// The annotations that publish an APIExport to the marketplace.
+//
+// An offering has no object of its own: an APIExport IS the offering, and
+// these annotations are its catalog card. That is not only a saving of one
+// kind — it removes the possibility of the two disagreeing. The old
+// Offering named an export and restated its claims, so it could name an
+// export that did not exist, or claim what the export did not, and the
+// operator existed largely to detect and report those two cases. An
+// annotation cannot be wrong about which export it is on, and the export's
+// own spec.permissionClaims are the claim surface, so there is nothing
+// left to reconcile them against.
+const (
+	// AnnotationPublish opts an APIExport into the catalog. Its value must
+	// be "true"; anything else, or its absence, means not published.
+	//
+	// Publishing is the provider's own act, on their own object, in their
+	// own workspace — and removing this annotation revokes the `bind`
+	// grant, which is what takes an offering off the catalog.
+	AnnotationPublish = GroupName + "/publish"
+
+	// AnnotationDisplayName is the human name shown in the catalog.
+	// Absent, the export's own name is used.
+	AnnotationDisplayName = GroupName + "/display-name"
+
+	// AnnotationDescription is free text for humans.
+	AnnotationDescription = GroupName + "/description"
+)
+
+// OfferingClaim is one permission claim as the catalog shows it: what a
+// consumer accepts when they enable the offering.
+//
+// It is a projection of the APIExport's own spec.permissionClaims, never a
+// separate declaration — so what the catalog advertises and what the
+// binding will carry cannot drift apart.
 type OfferingClaim struct {
 	// Group and Resource name what is claimed, as kcp permission claims do.
 	// +optional
 	Group    string `json:"group,omitempty"`
 	Resource string `json:"resource"`
-	// Verbs are the verbs claimed. They come from the declaration, never
-	// from an enablement request.
+	// Verbs are the verbs claimed, as the export declares them.
 	Verbs []string `json:"verbs"`
-	// IdentityHash is required when the claimed resource is itself served
-	// by an APIExport. The operator fills it from the provider's export;
-	// setting it here is not trusted.
+	// IdentityHash is set when the claimed resource is itself served by an
+	// APIExport, copied from the claim.
 	// +optional
 	IdentityHash string `json:"identityHash,omitempty"`
-	// MatchLabels narrows the claim to objects carrying these labels.
-	// Empty means the claim covers all objects (matchAll). A claim on a
-	// sensitive core resource such as secrets should never be unscoped.
+	// MatchLabels is the scope the provider suggests for this claim, from
+	// the claim's defaultSelector. Empty means the claim covers every
+	// object of that resource, which is what a consumer accepts by
+	// default.
 	// +optional
 	MatchLabels map[string]string `json:"matchLabels,omitempty"`
 }
 
-// Offering is the catalog card: one orderable unit, published by a
-// provider in its own workspace, next to the APIExport it references.
-//
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-// +kubebuilder:object:root=true
-// +kubebuilder:resource:scope=Cluster
-// +kubebuilder:subresource:status
-type Offering struct {
-	metav1.TypeMeta `json:",inline"`
-	// +optional
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-
-	Spec OfferingSpec `json:"spec"`
-	// +optional
-	Status OfferingStatus `json:"status,omitempty"`
-}
-
-// OfferingSpec is the desired state of an Offering.
-type OfferingSpec struct {
-	// DisplayName is the human name of the offering, shown in the catalog.
-	DisplayName string `json:"displayName"`
-	// Description is free text for humans.
-	// +optional
-	Description string `json:"description,omitempty"`
-	// Export names the APIExport, in this same workspace, that enabling
-	// this offering binds.
-	// +kubebuilder:validation:MinLength=1
-	Export string `json:"export"`
-	// Claims are the tenant-side permission claims consumers accept when
-	// enabling. Each must be declared on the export too; the operator
-	// records the validated intersection in status.
-	// +optional
-	Claims []OfferingClaim `json:"claims,omitempty"`
-}
-
-// OfferingStatus is the observed state of an Offering.
-type OfferingStatus struct {
-	// +optional
-	Phase Phase `json:"phase,omitempty"`
-	// +optional
-	Message string `json:"message,omitempty"`
-	// Provider is the catalog Provider record this workspace publishes
-	// under, resolved by the operator from the workspace's canonical path.
-	// +optional
-	Provider string `json:"provider,omitempty"`
-	// IdentityHash is the identity of the referenced export.
-	// +optional
-	IdentityHash string `json:"identityHash,omitempty"`
-	// Revision counts changes to the applied claim surface. An Enablement
-	// accepts a revision; a widened offering waits at a new revision until
-	// consumers accept it.
-	// +optional
-	Revision int64 `json:"revision,omitempty"`
-	// AppliedClaims is the validated claim set at Revision: the
-	// intersection of spec.claims with what the export really declares.
-	// This — never spec — is what an enablement materializes.
-	// +optional
-	AppliedClaims []OfferingClaim `json:"appliedClaims,omitempty"`
-}
-
-// OfferingList is the list form of Offering.
-//
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-// +kubebuilder:object:root=true
-type OfferingList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
-
-	Items []Offering `json:"items"`
-}
-
 // CatalogOffering is the virtual, read-only view of one offering as the
-// marketplace virtual workspace serves it: the offering joined with its
-// provider, named "<provider>.<offering>". It carries everything needed to
-// author the APIBinding that enabling means — the export, the workspace
-// path it lives at, and the claims at Revision, identity hashes included.
-// Reading the catalog is reading the consent form.
+// marketplace virtual workspace serves it: a published APIExport joined
+// with the Provider record whose workspace it lives in, named
+// "<provider>.<export>". It carries everything needed to author the
+// APIBinding that enabling means — the export, the workspace path it lives
+// at, and its claims, identity hashes included. Reading the catalog is
+// reading the consent form.
 //
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type CatalogOffering struct {
@@ -233,7 +192,8 @@ type CatalogOffering struct {
 
 	// Provider is the catalog Provider record's name.
 	Provider string `json:"provider"`
-	// Offering is the Offering object's name in the provider's workspace.
+	// Offering is the name of the published APIExport in the provider's
+	// workspace — the offering and the export are the same object.
 	Offering string `json:"offering"`
 	// DisplayName and Description mirror the offering's card.
 	// +optional
@@ -247,11 +207,20 @@ type CatalogOffering struct {
 	Export string `json:"export,omitempty"`
 	// +optional
 	WorkspacePath string `json:"workspacePath,omitempty"`
-	// Revision is the current claim-surface revision — the number an
-	// Enablement's acceptedRevision must name.
+	// Revision identifies the claim surface below: it is a digest of
+	// Claims, so the same claims always produce the same revision and any
+	// change produces a different one.
+	//
+	// It is derived rather than counted because there is no longer an
+	// object to keep a counter on — which turns out to be the better
+	// property anyway. A consumer who recorded the revision they accepted
+	// can compare it with this one to see whether the consent form has
+	// changed since, and the answer does not depend on how many times a
+	// controller happened to observe it.
 	// +optional
-	Revision int64 `json:"revision,omitempty"`
-	// Claims is the validated claim surface at Revision.
+	Revision string `json:"revision,omitempty"`
+	// Claims is the claim surface a consumer accepts by enabling: the
+	// export's own permission claims, projected.
 	// +optional
 	Claims []OfferingClaim `json:"claims,omitempty"`
 	// Ready reports whether enabling can currently succeed.

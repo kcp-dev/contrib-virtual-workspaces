@@ -9,8 +9,8 @@ What you get, and what this document walks through:
 |---|---|
 | **kcp** | operator-deployed, two shards (`root`, `theseus`) behind a front-proxy at `https://kcp.localhost:8443` |
 | **Dex** | in-cluster OIDC issuer at `https://dex.kcp.localhost:8443/dex`, trusted by kcp *and* both virtual workspaces |
-| **tenancy** | init + operator + virtual workspace on `:9445`, seeded with a demo tenant and project |
-| **marketplace** | init + operator + virtual workspace on `:9446` |
+| **tenancy** | virtual workspace at `/services/tenancy`, a local operator, seeded with a demo tenant and project |
+| **marketplace** | virtual workspace at `/services/marketplace`, a local operator |
 | **observability** | Grafana, Prometheus, Loki |
 
 The point of the setup is what the later sections show: an ordinary user,
@@ -54,15 +54,34 @@ Knobs, all optional:
 
 ### Check it
 
-```sh
-curl -ks --cert .tilt/pki/alice.crt --key .tilt/pki/alice.key \
-  https://localhost:9445/debug/directory
-# {"memberships":4,"projects":1,"ready":true,"tenants":1}
+Everything answers on the front-proxy, at `https://kcp.localhost:8443` —
+kcp's own API under `/clusters/`, each virtual workspace under the path it
+owns. There is no second address to know:
 
-curl -ks --cert .tilt/pki/alice.crt --key .tilt/pki/alice.key \
-  https://localhost:9446/debug/directory
-# {"offerings":0,"providers":0,"ready":true}
+```sh
+KC=.tilt/tilt-frontproxy.kubeconfig
+
+kubectl --kubeconfig $KC get --raw \
+  /services/tenancy/apis/tenancy.platform.kcp.io/v1alpha1
+# {"kind":"APIResourceList",...,"resources":[{"name":"selftenancyreviews",...}]}
+
+kubectl --kubeconfig $KC get --raw \
+  /services/marketplace/apis/marketplace.platform.kcp.io/v1alpha1/offerings
+# {"kind":"CatalogOfferingList",...,"items":[]}
 ```
+
+The virtual workspaces run **in the cluster**, deployed by the kcp-operator
+from a `VirtualWorkspace` object: it gives each one a Deployment and a
+Service on `:6443`, issues its serving certificate from the shard CA, and
+runs the component's own `init` as an init container so the APIExports
+exist before the server that serves them starts. The front-proxy reaches
+them through `additionalPathMappings` and forwards the caller's identity
+in `X-Remote-*` headers over its own client certificate — which is why a
+token works the same at kcp and at a virtual workspace.
+
+The operators stay local processes (`tilt trigger <c>-operator` to
+restart): they serve no path, so nothing about them needs the routing,
+and that is where the reconcile loop you iterate on lives.
 
 The tenancy numbers come from the seed (`contribctl tenancy seed`, run by
 the `tenancy-seed` resource): tenant `acme` with project `web`, alice
@@ -89,7 +108,16 @@ a token names the same user everywhere. Three users, all with the password
 The identity is the **plain email, with no groups**: the kcp-operator only
 speaks the legacy `--oidc-*` claim mapping, so the CEL claim mapping used
 by [hack/dex](../dex/) (which would produce `alice` in group `team-a`) is
-not available here. Grants under Tilt therefore name the full email.
+not available here. Grants under Tilt therefore name the full email — and
+the login form wants that email too, not the `username` in Dex's config,
+which is only a display name.
+
+Dex keeps its signing keys in the cluster (`storage: type: kubernetes`),
+not in memory, so restarting it is a non-event. With memory storage it
+mints new keys on every start, which invalidates every issued token *and*
+leaves the front-proxy, both shards and both virtual workspaces holding a
+JWKS that verifies nothing — every login then fails with `401` until each
+of them is restarted too.
 
 ```sh
 echo password | bin/contribctl tenancy login \
@@ -121,7 +149,7 @@ name the caller:
 
 ```sh
 bin/contribctl tenancy whoami \
-  --url https://localhost:9445/services/tenancy --insecure-skip-tls-verify
+  --url https://kcp.localhost:8443/services/tenancy --insecure-skip-tls-verify
 ```
 ```
 TENANT   PROJECT   DISPLAY NAME   ROLES   ENDPOINT
@@ -175,7 +203,7 @@ the caller can reach:
 
 ```sh
 bin/contribctl tenancy kubeconfig \
-  --url https://localhost:9445/services/tenancy --insecure-skip-tls-verify \
+  --url https://kcp.localhost:8443/services/tenancy --insecure-skip-tls-verify \
   -o /tmp/alice.kubeconfig
 # wrote /tmp/alice.kubeconfig with 1 project context (current: acme-web)
 
@@ -261,7 +289,7 @@ KC=.tilt/tilt-frontproxy.kubeconfig
 CATALOG=https://kcp.localhost:8443/clusters/root:marketplace:catalog
 
 kubectl --kubeconfig $KC --server $CATALOG apply -f - <<'EOF'
-apiVersion: marketplace.contrib.kcp.io/v1alpha1
+apiVersion: marketplace.platform.kcp.io/v1alpha1
 kind: Provider
 metadata:
   name: acme
@@ -276,6 +304,14 @@ kubectl --kubeconfig $KC --server $CATALOG \
 ```
 
 ### Publish an offering
+
+Everything in this section is also available as a one-liner —
+`tilt trigger marketplace-examples` applies
+[the examples](../../marketplace/config/examples/), which publish the same
+`things` export plus a second one that claims nothing. It is an ad-hoc job:
+it never runs on its own, because publishing grants `bind` to every
+authenticated user in this stack. Doing it by hand, once, is worth it the
+first time:
 
 Now act as the provider, inside that workspace. The provider brings their
 own APIExport — the marketplace never defines what a provider serves, only
@@ -312,6 +348,12 @@ apiVersion: apis.kcp.io/v1alpha2
 kind: APIExport
 metadata:
   name: things.acme.example
+  # The offering is the export: these annotations publish it, and its own
+  # permissionClaims (none here) are the consent form.
+  annotations:
+    marketplace.platform.kcp.io/publish: "true"
+    marketplace.platform.kcp.io/display-name: "Things as a service"
+    marketplace.platform.kcp.io/description: "One Thing per workspace, batteries included."
 spec:
   resources:
     - name: things
@@ -319,21 +361,11 @@ spec:
       schema: v1alpha1.things.acme.example
       storage:
         crd: {}
----
-apiVersion: marketplace.contrib.kcp.io/v1alpha1
-kind: Offering
-metadata:
-  name: things
-spec:
-  displayName: "Things as a service"
-  description: "One Thing per workspace, batteries included."
-  export: things.acme.example
 EOF
 ```
 
-Publishing is what grants `bind`, and nothing else does. Once the offering
-reports `Ready`, the operator has validated its claims against the export
-and materialized exactly one grant next to it:
+Publishing is what grants `bind`, and nothing else does. Once the operator
+sees the annotation it materializes exactly one grant next to the export:
 
 ```sh
 kubectl --kubeconfig $KC --server $PROVIDER get clusterroles,clusterrolebindings \
@@ -352,8 +384,8 @@ you would write, so browsing it is reading both the consent form and the
 APIBinding:
 
 ```sh
-curl -ks --cert .tilt/pki/alice.crt --key .tilt/pki/alice.key \
-  https://localhost:9446/services/marketplace/apis/marketplace.contrib.kcp.io/v1alpha1/offerings
+kubectl --kubeconfig .tilt/tilt-frontproxy.kubeconfig get --raw \
+  /services/marketplace/apis/marketplace.platform.kcp.io/v1alpha1/offerings
 ```
 ```json
 {
@@ -366,7 +398,7 @@ curl -ks --cert .tilt/pki/alice.crt --key .tilt/pki/alice.key \
       "displayName": "Things as a service",
       "export": "things.acme.example",
       "workspacePath": "root:marketplace:providers:acme",
-      "revision": 1,
+      "revision": "",
       "ready": true
     }
   ]

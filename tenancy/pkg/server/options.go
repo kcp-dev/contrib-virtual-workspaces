@@ -55,6 +55,14 @@ type Options struct {
 	// workspace endpoints in review answers.
 	EndpointBase string
 
+	// SelfServiceTenants lets a caller with no membership request a tenant
+	// and become its admin. SelfServiceTenantGroups narrows who may.
+	SelfServiceTenants      bool
+	SelfServiceTenantGroups []string
+	// StoreWorkspace is where Tenant records live; a requested tenant is
+	// created there.
+	StoreWorkspace string
+
 	// PlatformSlice and TenancySlice are the endpoint slices the directory
 	// is fed from: Tenants come from the platform tier, Projects and
 	// Memberships from inside each tenant's workspace.
@@ -91,6 +99,18 @@ func (o *Options) AddFlags(fs *pflag.FlagSet) {
 
 	fs.StringVar(&o.EndpointBase, "endpoint-base", "https://kcp.example.com/clusters/",
 		"FrontProxy URL prefix for workspace endpoints returned in review answers.")
+	// Self-service tenants: how someone with no membership gets started.
+	// Off by default, because handing out tenants is a decision a
+	// deployment makes rather than one this server makes for it.
+	fs.BoolVar(&o.SelfServiceTenants, "self-service-tenants", false,
+		"Let any authenticated caller request a tenant, becoming its admin. "+
+			"Off means tenants are an administrator's job.")
+	fs.StringSliceVar(&o.SelfServiceTenantGroups, "self-service-tenant-groups", nil,
+		"Restrict --self-service-tenants to callers in one of these groups, as kcp sees them. "+
+			"Empty means any authenticated caller.")
+	fs.StringVar(&o.StoreWorkspace, "store-workspace", bootstrap.DefaultWorkspacePrefix+":"+bootstrap.DefaultStoreWorkspace,
+		"Path of the workspace Tenant records live in, written to when a tenant is requested.")
+
 	fs.StringVar(&o.PlatformSlice, "platform-endpointslice", bootstrap.ExportPlatform,
 		"APIExportEndpointSlice serving Tenants.")
 	fs.StringVar(&o.TenancySlice, "tenancy-endpointslice", bootstrap.ExportTenancy,
@@ -102,6 +122,27 @@ func (o *Options) AddFlags(fs *pflag.FlagSet) {
 	if fs.Lookup("kubeconfig") == nil {
 		fs.StringVar(&o.Kubeconfig, "kubeconfig", "", "Path to the kubeconfig for the target kcp (required).")
 	}
+
+	addIgnoredOperatorFlags(fs)
+}
+
+// addIgnoredOperatorFlags accepts, and ignores, flags the kcp-operator
+// puts on every VirtualWorkspace deployment.
+//
+// --shard-external-url is one of kcp's own virtual-workspace server's
+// flags and means nothing here, but the operator appends it
+// unconditionally (internal/resources/compiledvirtualworkspace:
+// "TODO(ntnn): We need a way to shut this off if it isn't required"),
+// even though the API type documents spec.command as suppressing it
+// "because a custom server would reject the unknown flags and refuse to
+// start". An apiserver built on pflag exits on a flag it does not know,
+// so accepting it is what lets this server be deployed by the operator
+// at all. Remove once the operator stops sending it.
+func addIgnoredOperatorFlags(fs *pflag.FlagSet) {
+	var ignored string
+	fs.StringVar(&ignored, "shard-external-url", "",
+		"Ignored. Accepted only because the kcp-operator passes it to every virtual workspace.")
+	_ = fs.MarkHidden("shard-external-url")
 }
 
 // Complete fills in derived defaults.

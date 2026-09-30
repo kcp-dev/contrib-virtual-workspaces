@@ -22,7 +22,7 @@ limitations under the License.
 // capability, add no API" primitive:
 //
 //   - marketplace-catalog      Providers. Bound into the catalog workspace.
-//   - marketplace-publish      Offerings, plus the claims the publish flow
+//   - marketplace-publish      no resources; the claims the publish flow
 //     needs in a provider workspace. Binding it IS a provider's consent.
 //   - marketplace-provisioner  no resources; the claim to create provider
 //     workspaces. Bound into the providers parent only.
@@ -66,8 +66,7 @@ const (
 //   - the workspace types after the exports they default-bind, so the
 //     references resolve.
 var ExportsOrder = []string{
-	"apiresourceschema-providers.marketplace.contrib.kcp.io.yaml",
-	"apiresourceschema-offerings.marketplace.contrib.kcp.io.yaml",
+	"apiresourceschema-providers.marketplace.platform.kcp.io.yaml",
 	"apiexport-catalog.yaml",
 	"apiexport-publish.yaml",
 	"apiexport-provisioner.yaml",

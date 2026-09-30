@@ -16,7 +16,7 @@ limitations under the License.
 
 // Package directory is the in-memory index the marketplace virtual
 // workspace answers from: Providers mirrored from the catalog tier,
-// Offerings mirrored from every provider workspace. It is read-heavy,
+// published APIExports mirrored from every provider workspace. It is read-heavy,
 // written only by the mirroring controllers, and guarded by one mutex —
 // the catalog is small and a browse must never block a sync.
 package directory
@@ -44,15 +44,18 @@ type Provider struct {
 	Ready            bool
 }
 
-// Offering is the directory's view of a published offering, status fields
-// included — the operator already validated them, the directory only
-// mirrors.
+// Offering is the directory's view of a published APIExport.
+//
+// There is no Provider field: which provider an offering belongs to is not
+// something the offering records, it is which workspace the export lives
+// in. Catalog resolves it by matching the export's logical cluster against
+// the Provider records, so a provider cannot be misattributed by anything
+// written in the provider's own workspace.
 type Offering struct {
-	Provider     string
 	DisplayName  string
 	Description  string
 	Export       string
-	Revision     int64
+	Revision     string
 	Claims       []marketplacev1alpha1.OfferingClaim
 	Ready        bool
 	IdentityHash string
@@ -135,7 +138,8 @@ func (d *Directory) ForgetCluster(cluster string) {
 	}
 }
 
-// Entry is one catalog listing: an offering joined with its provider.
+// Entry is one catalog listing: a published export joined with the
+// Provider record that owns its workspace.
 type Entry struct {
 	Provider string
 	Offering string
@@ -146,33 +150,46 @@ type Entry struct {
 	Detail        Offering
 }
 
-// Name is the entry's stable listing name, "<provider>.<offering>".
+// Name is the entry's stable listing name, "<provider>.<export>".
 func (e Entry) Name() string {
 	return e.Provider + "." + e.Offering
 }
 
-// Catalog lists every offering that has resolved to a provider, sorted by
-// name for stable output. An offering whose workspace no record names is
-// invisible — publishing into the void is not publishing.
+// Catalog lists every offering whose workspace a Provider record names,
+// sorted by name for stable output. An offering published from a workspace
+// no record names is invisible — publishing into the void is not
+// publishing, and it is also the case an unregistered workspace would use
+// to put itself on the catalog by annotating its own export.
 func (d *Directory) Catalog() []Entry {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	providersByName := map[string]Provider{}
+	// The join is workspace → provider: the record says which logical
+	// cluster it owns, and the offering is in one.
+	providerByCluster := map[string]struct {
+		name   string
+		record Provider
+	}{}
 	for key, p := range d.providers {
-		providersByName[key.Name] = p
+		if p.WorkspaceCluster == "" {
+			continue
+		}
+		providerByCluster[p.WorkspaceCluster] = struct {
+			name   string
+			record Provider
+		}{key.Name, p}
 	}
 
 	var out []Entry
 	for key, offering := range d.offerings {
-		record, known := providersByName[offering.Provider]
-		if offering.Provider == "" || !known {
+		owner, known := providerByCluster[key.Cluster]
+		if !known {
 			continue
 		}
 		out = append(out, Entry{
-			Provider:      offering.Provider,
+			Provider:      owner.name,
 			Offering:      key.Name,
-			WorkspacePath: record.WorkspacePath,
+			WorkspacePath: owner.record.WorkspacePath,
 			Detail:        offering,
 		})
 	}

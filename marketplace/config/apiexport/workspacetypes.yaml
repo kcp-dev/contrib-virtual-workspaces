@@ -15,7 +15,7 @@ spec:
   # that group is a kcp system API, served in every logical cluster
   # without any binding.
   #
-  # marketplace-publish is the registration consent: Offerings become
+  # marketplace-publish is the registration consent: annotated APIExports become
   # publishable here, and the operator gains exactly the claims that
   # export declares — nothing else is bound into a provider workspace.
   #

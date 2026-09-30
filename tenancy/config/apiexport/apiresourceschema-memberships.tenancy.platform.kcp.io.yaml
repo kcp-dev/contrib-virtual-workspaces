@@ -1,9 +1,9 @@
 apiVersion: apis.kcp.io/v1alpha1
 kind: APIResourceSchema
 metadata:
-  name: v260924-7813b03.memberships.tenancy.contrib.kcp.io
+  name: v260924-7813b03.memberships.tenancy.platform.kcp.io
 spec:
-  group: tenancy.contrib.kcp.io
+  group: tenancy.platform.kcp.io
   names:
     kind: Membership
     listKind: MembershipList

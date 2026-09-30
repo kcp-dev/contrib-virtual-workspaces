@@ -107,7 +107,11 @@ PY
 }
 
 generate marketplace ./marketplace/sdk/apis/marketplace/v1alpha1 marketplace/config/apiexport catalogofferings
-generate tenancy ./tenancy/sdk/apis/tenancy/v1alpha1 tenancy/config/apiexport selftenancyreviews
+# The self-* kinds are the virtual workspace's own request surface: they
+# are answered in memory and never stored, so they need no schema and must
+# not appear in the export.
+generate tenancy ./tenancy/sdk/apis/tenancy/v1alpha1 tenancy/config/apiexport \
+  selftenancyreviews selfprojectrequests selftenantrequests
 
 log "done; if schema file names changed, update the ExportsOrder lists in"
 log "  marketplace/config/apiexport/bootstrap.go and tenancy/config/apiexport/bootstrap.go"

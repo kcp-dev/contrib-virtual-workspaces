@@ -7,8 +7,9 @@
 # wanting the exports restricted replaces the subject.
 #
 # The PROVIDER exports a consumer actually enables are not listed here:
-# `bind` on those is materialized per offering, in the provider's own
-# workspace, by the publish reconciler — and revoked with the Offering.
+# `bind` on those is materialized per published export, in the provider's
+# own workspace, by the publish reconciler — and revoked when the publish
+# annotation is removed.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

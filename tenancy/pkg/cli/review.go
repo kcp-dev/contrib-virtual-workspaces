@@ -53,15 +53,19 @@ type userOptions struct {
 }
 
 func (o *userOptions) addFlags(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&o.url, "url", os.Getenv("TENANCY_VW_URL"),
-		"Base URL of the tenancy virtual workspace, e.g. https://kcp.example.com. "+
-			"Defaults to $TENANCY_VW_URL.")
+	// The address is learned once, by `login --url`, and kept in the
+	// shared context; $TENANCY_VW_URL still wins for a one-off, and an
+	// explicit flag wins over both.
+	cmd.Flags().StringVar(&o.url, "url", envOr("TENANCY_VW_URL", storedServiceURL("tenancy")),
+		"Base URL of the tenancy virtual workspace. Defaults to the server `login --url` "+
+			"stored, or $TENANCY_VW_URL.")
 	cmd.Flags().StringVar(&o.certFile, "client-cert", "", "Client certificate to authenticate with.")
 	cmd.Flags().StringVar(&o.keyFile, "client-key", "", "Key for --client-cert.")
 	cmd.Flags().StringVar(&o.tokenFile, "token-file", "", "File holding a bearer token to authenticate with.")
-	cmd.Flags().StringVar(&o.caFile, "certificate-authority", "",
+	storedCA, storedInsecure := storedTLS()
+	cmd.Flags().StringVar(&o.caFile, "certificate-authority", storedCA,
 		"CA bundle used to verify the virtual workspace's serving certificate.")
-	cmd.Flags().BoolVar(&o.insecure, "insecure-skip-tls-verify", false,
+	cmd.Flags().BoolVar(&o.insecure, "insecure-skip-tls-verify", storedInsecure,
 		"Do not verify the virtual workspace's serving certificate. For local testing only.")
 	cmd.Flags().StringVar(&o.kubeconfig, "kubeconfig", "",
 		"Take credentials from this kubeconfig's current context instead of --client-cert/--token-file.")
