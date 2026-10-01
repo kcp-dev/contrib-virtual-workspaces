@@ -2,14 +2,14 @@
 #
 # It grants nothing by existing. What it does is say which workspace may
 # publish under the name "acme" — and for mode: provisioned, ask the
-# operator to create that workspace with the `provider` WorkspaceType,
-# which carries the marketplace-publish binding that is the provider's
+# operator to create that workspace with the `producer` WorkspaceType,
+# which carries the marketplace-publish binding that is the producer's
 # whole surface.
 apiVersion: marketplace.platform.kcp.io/v1alpha1
-kind: Provider
+kind: Producer
 metadata:
   name: acme
 spec:
   displayName: Acme
-  description: Example provider, published by the marketplace-examples job.
+  description: Example producer, published by the marketplace-examples job.
   mode: provisioned

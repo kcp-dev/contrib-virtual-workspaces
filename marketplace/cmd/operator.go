@@ -33,7 +33,7 @@ func newOperatorCommand() *cobra.Command {
 		kubeconfig    string
 		workspacePath string
 		catalogPath   string
-		providersPath string
+		producersPath string
 		bindUsers     []string
 		bindGroups    []string
 	)
@@ -60,7 +60,7 @@ func newOperatorCommand() *cobra.Command {
 				RestConfig:    cfg,
 				ExportsPath:   workspacePath,
 				CatalogPath:   catalogPath,
-				ProvidersPath: providersPath,
+				ProducersPath: producersPath,
 				BindUsers:     bindUsers,
 				BindGroups:    bindGroups,
 			})
@@ -71,13 +71,13 @@ func newOperatorCommand() *cobra.Command {
 	cmd.Flags().StringVar(&workspacePath, "workspace-path",
 		bootstrap.DefaultWorkspacePrefix+":"+bootstrap.DefaultControllersWorkspace,
 		"Workspace holding the marketplace APIExports, their endpoint slices and the "+
-			"provider/consumer WorkspaceTypes.")
+			"producer/consumer WorkspaceTypes.")
 	cmd.Flags().StringVar(&catalogPath, "catalog-workspace",
 		bootstrap.DefaultWorkspacePrefix+":"+bootstrap.DefaultCatalogWorkspace,
 		"Workspace Provider records live in.")
-	cmd.Flags().StringVar(&providersPath, "providers-workspace",
-		bootstrap.DefaultWorkspacePrefix+":"+bootstrap.DefaultProvidersWorkspace,
-		"Workspace provisioned provider workspaces are created under. Deliberately not "+
+	cmd.Flags().StringVar(&producersPath, "producers-workspace",
+		bootstrap.DefaultWorkspacePrefix+":"+bootstrap.DefaultProducersWorkspace,
+		"Workspace provisioned producer workspaces are created under. Deliberately not "+
 			"the workspace Provider records live in.")
 	cmd.Flags().StringSliceVar(&bindUsers, "bind-user", nil,
 		"User the per-offering `bind` grants name: who may enable a published offering. Repeatable.")

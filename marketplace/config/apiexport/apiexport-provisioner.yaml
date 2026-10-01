@@ -1,6 +1,6 @@
 # marketplace-provisioner - the capability to CREATE PROVIDER WORKSPACES.
 #
-# Declares no resources; bound by hand into the providers parent and
+# Declares no resources; bound by hand into the producers parent and
 # nowhere else. The identityHash names kcp's own tenancy.kcp.io export,
 # discovered at install time - a claim on kcp's exported types without it
 # is a different claim that never applies.

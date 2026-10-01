@@ -158,7 +158,7 @@ func NewOffersCommand() *cobra.Command {
 		Long: `Browse the marketplace catalog.
 
 Every entry carries the coordinates of the APIBinding that enabling it
-would create — the provider's workspace and APIExport — so reading the
+would create — the producer's workspace and APIExport — so reading the
 catalog is reading both the consent form and the binding. Any
 authenticated caller may read it.`,
 		Args: cobra.NoArgs,
@@ -216,7 +216,7 @@ create the APIBinding that enabling consists of.
 
 The binding is created with your own credential, so kcp decides whether
 it happens — you must be allowed to create APIBindings in the workspace,
-and the provider must have published the offering, which is what grants
+and the producer must have published the offering, which is what grants
 the bind permission. Nothing privileged is involved, and this command
 does nothing the catalog did not already tell you.`,
 		Args: cobra.ExactArgs(1),
@@ -353,7 +353,7 @@ func enableHint(err error) string {
 
 // acceptClaims turns the catalog's claim surface into the acceptance the
 // APIBinding carries. Verbs and identity come from the catalog entry
-// verbatim; the selector is the provider's suggested scope, or every
+// verbatim; the selector is the producer's suggested scope, or every
 // object, which is what a binding means by default.
 func acceptClaims(claims []marketplacev1alpha1.OfferingClaim) []apisv1alpha2.AcceptablePermissionClaim {
 	var out []apisv1alpha2.AcceptablePermissionClaim

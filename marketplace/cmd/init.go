@@ -37,7 +37,7 @@ func newInitCommand() *cobra.Command {
 		workspacePrefix      string
 		controllersWorkspace string
 		catalogWorkspace     string
-		providersWorkspace   string
+		producersWorkspace   string
 		workspaceType        string
 		serverUsers          []string
 		serverGroups         []string
@@ -48,9 +48,9 @@ func newInitCommand() *cobra.Command {
 		Use:   "init",
 		Short: "Install the marketplace APIExports, schemas and endpoint slices into kcp",
 		Long: `Install the kcp-side objects the marketplace needs — the schemas, the
-three APIExports, the bind RBAC, the provider WorkspaceType and the
+three APIExports, the bind RBAC, the producer WorkspaceType and the
 endpoint slices — and bind the two hand-bound tiers: the catalog
-(Provider records) and the providers parent (where provisioned provider
+(Provider records) and the producers parent (where provisioned producer
 workspaces are created).
 
 The objects land in <prefix>:<controllers-workspace>, default
@@ -93,9 +93,9 @@ created. Idempotent: safe to run on every pod start and every upgrade.`,
 
 			// The two hand-bound tiers every install gets for free. They are
 			// separate on purpose: the catalog holds the records, the
-			// providers workspace is the parent provider workspaces are
+			// producers workspace is the parent producer workspaces are
 			// created under, and neither can do the other's job.
-			var catalogPath, providersPath string
+			var catalogPath, producersPath string
 			if catalogWorkspace != "" {
 				catalogPath, err = accessbootstrap.JoinWorkspacePath(workspacePrefix, catalogWorkspace)
 				if err != nil {
@@ -111,20 +111,20 @@ created. Idempotent: safe to run on every pod start and every upgrade.`,
 				}
 				logger.Info("catalog ready", "workspace", catalogPath)
 			}
-			if providersWorkspace != "" {
-				providersPath, err = accessbootstrap.JoinWorkspacePath(workspacePrefix, providersWorkspace)
+			if producersWorkspace != "" {
+				producersPath, err = accessbootstrap.JoinWorkspacePath(workspacePrefix, producersWorkspace)
 				if err != nil {
 					return err
 				}
-				logger.Info("creating the providers parent", "workspace", providersPath)
-				providersCfg, err := accessbootstrap.CreateWorkspacePath(ctx, cfg, providersPath, workspaceType)
+				logger.Info("creating the producers parent", "workspace", producersPath)
+				providersCfg, err := accessbootstrap.CreateWorkspacePath(ctx, cfg, producersPath, workspaceType)
 				if err != nil {
-					return fmt.Errorf("resolve workspace path %s: %w", providersPath, err)
+					return fmt.Errorf("resolve workspace path %s: %w", producersPath, err)
 				}
 				if err := bootstrap.BindProvidersParent(ctx, providersCfg, result); err != nil {
-					return fmt.Errorf("bind the provisioner claim into %s: %w", providersPath, err)
+					return fmt.Errorf("bind the provisioner claim into %s: %w", producersPath, err)
 				}
-				logger.Info("providers parent ready", "workspace", providersPath)
+				logger.Info("producers parent ready", "workspace", producersPath)
 			}
 
 			// Only now is there a consumer, so only now can a slice have
@@ -149,11 +149,11 @@ created. Idempotent: safe to run on every pod start and every upgrade.`,
 				"provisionerUrls", sliceURLs[bootstrap.ExportProvisioner],
 			)
 			if catalogPath != "" {
-				logger.Info("register Providers here; a provider publishes by annotating an APIExport in its own workspace",
-					"catalog", catalogPath, "provisionedUnder", providersPath,
+				logger.Info("register Providers here; a producer publishes by annotating an APIExport in its own workspace",
+					"catalog", catalogPath, "provisionedUnder", producersPath,
 				)
 			}
-			logger.Info("provider workspaces get marketplace-publish through the `provider` type, or bind "+
+			logger.Info("producer workspaces get marketplace-publish through the `producer` type, or bind "+
 				"it by hand to register BYO; consumers need nothing bound - enabling an offering is a "+
 				"plain kcp APIBinding they create themselves",
 				"exportsPath", workspacePath,
@@ -173,8 +173,8 @@ created. Idempotent: safe to run on every pod start and every upgrade.`,
 	cmd.Flags().StringVar(&catalogWorkspace, "catalog-workspace", bootstrap.DefaultCatalogWorkspace,
 		"Name of the workspace Provider records live in, created under --workspace-prefix "+
 			"and bound to the Provider API. Empty skips creating it.")
-	cmd.Flags().StringVar(&providersWorkspace, "providers-workspace", bootstrap.DefaultProvidersWorkspace,
-		"Name of the workspace provisioned provider workspaces are created under, bound to "+
+	cmd.Flags().StringVar(&producersWorkspace, "producers-workspace", bootstrap.DefaultProducersWorkspace,
+		"Name of the workspace provisioned producer workspaces are created under, bound to "+
 			"the provisioner claim. Holds no marketplace objects. Empty skips creating it.")
 	cmd.Flags().StringVar(&workspaceType, "workspace-type", accessbootstrap.DefaultWorkspaceType,
 		"WorkspaceType for any workspace this creates.")

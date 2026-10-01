@@ -3,6 +3,7 @@
 
 import { defineStore } from 'pinia'
 import * as oidc from '@/lib/oidc'
+import { ApiError } from '@/lib/api'
 import {
   bindings,
   boundKinds,
@@ -20,6 +21,13 @@ interface State {
   project: string
   loading: boolean
   error: string
+  /**
+   * unauthorized means the servers did not accept our token. Kept apart
+   * from error because it has an action — sign in again — and two very
+   * different causes: a token that expired, or a server that cannot
+   * validate it at all. Neither is fixed by retrying the same request.
+   */
+  unauthorized: boolean
   admin: boolean
   adminChecked: boolean
   /** enabled is what the bindings in the selected project actually serve. */
@@ -36,6 +44,7 @@ export const useSession = defineStore('session', {
     project: '',
     loading: false,
     error: '',
+    unauthorized: false,
     admin: false,
     adminChecked: false,
     enabled: [],
@@ -74,13 +83,24 @@ export const useSession = defineStore('session', {
     async load() {
       this.loading = true
       this.error = ''
+      this.unauthorized = false
       try {
         const answer = await review()
         this.tenants = answer.status?.tenants ?? []
         this.restore()
         await this.loadEnabled()
       } catch (e) {
-        this.error = e instanceof Error ? e.message : String(e)
+        if (e instanceof ApiError && e.unauthorized) {
+          // Deliberately not an automatic redirect to login: when the
+          // cause is server-side — a validator that cannot reach the
+          // issuer, say — signing in again returns a fresh token that is
+          // refused just the same, and the redirect becomes a loop. Say
+          // what happened and let the person choose.
+          this.unauthorized = true
+          this.tenants = []
+        } else {
+          this.error = e instanceof Error ? e.message : String(e)
+        }
       } finally {
         this.loading = false
       }

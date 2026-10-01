@@ -16,7 +16,7 @@ limitations under the License.
 
 // Package directory is the in-memory index the marketplace virtual
 // workspace answers from: Providers mirrored from the catalog tier,
-// published APIExports mirrored from every provider workspace. It is read-heavy,
+// published APIExports mirrored from every producer workspace. It is read-heavy,
 // written only by the mirroring controllers, and guarded by one mutex —
 // the catalog is small and a browse must never block a sync.
 package directory
@@ -35,8 +35,8 @@ type Key struct {
 	Name    string
 }
 
-// Provider is the directory's view of a catalog record.
-type Provider struct {
+// Producer is the directory's view of a catalog record.
+type Producer struct {
 	DisplayName      string
 	Description      string
 	WorkspacePath    string
@@ -46,11 +46,11 @@ type Provider struct {
 
 // Offering is the directory's view of a published APIExport.
 //
-// There is no Provider field: which provider an offering belongs to is not
+// There is no Producer field: which producer an offering belongs to is not
 // something the offering records, it is which workspace the export lives
 // in. Catalog resolves it by matching the export's logical cluster against
-// the Provider records, so a provider cannot be misattributed by anything
-// written in the provider's own workspace.
+// the Producer records, so a producer cannot be misattributed by anything
+// written in the producer's own workspace.
 type Offering struct {
 	DisplayName  string
 	Description  string
@@ -59,21 +59,30 @@ type Offering struct {
 	Claims       []marketplacev1alpha1.OfferingClaim
 	Ready        bool
 	IdentityHash string
+	DocsURL      string
+	// InstructionsRef names a ConfigMap in the offering's own cluster; the
+	// content is mirrored separately and joined at read time, so an edit
+	// to the instructions never has to re-reconcile the export.
+	InstructionsRef string
 }
 
 // Directory is safe for concurrent use.
 type Directory struct {
 	mu        sync.RWMutex
 	ready     bool
-	providers map[Key]Provider
+	producers map[Key]Producer
 	offerings map[Key]Offering
+	// instructions holds the content of ConfigMaps offerings point at,
+	// keyed like everything else by the cluster they live in.
+	instructions map[Key]map[string]string
 }
 
 // New returns an empty directory.
 func New() *Directory {
 	return &Directory{
-		providers: map[Key]Provider{},
-		offerings: map[Key]Offering{},
+		producers:    map[Key]Producer{},
+		offerings:    map[Key]Offering{},
+		instructions: map[Key]map[string]string{},
 	}
 }
 
@@ -91,22 +100,22 @@ func (d *Directory) Ready() bool {
 }
 
 // Counts reports how many objects the directory holds, for debugging.
-func (d *Directory) Counts() (providers, offerings int) {
+func (d *Directory) Counts() (producers, offerings int) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
-	return len(d.providers), len(d.offerings)
+	return len(d.producers), len(d.offerings)
 }
 
-func (d *Directory) UpsertProvider(key Key, p Provider) {
+func (d *Directory) UpsertProducer(key Key, p Producer) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.providers[key] = p
+	d.producers[key] = p
 }
 
-func (d *Directory) RemoveProvider(key Key) {
+func (d *Directory) RemoveProducer(key Key) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	delete(d.providers, key)
+	delete(d.producers, key)
 }
 
 func (d *Directory) UpsertOffering(key Key, o Offering) {
@@ -121,14 +130,33 @@ func (d *Directory) RemoveOffering(key Key) {
 	delete(d.offerings, key)
 }
 
+// UpsertInstructions records the content of one instructions ConfigMap.
+// Which offerings use it is decided at read time by name, so the two
+// mirrors never have to know about each other.
+func (d *Directory) UpsertInstructions(key Key, sections map[string]string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	copied := make(map[string]string, len(sections))
+	for k, v := range sections {
+		copied[k] = v
+	}
+	d.instructions[key] = copied
+}
+
+func (d *Directory) RemoveInstructions(key Key) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	delete(d.instructions, key)
+}
+
 // ForgetCluster drops everything mirrored from one logical cluster — a
 // workspace that unbound its export leaves nothing behind.
 func (d *Directory) ForgetCluster(cluster string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	for key := range d.providers {
+	for key := range d.producers {
 		if key.Cluster == cluster {
-			delete(d.providers, key)
+			delete(d.producers, key)
 		}
 	}
 	for key := range d.offerings {
@@ -136,26 +164,34 @@ func (d *Directory) ForgetCluster(cluster string) {
 			delete(d.offerings, key)
 		}
 	}
+	for key := range d.instructions {
+		if key.Cluster == cluster {
+			delete(d.instructions, key)
+		}
+	}
 }
 
 // Entry is one catalog listing: a published export joined with the
-// Provider record that owns its workspace.
+// Producer record that owns its workspace.
 type Entry struct {
-	Provider string
+	Producer string
 	Offering string
-	// WorkspacePath is the canonical path of the provider's workspace —
+	// WorkspacePath is the canonical path of the producer's workspace —
 	// what the APIBinding a consumer authors references as
 	// spec.reference.export.path.
 	WorkspacePath string
 	Detail        Offering
+	// Instructions is the referenced ConfigMap's content, or nil if the
+	// offering names none or it has not been seen.
+	Instructions map[string]string
 }
 
-// Name is the entry's stable listing name, "<provider>.<export>".
+// Name is the entry's stable listing name, "<producer>.<export>".
 func (e Entry) Name() string {
-	return e.Provider + "." + e.Offering
+	return e.Producer + "." + e.Offering
 }
 
-// Catalog lists every offering whose workspace a Provider record names,
+// Catalog lists every offering whose workspace a Producer record names,
 // sorted by name for stable output. An offering published from a workspace
 // no record names is invisible — publishing into the void is not
 // publishing, and it is also the case an unregistered workspace would use
@@ -164,34 +200,39 @@ func (d *Directory) Catalog() []Entry {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	// The join is workspace → provider: the record says which logical
+	// The join is workspace → producer: the record says which logical
 	// cluster it owns, and the offering is in one.
-	providerByCluster := map[string]struct {
+	producerByCluster := map[string]struct {
 		name   string
-		record Provider
+		record Producer
 	}{}
-	for key, p := range d.providers {
+	for key, p := range d.producers {
 		if p.WorkspaceCluster == "" {
 			continue
 		}
-		providerByCluster[p.WorkspaceCluster] = struct {
+		producerByCluster[p.WorkspaceCluster] = struct {
 			name   string
-			record Provider
+			record Producer
 		}{key.Name, p}
 	}
 
 	var out []Entry
 	for key, offering := range d.offerings {
-		owner, known := providerByCluster[key.Cluster]
+		owner, known := producerByCluster[key.Cluster]
 		if !known {
 			continue
 		}
-		out = append(out, Entry{
-			Provider:      owner.name,
+		entry := Entry{
+			Producer:      owner.name,
 			Offering:      key.Name,
 			WorkspacePath: owner.record.WorkspacePath,
 			Detail:        offering,
-		})
+		}
+		// Instructions live next to the export, in the same cluster.
+		if offering.InstructionsRef != "" {
+			entry.Instructions = d.instructions[Key{Cluster: key.Cluster, Name: offering.InstructionsRef}]
+		}
+		out = append(out, entry)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name() < out[j].Name() })
 	return out

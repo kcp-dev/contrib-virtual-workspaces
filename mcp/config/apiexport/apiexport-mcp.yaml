@@ -1,0 +1,51 @@
+# mcp - the offering a consumer enables to get MCP in their workspace.
+#
+# The claims are the point, not the resource. MCP is not an API: it is an
+# endpoint at /services/mcp that acts on a caller's behalf, and behind the
+# front-proxy the caller's token is consumed by the proxy, so the server
+# has to IMPERSONATE them. kcp checks that right in every workspace it
+# reaches into, and kcp RBAC does not inherit down the tree — so the
+# server needs the grant written in each workspace that wants MCP.
+#
+# Binding this export is how a consumer says yes to that. The claims cover
+# the ClusterRole and ClusterRoleBinding the operator then writes there —
+# nothing more, which is why `impersonate` is the only verb it ever grants
+# itself. Deleting the binding revokes the claims, and with them the
+# operator's ability to touch that workspace at all.
+#
+# MCPEndpoint is served so the enablement is visible from inside: it is
+# written by the operator, and it answers "did it work" and "where do I
+# point my client" without leaving the workspace.
+apiVersion: apis.kcp.io/v1alpha2
+kind: APIExport
+metadata:
+  name: mcp
+  # Published to the marketplace catalog. The offering IS this export.
+  annotations:
+    marketplace.platform.kcp.io/publish: "true"
+    marketplace.platform.kcp.io/display-name: MCP
+    # The ConfigMap below, in this same workspace: how to connect a client.
+    marketplace.platform.kcp.io/instructions: mcp-instructions
+    marketplace.platform.kcp.io/description: >-
+      The Model Context Protocol over this workspace. Enabling lets the MCP
+      server act as you here; what a session can see is whatever your own
+      access allows.
+spec:
+  resources:
+    - name: mcpendpoints
+      group: mcp.platform.kcp.io
+      schema: v261001-fbafaea.mcpendpoints.mcp.platform.kcp.io
+      storage:
+        crd: {}
+  permissionClaims:
+    - group: rbac.authorization.k8s.io
+      resource: clusterroles
+      verbs: [get, list, watch, create, update, delete]
+    - group: rbac.authorization.k8s.io
+      resource: clusterrolebindings
+      verbs: [get, list, watch, create, update, delete]
+    # Read-only, and only to learn the workspace's own canonical path for
+    # the endpoint it reports back.
+    - group: core.kcp.io
+      resource: logicalclusters
+      verbs: [get, list, watch]

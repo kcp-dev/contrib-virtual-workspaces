@@ -1,0 +1,12 @@
+# The slice the mcp operator follows to learn which workspaces have
+# enabled MCP. A workspace appears here once it binds the export, which is
+# the same moment it consented — so the slice is both the discovery
+# mechanism and the list of workspaces the operator may act in.
+apiVersion: apis.kcp.io/v1alpha1
+kind: APIExportEndpointSlice
+metadata:
+  name: mcp
+spec:
+  export:
+    name: mcp
+    path: __EXPORTS_PATH__

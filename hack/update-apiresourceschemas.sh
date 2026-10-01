@@ -107,6 +107,7 @@ PY
 }
 
 generate marketplace ./marketplace/sdk/apis/marketplace/v1alpha1 marketplace/config/apiexport catalogofferings
+generate mcp ./mcp/sdk/apis/mcp/v1alpha1 mcp/config/apiexport
 # The self-* kinds are the virtual workspace's own request surface: they
 # are answered in memory and never stored, so they need no schema and must
 # not appear in the export.

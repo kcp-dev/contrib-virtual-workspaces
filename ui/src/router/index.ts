@@ -6,6 +6,10 @@ const routes: RouteRecordRaw[] = [
   { path: '/login', name: 'login', component: () => import('@/pages/LoginPage.vue'), meta: { public: true } },
   { path: '/callback', name: 'callback', component: () => import('@/pages/CallbackPage.vue'), meta: { public: true } },
   { path: '/profile', name: 'profile', component: () => import('@/pages/ProfilePage.vue') },
+  // First run, for an identity that belongs to nothing yet. Reachable on
+  // purpose rather than only redirected to, so somebody who dismissed it
+  // can come back.
+  { path: '/welcome', name: 'welcome', component: () => import('@/pages/WelcomePage.vue') },
   { path: '/tenants', name: 'tenants', component: () => import('@/pages/TenantsPage.vue') },
   // A tenant is managed rather than entered, so it gets a page of its own
   // instead of becoming a selectable context.
@@ -21,6 +25,9 @@ const routes: RouteRecordRaw[] = [
   { path: '/projects', redirect: '/tenants' },
   { path: '/catalog', name: 'catalog', component: () => import('@/pages/CatalogPage.vue') },
   { path: '/api', name: 'api', component: () => import('@/pages/ApiViewerPage.vue') },
+  // One enabled producer in the selected project: what it is, how to use
+  // it, and what it serves. The sidebar lands here.
+  { path: '/p/:binding', name: 'producer', component: () => import('@/pages/ProducerPage.vue') },
   // One enabled offering's resources: /r/<group>/<resource>, with the
   // group left empty for core types.
   { path: '/r/:group/:resource', name: 'resource', component: () => import('@/pages/ResourcePage.vue') },

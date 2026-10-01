@@ -26,7 +26,7 @@ async function load() {
   try {
     const [t, p] = await Promise.allSettled([
       list(STORE, 'tenancy.platform.kcp.io/v1alpha1', 'tenants'),
-      list(CATALOG, 'marketplace.platform.kcp.io/v1alpha1', 'providers'),
+      list(CATALOG, 'marketplace.platform.kcp.io/v1alpha1', 'producers'),
     ])
     tenants.value = t.status === 'fulfilled' ? (t.value.items ?? []) : []
     providers.value = p.status === 'fulfilled' ? (p.value.items ?? []) : []
@@ -59,7 +59,7 @@ onMounted(load)
   <div>
     <PageHeader
       title="Admin"
-      subtitle="Platform records: Tenants in the store workspace, Providers in the catalog."
+      subtitle="Platform records: Tenants in the store workspace, Producers in the catalog."
     />
 
     <div v-if="!session.admin" class="k-card px-4 py-6 text-xs text-muted">
@@ -86,7 +86,7 @@ onMounted(load)
       </Panel>
 
       <Panel>
-        <template #header>Providers · {{ CATALOG }}</template>
+        <template #header>Producers · {{ CATALOG }}</template>
         <StateBlock :loading="loading" :empty="!providers.length" empty-text="No providers registered.">
           <table class="k-table">
             <thead>

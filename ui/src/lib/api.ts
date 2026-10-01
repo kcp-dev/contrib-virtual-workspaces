@@ -93,13 +93,18 @@ export function review(): Promise<SelfTenancyReview> {
 // ── the marketplace virtual workspace ────────────────────────────────
 
 export interface OfferingClaim {
+  group?: string
   resource: string
   verbs?: string[]
+  /** Required when the claimed resource is itself served by an APIExport. */
+  identityHash?: string
+  /** The producer's suggested scope; absent means every object. */
+  matchLabels?: Record<string, string>
 }
 
 export interface CatalogOffering {
   metadata: { name: string }
-  provider: string
+  producer: string
   offering: string
   displayName?: string
   description?: string
@@ -109,6 +114,12 @@ export interface CatalogOffering {
   revision?: string
   claims?: OfferingClaim[]
   ready: boolean
+  docsURL?: string
+  /**
+   * The producer's "how to use this", keyed by section. Static text with
+   * {{variables}} the console fills in — see lib/instructions.ts.
+   */
+  instructions?: Record<string, string>
 }
 
 export function offerings(): Promise<{ items?: CatalogOffering[] }> {
@@ -558,11 +569,20 @@ export async function canI(
 }
 
 /** createBinding enables an offering: the APIBinding is the whole act. */
+/**
+ * createBinding enables an offering: the APIBinding is the whole act.
+ *
+ * The catalog's claims are accepted on it, which is not a detail — for an
+ * offering whose claims ARE its function, a binding that accepts none of
+ * them grants nothing and looks like it worked. Accepting here is the
+ * consent, made on the consumer's own object.
+ */
 export function createBinding(
   cluster: string,
   name: string,
   exportPath: string,
   exportName: string,
+  claims: OfferingClaim[] = [],
 ): Promise<unknown> {
   return request(`${cluster}/apis/apis.kcp.io/v1alpha2/apibindings`, {
     method: 'POST',
@@ -570,9 +590,34 @@ export function createBinding(
       apiVersion: 'apis.kcp.io/v1alpha2',
       kind: 'APIBinding',
       metadata: { name },
-      spec: { reference: { export: { path: exportPath, name: exportName } } },
+      spec: {
+        reference: { export: { path: exportPath, name: exportName } },
+        permissionClaims: claims.map((c) => ({
+          group: c.group ?? '',
+          resource: c.resource,
+          verbs: c.verbs ?? [],
+          identityHash: c.identityHash ?? '',
+          // The provider's suggested scope, or every object — which is
+          // what a binding means by default.
+          selector: c.matchLabels ? { matchLabels: c.matchLabels } : { matchAll: true },
+          state: 'Accepted',
+        })),
+      },
     }),
   })
+}
+
+/**
+ * deleteBinding disables an offering. Deleting the APIBinding IS disabling:
+ * the API stops being served in the workspace, and the claims it carried are
+ * revoked with it. Objects already created through it are not removed — they
+ * simply have no API in front of them until it is enabled again.
+ */
+export function deleteBinding(cluster: string, name: string): Promise<unknown> {
+  return request(
+    `${cluster}/apis/apis.kcp.io/v1alpha2/apibindings/${encodeURIComponent(name)}`,
+    { method: 'DELETE' },
+  )
 }
 
 export interface BoundResource {
@@ -592,18 +637,20 @@ export function bindings(cluster: string): Promise<{ items?: APIBinding[] }> {
 }
 
 /**
- * isPlatformGroup reports whether a group is one of the platform's own,
- * rather than something a provider offers.
+ * isPlatformGroup reports whether a group is the platform's own machinery
+ * — tenancy, the marketplace — rather than something a producer offers.
  *
- * Listed by suffix rather than by name so a new component lands on the
- * right side of it automatically — and kept here, in one place, because
- * the last time this was an inline `endsWith` it silently stopped matching
- * when the API groups were renamed.
+ * Named exactly, not matched by suffix. The suffix rule that was here
+ * before (`*.platform.kcp.io`) read well but was wrong in practice: the
+ * platform's own bindings in a project bind no resources at all, so the
+ * rule hid nothing it meant to — and did hide MCP, a producer that merely
+ * shares the suffix. A new component is more likely a producer than
+ * machinery, so the default is to show it.
  */
-function isPlatformGroup(group: string): boolean {
-  return ['platform.kcp.io', 'contrib.kcp.io'].some(
-    (suffix) => group === suffix || group.endsWith('.' + suffix),
-  )
+const platformGroups = new Set(['tenancy.platform.kcp.io', 'marketplace.platform.kcp.io'])
+
+export function isPlatformGroup(group: string): boolean {
+  return platformGroups.has(group)
 }
 
 /**

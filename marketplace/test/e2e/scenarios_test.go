@@ -79,7 +79,7 @@ func TestScenarioTiersCarryTheRightBindings(t *testing.T) {
 		}
 	}
 
-	providers := adminClient(t, providersPath)
+	providers := adminClient(t, producersPath)
 	if !hasBinding(t, ctx, providers, exportProvisioner) {
 		t.Fatal("the providers parent does not bind marketplace-provisioner")
 	}
@@ -98,9 +98,9 @@ func TestScenarioProvisionedProviderGetsAWorkspace(t *testing.T) {
 	ctx := testContext(t)
 	name := "prov-" + randomSuffix(t)
 
-	provider := registerProvider(t, ctx, name, marketplacev1alpha1.ProviderModeProvisioned, "")
-	if provider.Status.WorkspacePath != providersPath+":"+name {
-		t.Fatalf("provider workspace path = %q, want %q", provider.Status.WorkspacePath, providersPath+":"+name)
+	provider := registerProducer(t, ctx, name, marketplacev1alpha1.ProducerModeProvisioned, "")
+	if provider.Status.WorkspacePath != producersPath+":"+name {
+		t.Fatalf("provider workspace path = %q, want %q", provider.Status.WorkspacePath, producersPath+":"+name)
 	}
 
 	ws := adminClient(t, provider.Status.WorkspacePath)
@@ -122,7 +122,7 @@ func TestScenarioAnnotatingAnExportPublishesAndGrantsBind(t *testing.T) {
 	name := "prov-" + sfx
 	exportName := "things.e2e-" + sfx + ".marketplace.platform.kcp.io"
 
-	provider := registerProvider(t, ctx, name, marketplacev1alpha1.ProviderModeProvisioned, "")
+	provider := registerProducer(t, ctx, name, marketplacev1alpha1.ProducerModeProvisioned, "")
 	ws := adminClient(t, provider.Status.WorkspacePath)
 	installThingsExport(t, ctx, ws, exportName)
 
@@ -160,19 +160,19 @@ func TestScenarioAnnotatingAnExportPublishesAndGrantsBind(t *testing.T) {
 // standUpOffering is the shared spine: a provisioned provider publishing a
 // things offering, and a PLAIN consumer workspace — the marketplace needs
 // nothing bound there, which is the point.
-func standUpOffering(t *testing.T, ctx context.Context) (providerPath, providerName string, export *apisv1alpha2.APIExport, consumer client.Client, consumerPath, consumerCluster string) {
+func standUpOffering(t *testing.T, ctx context.Context) (producerPath, producerName string, export *apisv1alpha2.APIExport, consumer client.Client, consumerPath, consumerCluster string) {
 	t.Helper()
 	sfx := randomSuffix(t)
-	providerName = "prov-" + sfx
+	producerName = "prov-" + sfx
 	exportName := "things.e2e-" + sfx + ".marketplace.platform.kcp.io"
 
-	provider := registerProvider(t, ctx, providerName, marketplacev1alpha1.ProviderModeProvisioned, "")
+	provider := registerProducer(t, ctx, producerName, marketplacev1alpha1.ProducerModeProvisioned, "")
 	ws := adminClient(t, provider.Status.WorkspacePath)
 	installThingsExport(t, ctx, ws, exportName)
 	export = publishExport(t, ctx, ws, exportName, "things")
 
 	consumerWS := createWorkspace(t, ctx, "consumer-"+sfx, "", "")
-	return provider.Status.WorkspacePath, providerName, export,
+	return provider.Status.WorkspacePath, producerName, export,
 		adminClient(t, "root:"+consumerWS.Name), "root:" + consumerWS.Name, consumerWS.Spec.Cluster
 }
 
@@ -180,9 +180,9 @@ func standUpOffering(t *testing.T, ctx context.Context) (providerPath, providerN
 // bind grant publishing materialized, and the provider's API serves.
 func TestScenarioNativeBindEnablesAnOffering(t *testing.T) {
 	ctx := testContext(t)
-	providerPath, _, export, consumer, consumerPath, _ := standUpOffering(t, ctx)
+	producerPath, _, export, consumer, consumerPath, _ := standUpOffering(t, ctx)
 
-	bindOffering(t, ctx, consumer, "things", providerPath, export)
+	bindOffering(t, ctx, consumer, "things", producerPath, export)
 
 	var binding apisv1alpha2.APIBinding
 	if err := consumer.Get(ctx, client.ObjectKey{Name: "things"}, &binding); err != nil {
@@ -228,11 +228,11 @@ func TestScenarioNativeBindEnablesAnOffering(t *testing.T) {
 // marketplace can write.
 func TestScenarioClaimChangesChangeTheRevision(t *testing.T) {
 	ctx := testContext(t)
-	providerPath, providerName, export, consumer, _, _ := standUpOffering(t, ctx)
-	bindOffering(t, ctx, consumer, "things", providerPath, export)
+	producerPath, producerName, export, consumer, _, _ := standUpOffering(t, ctx)
+	bindOffering(t, ctx, consumer, "things", producerPath, export)
 
 	alice := userVWClient(t, "alice", "")
-	entryName := providerName + "." + export.Name
+	entryName := producerName + "." + export.Name
 
 	var before marketplacev1alpha1.CatalogOffering
 	waitFor(t, ctx, "the catalog to list the offering", func(ctx context.Context) (bool, error) {
@@ -244,7 +244,7 @@ func TestScenarioClaimChangesChangeTheRevision(t *testing.T) {
 
 	// The provider widens the consent surface by editing the export — the
 	// only place it is declared.
-	ws := adminClient(t, providerPath)
+	ws := adminClient(t, producerPath)
 	waitFor(t, ctx, "widen the export's claims", func(ctx context.Context) (bool, error) {
 		var fresh apisv1alpha2.APIExport
 		if err := ws.Get(ctx, client.ObjectKey{Name: export.Name}, &fresh); err != nil {
@@ -255,7 +255,7 @@ func TestScenarioClaimChangesChangeTheRevision(t *testing.T) {
 			Verbs:         []string{"get", "list", "watch"},
 			DefaultSelector: &apisv1alpha2.PermissionClaimSelector{
 				LabelSelector: metav1.LabelSelector{
-					MatchLabels: map[string]string{"marketplace.platform.kcp.io/owner": providerName},
+					MatchLabels: map[string]string{"marketplace.platform.kcp.io/owner": producerName},
 				},
 			},
 		})
@@ -299,7 +299,7 @@ func TestScenarioClaimChangesChangeTheRevision(t *testing.T) {
 // — which this test found out the hard way.)
 func TestScenarioUnpublishingRevokesBind(t *testing.T) {
 	ctx := testContext(t)
-	providerPath, _, export, consumer, consumerPath, _ := standUpOffering(t, ctx)
+	producerPath, _, export, consumer, consumerPath, _ := standUpOffering(t, ctx)
 
 	// alice is full admin of the consumer workspace...
 	grantWorkspaceAdmin(t, ctx, consumer, "alice")
@@ -311,7 +311,7 @@ func TestScenarioUnpublishingRevokesBind(t *testing.T) {
 	// The provider takes it off the catalog by removing one annotation.
 	// The export itself, and everyone already bound to it, stay exactly as
 	// they were.
-	ws := adminClient(t, providerPath)
+	ws := adminClient(t, producerPath)
 	unpublishExport(t, ctx, ws, export.Name)
 	waitFor(t, ctx, "the bind grant to be revoked", func(ctx context.Context) (bool, error) {
 		var role rbacv1.ClusterRole
@@ -321,7 +321,7 @@ func TestScenarioUnpublishingRevokesBind(t *testing.T) {
 
 	// ...and it does not help: her rights end at her workspace, and the
 	// export side's grant is gone.
-	binding := bindingFor("too-late", providerPath, export)
+	binding := bindingFor("too-late", producerPath, export)
 	waitFor(t, ctx, "the unpublished export to refuse alice", func(ctx context.Context) (bool, error) {
 		err := alice.Create(ctx, binding.DeepCopy())
 		if err == nil {

@@ -5,19 +5,19 @@
 apiVersion: tenancy.kcp.io/v1alpha1
 kind: WorkspaceType
 metadata:
-  name: provider
+  name: producer
 spec:
   # DELIBERATELY no `extend: root:universal`: universal would pull
   # tenancy.kcp.io (Workspace, WorkspaceType) and topology.kcp.io into the
-  # provider's API surface, letting a provider spawn arbitrary child
+  # producer's API surface, letting a producer spawn arbitrary child
   # workspaces and inspect cluster topology. Both are platform surfaces. A
-  # provider's business is apis.kcp.io — schemas, its own APIExport — and
+  # producer's business is apis.kcp.io — schemas, its own APIExport — and
   # that group is a kcp system API, served in every logical cluster
   # without any binding.
   #
   # marketplace-publish is the registration consent: annotated APIExports become
   # publishable here, and the operator gains exactly the claims that
-  # export declares — nothing else is bound into a provider workspace.
+  # export declares — nothing else is bound into a producer workspace.
   #
   # There is no `consumer` type: enabling an offering is a plain kcp
   # APIBinding a consumer creates in their own workspace, so the

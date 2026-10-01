@@ -21,14 +21,14 @@ limitations under the License.
 // no resources at all — an export with no schemas is the "grant a
 // capability, add no API" primitive:
 //
-//   - marketplace-catalog      Providers. Bound into the catalog workspace.
+//   - marketplace-catalog      Producers. Bound into the catalog workspace.
 //   - marketplace-publish      no resources; the claims the publish flow
-//     needs in a provider workspace. Binding it IS a provider's consent.
-//   - marketplace-provisioner  no resources; the claim to create provider
-//     workspaces. Bound into the providers parent only.
+//     needs in a producer workspace. Binding it IS a producer's consent.
+//   - marketplace-provisioner  no resources; the claim to create producer
+//     workspaces. Bound into the producers parent only.
 //
 // Enabling an offering involves NO marketplace machinery in the consumer
-// workspace: publishing materializes a `bind` grant on the provider's own
+// workspace: publishing materializes a `bind` grant on the producer's own
 // export, and a consumer enables by creating a plain kcp APIBinding there
 // themselves — governed by their workspace's RBAC and kcp's bind check,
 // nothing else.
@@ -66,7 +66,7 @@ const (
 //   - the workspace types after the exports they default-bind, so the
 //     references resolve.
 var ExportsOrder = []string{
-	"apiresourceschema-providers.marketplace.platform.kcp.io.yaml",
+	"apiresourceschema-producers.marketplace.platform.kcp.io.yaml",
 	"apiexport-catalog.yaml",
 	"apiexport-publish.yaml",
 	"apiexport-provisioner.yaml",
@@ -76,12 +76,12 @@ var ExportsOrder = []string{
 }
 
 // CatalogOrder is applied into the catalog workspace: the registry of
-// Provider records. It binds the Provider API and nothing else.
+// Producer records. It binds the Producer API and nothing else.
 var CatalogOrder = []string{
 	"catalog-bindings.yaml",
 }
 
-// ProvidersOrder is applied into the workspace provisioned provider
+// ProducersOrder is applied into the workspace provisioned producer
 // workspaces are created under. It binds the capability to create them and
 // nothing else.
 //
@@ -89,6 +89,6 @@ var CatalogOrder = []string{
 // them. Keeping them apart means a bug in the provisioning path cannot
 // rewrite the records that drive it, and the record tier cannot create a
 // workspace.
-var ProvidersOrder = []string{
-	"providers-bindings.yaml",
+var ProducersOrder = []string{
+	"producers-bindings.yaml",
 }

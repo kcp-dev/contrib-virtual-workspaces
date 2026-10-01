@@ -1,14 +1,15 @@
 # Example offerings
 
-A provider and two offerings, for a development stack. Applying them is
+A producer and two offerings, for a development stack. Applying them is
 the shortest path from an empty catalog to something you can browse and
 enable.
 
 | File | Applied to | What it is |
 |---|---|---|
-| `provider.yaml` | the catalog workspace | the `Provider` record — registration, and nothing else |
-| `things.yaml` | the provider's workspace | a schema and a published export, with a claim on configmaps |
-| `widgets.yaml` | the provider's workspace | the same, claiming nothing |
+| `producer.yaml` | the catalog workspace | the `Producer` record — registration, and nothing else |
+| `things.yaml` | the producer's workspace | a schema and a published export, with a claim on configmaps |
+| `things-instructions.yaml` | the producer's workspace | the "how to use this" the console shows after enabling `things` |
+| `widgets.yaml` | the producer's workspace | the same, claiming nothing |
 
 The two exports are the two shapes worth seeing. `things` carries a
 `permissionClaim`, so its catalog entry has a consent form and a revision
@@ -46,7 +47,7 @@ KUBECONFIG=.tilt/tilt-contrib.kubeconfig marketplace/config/examples/apply.sh
 
 `apply.sh` is idempotent, so editing an example and re-triggering is the
 development loop. It is a script rather than one `kubectl apply -f`
-because the two halves go to different workspaces, and the provider's
+because the two halves go to different workspaces, and the producer's
 workspace does not exist until the operator has read the record.
 
 Then:

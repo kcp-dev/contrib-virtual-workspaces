@@ -1,4 +1,4 @@
-# Applied into the PROVIDERS workspace: the parent provisioned provider
+# Applied into the PROVIDERS workspace: the parent provisioned producer
 # workspaces are created under. It binds only the capability to create
 # them - no marketplace API is servable here, so a bug in provisioning
 # cannot reach the records that drive it.

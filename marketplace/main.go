@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // marketplace-vw is the marketplace component in one binary: `init`
-// installs the kcp-side objects, `operator` materializes provider
+// installs the kcp-side objects, `operator` materializes producer
 // workspaces, bind grants and enablement bindings, and `virtualworkspace`
 // serves the catalog and the enablements write path. One binary so a
 // deployment's init container and both long-running processes share a

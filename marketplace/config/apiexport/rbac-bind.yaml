@@ -7,7 +7,7 @@
 # wanting the exports restricted replaces the subject.
 #
 # The PROVIDER exports a consumer actually enables are not listed here:
-# `bind` on those is materialized per published export, in the provider's
+# `bind` on those is materialized per published export, in the producer's
 # own workspace, by the publish reconciler — and revoked when the publish
 # annotation is removed.
 apiVersion: rbac.authorization.k8s.io/v1
@@ -36,7 +36,7 @@ subjects:
     kind: Group
     name: system:authenticated
 ---
-# The `provider` WorkspaceType is referenced from Workspace objects created
+# The `producer` WorkspaceType is referenced from Workspace objects created
 # in other logical clusters; kcp gates that on a `use` verb against the
 # type, in the type's own workspace.
 apiVersion: rbac.authorization.k8s.io/v1
@@ -46,7 +46,7 @@ metadata:
 rules:
   - apiGroups: ["tenancy.kcp.io"]
     resources: ["workspacetypes"]
-    resourceNames: ["provider"]
+    resourceNames: ["producer"]
     verbs: ["use"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

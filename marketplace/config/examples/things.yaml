@@ -52,6 +52,7 @@ metadata:
     # what grants `bind` to strangers.
     marketplace.platform.kcp.io/publish: "true"
     marketplace.platform.kcp.io/display-name: Things as a service
+    marketplace.platform.kcp.io/instructions: things-instructions
     marketplace.platform.kcp.io/description: One Thing per workspace, batteries included.
 spec:
   resources:
@@ -60,7 +61,7 @@ spec:
       schema: v1alpha1.things.acme.example
       storage:
         crd: {}
-  # The consent form. defaultSelector is the scope the provider suggests
+  # The consent form. defaultSelector is the scope the producer suggests
   # for a claim; the catalog carries it through as the offering's
   # matchLabels, and a consumer can narrow further on their own binding.
   permissionClaims:

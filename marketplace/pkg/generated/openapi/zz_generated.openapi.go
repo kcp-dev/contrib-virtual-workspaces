@@ -22,10 +22,10 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.CatalogOffering":     schema_sdk_apis_marketplace_v1alpha1_CatalogOffering(ref),
 		"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.CatalogOfferingList": schema_sdk_apis_marketplace_v1alpha1_CatalogOfferingList(ref),
 		"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.OfferingClaim":       schema_sdk_apis_marketplace_v1alpha1_OfferingClaim(ref),
-		"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.Provider":            schema_sdk_apis_marketplace_v1alpha1_Provider(ref),
-		"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.ProviderList":        schema_sdk_apis_marketplace_v1alpha1_ProviderList(ref),
-		"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.ProviderSpec":        schema_sdk_apis_marketplace_v1alpha1_ProviderSpec(ref),
-		"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.ProviderStatus":      schema_sdk_apis_marketplace_v1alpha1_ProviderStatus(ref),
+		"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.Producer":            schema_sdk_apis_marketplace_v1alpha1_Producer(ref),
+		"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.ProducerList":        schema_sdk_apis_marketplace_v1alpha1_ProducerList(ref),
+		"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.ProducerSpec":        schema_sdk_apis_marketplace_v1alpha1_ProducerSpec(ref),
+		"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.ProducerStatus":      schema_sdk_apis_marketplace_v1alpha1_ProducerStatus(ref),
 		v1.APIGroup{}.OpenAPIModelName():                  schema_pkg_apis_meta_v1_APIGroup(ref),
 		v1.APIGroupList{}.OpenAPIModelName():              schema_pkg_apis_meta_v1_APIGroupList(ref),
 		v1.APIResource{}.OpenAPIModelName():               schema_pkg_apis_meta_v1_APIResource(ref),
@@ -87,7 +87,7 @@ func schema_sdk_apis_marketplace_v1alpha1_CatalogOffering(ref common.ReferenceCa
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
-				Description: "CatalogOffering is the virtual, read-only view of one offering as the marketplace virtual workspace serves it: a published APIExport joined with the Provider record whose workspace it lives in, named \"<provider>.<export>\". It carries everything needed to author the APIBinding that enabling means — the export, the workspace path it lives at, and its claims, identity hashes included. Reading the catalog is reading the consent form.",
+				Description: "CatalogOffering is the virtual, read-only view of one offering as the marketplace virtual workspace serves it: a published APIExport joined with the Producer record whose workspace it lives in, named \"<producer>.<export>\". It carries everything needed to author the APIBinding that enabling means — the export, the workspace path it lives at, and its claims, identity hashes included. Reading the catalog is reading the consent form.",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
 					"kind": {
@@ -110,9 +110,9 @@ func schema_sdk_apis_marketplace_v1alpha1_CatalogOffering(ref common.ReferenceCa
 							Ref:     ref(v1.ObjectMeta{}.OpenAPIModelName()),
 						},
 					},
-					"provider": {
+					"producer": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Provider is the catalog Provider record's name.",
+							Description: "Producer is the catalog Producer record's name.",
 							Default:     "",
 							Type:        []string{"string"},
 							Format:      "",
@@ -120,7 +120,7 @@ func schema_sdk_apis_marketplace_v1alpha1_CatalogOffering(ref common.ReferenceCa
 					},
 					"offering": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Offering is the name of the published APIExport in the provider's workspace — the offering and the export are the same object.",
+							Description: "Offering is the name of the published APIExport in the producer's workspace — the offering and the export are the same object.",
 							Default:     "",
 							Type:        []string{"string"},
 							Format:      "",
@@ -180,8 +180,30 @@ func schema_sdk_apis_marketplace_v1alpha1_CatalogOffering(ref common.ReferenceCa
 							Format:      "",
 						},
 					},
+					"docsURL": {
+						SchemaProps: spec.SchemaProps{
+							Description: "DocsURL links to the producer's own documentation, if they gave one.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"instructions": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Instructions is the producer's \"how to use this\", keyed by section. Static text with {{variables}} the console fills in; see AnnotationInstructions.",
+							Type:        []string{"object"},
+							AdditionalProperties: &spec.SchemaOrBool{
+								Allows: true,
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Type:   []string{"string"},
+										Format: "",
+									},
+								},
+							},
+						},
+					},
 				},
-				Required: []string{"provider", "offering", "ready"},
+				Required: []string{"producer", "offering", "ready"},
 			},
 		},
 		Dependencies: []string{
@@ -281,7 +303,7 @@ func schema_sdk_apis_marketplace_v1alpha1_OfferingClaim(ref common.ReferenceCall
 					},
 					"matchLabels": {
 						SchemaProps: spec.SchemaProps{
-							Description: "MatchLabels is the scope the provider suggests for this claim, from the claim's defaultSelector. Empty means the claim covers every object of that resource, which is what a consumer accepts by default.",
+							Description: "MatchLabels is the scope the producer suggests for this claim, from the claim's defaultSelector. Empty means the claim covers every object of that resource, which is what a consumer accepts by default.",
 							Type:        []string{"object"},
 							AdditionalProperties: &spec.SchemaOrBool{
 								Allows: true,
@@ -301,11 +323,11 @@ func schema_sdk_apis_marketplace_v1alpha1_OfferingClaim(ref common.ReferenceCall
 	}
 }
 
-func schema_sdk_apis_marketplace_v1alpha1_Provider(ref common.ReferenceCallback) common.OpenAPIDefinition {
+func schema_sdk_apis_marketplace_v1alpha1_Producer(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
-				Description: "Provider is the registration record: it says which workspace is allowed to publish offerings under this name. It lives in the catalog workspace and grants nothing by existing — the reach into a provider workspace comes from the marketplace-publish binding there, never from this record.",
+				Description: "Producer is the registration record: it says which workspace is allowed to publish offerings under this name. It lives in the catalog workspace and grants nothing by existing — the reach into a producer workspace comes from the marketplace-publish binding there, never from this record.",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
 					"kind": {
@@ -331,13 +353,13 @@ func schema_sdk_apis_marketplace_v1alpha1_Provider(ref common.ReferenceCallback)
 					"spec": {
 						SchemaProps: spec.SchemaProps{
 							Default: map[string]interface{}{},
-							Ref:     ref("github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.ProviderSpec"),
+							Ref:     ref("github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.ProducerSpec"),
 						},
 					},
 					"status": {
 						SchemaProps: spec.SchemaProps{
 							Default: map[string]interface{}{},
-							Ref:     ref("github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.ProviderStatus"),
+							Ref:     ref("github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.ProducerStatus"),
 						},
 					},
 				},
@@ -345,15 +367,15 @@ func schema_sdk_apis_marketplace_v1alpha1_Provider(ref common.ReferenceCallback)
 			},
 		},
 		Dependencies: []string{
-			"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.ProviderSpec", "github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.ProviderStatus", v1.ObjectMeta{}.OpenAPIModelName()},
+			"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.ProducerSpec", "github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.ProducerStatus", v1.ObjectMeta{}.OpenAPIModelName()},
 	}
 }
 
-func schema_sdk_apis_marketplace_v1alpha1_ProviderList(ref common.ReferenceCallback) common.OpenAPIDefinition {
+func schema_sdk_apis_marketplace_v1alpha1_ProducerList(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
-				Description: "ProviderList is the list form of Provider.",
+				Description: "ProducerList is the list form of Producer.",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
 					"kind": {
@@ -382,7 +404,7 @@ func schema_sdk_apis_marketplace_v1alpha1_ProviderList(ref common.ReferenceCallb
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
-										Ref: ref("github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.Provider"),
+										Ref: ref("github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.Producer"),
 									},
 								},
 							},
@@ -393,20 +415,20 @@ func schema_sdk_apis_marketplace_v1alpha1_ProviderList(ref common.ReferenceCallb
 			},
 		},
 		Dependencies: []string{
-			"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.Provider", v1.ListMeta{}.OpenAPIModelName()},
+			"github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1.Producer", v1.ListMeta{}.OpenAPIModelName()},
 	}
 }
 
-func schema_sdk_apis_marketplace_v1alpha1_ProviderSpec(ref common.ReferenceCallback) common.OpenAPIDefinition {
+func schema_sdk_apis_marketplace_v1alpha1_ProducerSpec(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
-				Description: "ProviderSpec is the desired state of a Provider.",
+				Description: "ProducerSpec is the desired state of a Producer.",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
 					"displayName": {
 						SchemaProps: spec.SchemaProps{
-							Description: "DisplayName is the human name of the provider, shown in the catalog.",
+							Description: "DisplayName is the human name of the producer, shown in the catalog.",
 							Default:     "",
 							Type:        []string{"string"},
 							Format:      "",
@@ -429,7 +451,7 @@ func schema_sdk_apis_marketplace_v1alpha1_ProviderSpec(ref common.ReferenceCallb
 					},
 					"workspacePath": {
 						SchemaProps: spec.SchemaProps{
-							Description: "WorkspacePath is the canonical path of the provider's own workspace, for mode external. Ignored for mode provisioned, where the operator computes it.",
+							Description: "WorkspacePath is the canonical path of the producer's own workspace, for mode external. Ignored for mode provisioned, where the operator computes it.",
 							Type:        []string{"string"},
 							Format:      "",
 						},
@@ -441,11 +463,11 @@ func schema_sdk_apis_marketplace_v1alpha1_ProviderSpec(ref common.ReferenceCallb
 	}
 }
 
-func schema_sdk_apis_marketplace_v1alpha1_ProviderStatus(ref common.ReferenceCallback) common.OpenAPIDefinition {
+func schema_sdk_apis_marketplace_v1alpha1_ProducerStatus(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
-				Description: "ProviderStatus is the observed state of a Provider.",
+				Description: "ProducerStatus is the observed state of a Producer.",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
 					"phase": {
@@ -469,21 +491,21 @@ func schema_sdk_apis_marketplace_v1alpha1_ProviderStatus(ref common.ReferenceCal
 					},
 					"workspacePath": {
 						SchemaProps: spec.SchemaProps{
-							Description: "WorkspacePath is the canonical path of the provider's workspace — computed for provisioned, copied from spec for external. Offerings bind against it.",
+							Description: "WorkspacePath is the canonical path of the producer's workspace — computed for provisioned, copied from spec for external. Offerings bind against it.",
 							Type:        []string{"string"},
 							Format:      "",
 						},
 					},
 					"workspaceCluster": {
 						SchemaProps: spec.SchemaProps{
-							Description: "WorkspaceCluster is the logical cluster backing the provider's workspace. For external providers it is learned when the first Offering is published from that workspace.",
+							Description: "WorkspaceCluster is the logical cluster backing the producer's workspace. For external producers it is learned when the first Offering is published from that workspace.",
 							Type:        []string{"string"},
 							Format:      "",
 						},
 					},
 					"url": {
 						SchemaProps: spec.SchemaProps{
-							Description: "URL is the direct address of the provider's workspace, when known.",
+							Description: "URL is the direct address of the producer's workspace, when known.",
 							Type:        []string{"string"},
 							Format:      "",
 						},

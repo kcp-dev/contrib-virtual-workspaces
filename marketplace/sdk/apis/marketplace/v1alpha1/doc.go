@@ -17,7 +17,7 @@ limitations under the License.
 // Package v1alpha1 holds the API types for the marketplace component
 // (group marketplace.platform.kcp.io).
 //
-// One persisted, cluster-scoped kind: Provider, the registration record,
+// One persisted, cluster-scoped kind: Producer, the registration record,
 // in the catalog workspace. One virtual kind: CatalogOffering, served
 // read-only by the marketplace virtual workspace — the catalog as users
 // browse it.

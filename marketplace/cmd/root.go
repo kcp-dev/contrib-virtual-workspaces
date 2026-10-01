@@ -33,7 +33,7 @@ func Execute() error {
 
 	root := &cobra.Command{
 		Use:           "marketplace-vw",
-		Short:         "A marketplace for kcp: providers, offerings and enablements as exports and bindings",
+		Short:         "A marketplace for kcp: producers, offerings and enablements as exports and bindings",
 		SilenceUsage:  true,
 		SilenceErrors: false,
 	}

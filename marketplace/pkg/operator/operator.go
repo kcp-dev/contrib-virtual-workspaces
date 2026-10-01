@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package operator reconciles the marketplace API into provider
+// Package operator reconciles the marketplace API into producer
 // workspaces and bind grants.
 //
 // It runs one manager per APIExport with schemas, and holds one client for
@@ -22,12 +22,12 @@ limitations under the License.
 // write happens through exactly one claim someone accepted.
 //
 //	catalog      Providers, in the catalog workspace.
-//	publish      APIExports, in each provider workspace; materializes the
+//	publish      APIExports, in each producer workspace; materializes the
 //	             per-export `bind` grant that publishing means. It reads
 //	             those exports through a claim and never writes to them —
-//	             an offering is a provider's own object, annotated.
-//	provisioner  (client only) creates provider workspaces under the
-//	             providers parent.
+//	             an offering is a producer's own object, annotated.
+//	provisioner  (client only) creates producer workspaces under the
+//	             producers parent.
 //
 // The operator never touches a consumer workspace: enabling an offering is
 // a plain kcp APIBinding the consumer creates themselves, authorized by
@@ -75,7 +75,7 @@ const requeueWhilePending = 3 * time.Second
 
 // finalizer marks objects whose materialized side effects must be removed
 // before the object may go. It is used only on Provider records, which the
-// marketplace owns — never on a provider's own APIExport.
+// marketplace owns — never on a producer's own APIExport.
 const finalizer = marketplacev1alpha1.GroupName + "/cleanup"
 
 // requeueWhileUnregistered is the slower beat for a published export whose
@@ -97,9 +97,9 @@ type Options struct {
 	ExportsPath string
 	// CatalogPath is the workspace Provider records live in.
 	CatalogPath string
-	// ProvidersPath is the workspace provisioned provider workspaces are
+	// ProducersPath is the workspace provisioned producer workspaces are
 	// created under.
-	ProvidersPath string
+	ProducersPath string
 	// BindUsers and BindGroups are the subjects the per-offering `bind`
 	// grants name: who may enable a published offering. Both empty means
 	// the system:authenticated group — mirroring this repo's bind-RBAC
@@ -140,8 +140,8 @@ func Run(ctx context.Context, opts Options) error {
 	if opts.CatalogPath == "" {
 		return fmt.Errorf("catalog path is required; it is the workspace Provider records live in")
 	}
-	if opts.ProvidersPath == "" {
-		return fmt.Errorf("providers path is required; it is the workspace provider workspaces are created under")
+	if opts.ProducersPath == "" {
+		return fmt.Errorf("producers path is required; it is the workspace producer workspaces are created under")
 	}
 	opts.defaults()
 
@@ -149,9 +149,9 @@ func Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return fmt.Errorf("resolve the logical cluster of %s (has `marketplace-vw init` run?): %w", opts.CatalogPath, err)
 	}
-	providersCluster, err := resolveCluster(opts.RestConfig, opts.ProvidersPath)
+	producersCluster, err := resolveCluster(opts.RestConfig, opts.ProducersPath)
 	if err != nil {
-		return fmt.Errorf("resolve the logical cluster of %s (has `marketplace-vw init` run?): %w", opts.ProvidersPath, err)
+		return fmt.Errorf("resolve the logical cluster of %s (has `marketplace-vw init` run?): %w", opts.ProducersPath, err)
 	}
 
 	bindUsers, bindGroups := opts.BindUsers, opts.BindGroups
@@ -176,21 +176,21 @@ func Run(ctx context.Context, opts Options) error {
 	r := &reconcilers{
 		m:                m,
 		exportsPath:      opts.ExportsPath,
-		providersPath:    opts.ProvidersPath,
+		producersPath:    opts.ProducersPath,
 		catalogCluster:   multicluster.ClusterName(catalogCluster),
-		providersCluster: multicluster.ClusterName(providersCluster),
+		producersCluster: multicluster.ClusterName(producersCluster),
 		bindUsers:        bindUsers,
 		bindGroups:       bindGroups,
 		logger:           logger,
 	}
 
 	if err := mcbuilder.ControllerManagedBy(m.catalog).
-		Named("marketplace-provider").
-		For(&marketplacev1alpha1.Provider{}).
-		Complete(mcreconcile.Func(r.reconcileProvider)); err != nil {
-		return fmt.Errorf("build provider controller: %w", err)
+		Named("marketplace-producer").
+		For(&marketplacev1alpha1.Producer{}).
+		Complete(mcreconcile.Func(r.reconcileProducer)); err != nil {
+		return fmt.Errorf("build producer controller: %w", err)
 	}
-	// Every APIExport in every provider workspace comes through here,
+	// Every APIExport in every producer workspace comes through here,
 	// because the annotation that publishes one is on the export itself:
 	// there is no narrower thing to watch, and watching the exports is how
 	// un-publishing is noticed at all.
@@ -202,7 +202,7 @@ func Run(ctx context.Context, opts Options) error {
 	}
 	logger.Info("marketplace operator running",
 		"catalog", opts.CatalogPath+" ("+catalogCluster+")",
-		"providersParent", opts.ProvidersPath+" ("+providersCluster+")",
+		"providersParent", opts.ProducersPath+" ("+producersCluster+")",
 		"bindUsers", bindUsers, "bindGroups", bindGroups)
 
 	errs := make(chan error, 3)
@@ -250,11 +250,11 @@ func newManager(cfg *rest.Config, slice string, sch *runtime.Scheme, logger logr
 type reconcilers struct {
 	m             *managers
 	exportsPath   string
-	providersPath string
-	// catalogCluster is where Provider records live; providersCluster is
-	// where provisioned provider workspaces are created.
+	producersPath string
+	// catalogCluster is where Provider records live; producersCluster is
+	// where provisioned producer workspaces are created.
 	catalogCluster   multicluster.ClusterName
-	providersCluster multicluster.ClusterName
+	producersCluster multicluster.ClusterName
 	// bindUsers/bindGroups are the subjects the per-offering bind grants
 	// name: who may enable a published offering.
 	bindUsers  []string

@@ -85,9 +85,11 @@ front-proxy, and the question never arises.
 
 | | |
 |---|---|
+| **Welcome** | first run: an identity that belongs to nothing gets a tenant and a project, in that order |
 | **Tenants** | the tenants you belong to and your role in each; creating one |
 | **A tenant** | one tenant managed: the projects in it, your role, and adding a project |
-| **Service Catalog** | the offerings, and enabling one into the selected project |
+| **A producer** | one enabled producer in this project: what it is, how to use it, what it serves |
+| **Producers** | what you could enable, and enabling one into the selected project (bottom of the sidebar, with the API Explorer) |
 | **A provider's resource** | whatever an enabled offering serves: list, create, edit and delete it |
 | **API Explorer** | discovery for the selected workspace: which groups are served, which kinds, and the objects |
 | **Profile** | the identity the servers see — the username a Membership has to name |
@@ -108,6 +110,56 @@ what you belong to and creates one, and each tenant has its own page
 (`/tenants/<name>`) with the projects inside it and the button that adds
 another. That page is the only way into a tenant that has no projects
 yet — nothing about it is selectable, so nothing else would reach it.
+
+## First run
+
+Having no project is the one state this app cannot show anything useful
+in, because every other screen is relative to one — whether that is an
+identity belonging to nothing at all, or one in a tenant nobody has added
+a project to. Both land on **Welcome** rather than on a set of empty
+panels.
+
+Welcome renders inside the normal frame rather than as a page beside it: a
+first run is still a session, so the identity, Tenants and Sign out stay
+where they always are, and the project picker shows "Get started →"
+instead of pretending there is something to pick.
+
+It reads left to right — a stepper across the top, the form on the left,
+and on the right a drawing of what is being built. The drawing earns its
+place by showing the one thing the words cannot: that the outer box is a
+record store nobody enters, and that the arrow from *you* stops at the
+project inside it. People reasonably expect to work "in" an account, and
+this is the model's one genuinely surprising shape. It asks for the two things that have
+to exist, in order, and says what each is for: a tenant (the account that
+holds projects and decides who may reach them) and then a project (the
+workspace you actually work in).
+
+Both steps are requests to the virtual workspace, not writes: nobody can
+create a tenant record or reach into a tenant workspace themselves. And
+both **wait for the thing to become usable rather than for the call to
+return** — a tenant is not usable until the operator has provisioned its
+workspace and seeded the admin grant, and a project is not usable until it
+has an endpoint. The wizard polls the review for exactly those two facts,
+which is also why it can tell you the honest thing if provisioning stalls.
+
+The redirect only happens when the review *succeeded* and came back empty.
+An error means we do not know what the person has, which is not the same as
+knowing they have nothing.
+
+## What a producer can tell you
+
+The sidebar's *Enabled* section lists producers, one entry each, and lands
+on the producer's page rather than on a table for whichever kind it serves
+first. That page shows the producer's own **instructions** — setup for
+Claude Code, Codex, Cursor, whatever they wrote — as tabs, with
+`{{variables}}` already filled in for you (the server, your project, your
+identity), so a snippet is copy-and-run. The content comes from a
+ConfigMap in the producer's workspace, rendered as elements rather than
+HTML: a producer can write a code block, not a script. The marketplace
+README has the format and the variable list.
+
+An API-shaped producer may ship none, and that is fine: its "how to use
+it" is the tables, listed under *Serves*.
 
 ## Generic CRUD, and where the columns come from
 

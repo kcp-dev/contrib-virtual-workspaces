@@ -16,7 +16,7 @@ limitations under the License.
 
 // Package provider populates the marketplace directory: Providers from the
 // catalog tier's export, offerings from the APIExports published in each
-// provider workspace — the same multicluster discovery the operator runs,
+// producer workspace — the same multicluster discovery the operator runs,
 // but read-only into the in-memory directory the virtual workspace answers
 // from.
 package provider
@@ -35,6 +35,7 @@ import (
 	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
 	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -54,12 +55,12 @@ import (
 	marketplacev1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1"
 )
 
-// Options configures the directory provider.
+// Options configures the directory producer.
 type Options struct {
 	// RestConfig reaches the kcp shard hosting the marketplace APIExports.
 	RestConfig *rest.Config
 	// CatalogSlice serves Providers; PublishSlice reaches the APIExports
-	// in provider workspaces.
+	// in producer workspaces.
 	CatalogSlice string
 	PublishSlice string
 }
@@ -112,19 +113,19 @@ func Run(ctx context.Context, opts Options, dir *directory.Directory) error {
 	}
 
 	if err := mcbuilder.ControllerManagedBy(catalog).
-		Named("marketplace-vw-provider").
-		For(&marketplacev1alpha1.Provider{}).
+		Named("marketplace-vw-producer").
+		For(&marketplacev1alpha1.Producer{}).
 		Complete(mcreconcile.Func(func(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
 			key := directory.Key{Cluster: string(req.ClusterName), Name: req.Name}
-			var p marketplacev1alpha1.Provider
+			var p marketplacev1alpha1.Producer
 			if err := getFrom(ctx, catalog, req, &p); err != nil {
 				if apierrors.IsNotFound(err) {
-					dir.RemoveProvider(key)
+					dir.RemoveProducer(key)
 					return ctrl.Result{}, nil
 				}
 				return ctrl.Result{}, err
 			}
-			dir.UpsertProvider(key, directory.Provider{
+			dir.UpsertProducer(key, directory.Producer{
 				DisplayName:      p.Spec.DisplayName,
 				Description:      p.Spec.Description,
 				WorkspacePath:    p.Status.WorkspacePath,
@@ -133,11 +134,11 @@ func Run(ctx context.Context, opts Options, dir *directory.Directory) error {
 			})
 			return ctrl.Result{}, nil
 		})); err != nil {
-		return fmt.Errorf("build provider mirror: %w", err)
+		return fmt.Errorf("build producer mirror: %w", err)
 	}
 
 	// An offering is an APIExport that says it is one. Every export in
-	// every provider workspace is mirrored or dropped by that annotation
+	// every producer workspace is mirrored or dropped by that annotation
 	// alone, so un-publishing takes an entry off the catalog exactly as
 	// deleting the export does.
 	if err := mcbuilder.ControllerManagedBy(publish).
@@ -159,12 +160,14 @@ func Run(ctx context.Context, opts Options, dir *directory.Directory) error {
 			}
 			card := offering.From(&export)
 			dir.UpsertOffering(key, directory.Offering{
-				DisplayName:  card.DisplayName,
-				Description:  card.Description,
-				Export:       export.Name,
-				Revision:     card.Revision,
-				Claims:       card.Claims,
-				IdentityHash: card.IdentityHash,
+				DisplayName:     card.DisplayName,
+				Description:     card.Description,
+				Export:          export.Name,
+				Revision:        card.Revision,
+				Claims:          card.Claims,
+				IdentityHash:    card.IdentityHash,
+				DocsURL:         card.DocsURL,
+				InstructionsRef: card.InstructionsRef,
 				// Ready means a consumer can act on this entry: kcp has
 				// given the export its identity. Whether a Provider record
 				// names this workspace is the other half, and the
@@ -174,6 +177,30 @@ func Run(ctx context.Context, opts Options, dir *directory.Directory) error {
 			return ctrl.Result{}, nil
 		})); err != nil {
 		return fmt.Errorf("build offering mirror: %w", err)
+	}
+
+	// Instructions: ConfigMaps in producer workspaces, mirrored whole. Every
+	// ConfigMap the export's claim can see comes through here, and the
+	// directory keeps all of them keyed by name — cheap, and it means a
+	// producer editing their instructions needs no re-reconcile of the
+	// export that points at them.
+	if err := mcbuilder.ControllerManagedBy(publish).
+		Named("marketplace-vw-instructions").
+		For(&corev1.ConfigMap{}).
+		Complete(mcreconcile.Func(func(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
+			key := directory.Key{Cluster: string(req.ClusterName), Name: req.Name}
+			var cm corev1.ConfigMap
+			if err := getFrom(ctx, publish, req, &cm); err != nil {
+				if apierrors.IsNotFound(err) {
+					dir.RemoveInstructions(key)
+					return ctrl.Result{}, nil
+				}
+				return ctrl.Result{}, err
+			}
+			dir.UpsertInstructions(key, cm.Data)
+			return ctrl.Result{}, nil
+		})); err != nil {
+		return fmt.Errorf("build instructions mirror: %w", err)
 	}
 
 	if err := catalog.GetLocalManager().Add(manager.RunnableFunc(func(ctx context.Context) error {

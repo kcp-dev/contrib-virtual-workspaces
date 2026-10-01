@@ -41,16 +41,110 @@ Tilt's UI is at http://localhost:10350. Resources come up in dependency
 order: kcp (operator, shards, front-proxy) → `kcp-admin extract` → `dex` →
 per component `build` → `init` → `operator` + `vw` → `tenancy-seed`.
 
+Everything is reached through one port on the host, `8443`, which the
+`ingress-forward` resource keeps pointed at the gateway. It is a
+`serve_cmd` so Tilt restarts it, and it re-resolves the gateway Service on
+each attempt — the Service name carries a hash that changes when the
+Gateway is recreated. Worth knowing because losing that forward makes
+every kubeconfig, the UI and the CLI fail at once, which looks like the
+components being broken rather than the address being gone.
+
+### The dex certificate, and why it matters
+
+dex serves a self-signed certificate, and *changing* it is expensive in two
+directions that are easy to mistake for component failures:
+
+- a browser will not talk to a self-signed issuer until someone has visited
+  it once and accepted the warning, and that acceptance is **per
+  certificate** — so a new one makes the console's Sign in button fail with
+  nothing but `Failed to fetch` in the console;
+- dex reads its certificate once, at **boot**, so a new one in the secret
+  leaves dex serving the old one while every OIDC validator has mounted the
+  new CA. They then cannot fetch dex's discovery document at all, their
+  authenticator never initialises, and **every** token gets a 401 —
+  including a freshly minted one, which is the tell.
+
+Both are handled now. `dex-pki.sh` treats the cluster's `dex-tls` secret as
+the source of truth and `.tilt/dex` as a cache of it, so wiping `.tilt` no
+longer changes the certificate — only losing the cluster does. And the
+certificate's fingerprint is an annotation on the dex pod template, so a
+certificate that really is new rolls dex with it.
+
+If the console's Sign in does fail, it now says so in those terms and links
+the issuer to accept once, rather than printing the URL as decoration.
+
 Knobs, all optional:
 
 | Variable | Effect |
 |---|---|
 | `KCP_DIR` | where the kcp checkout lives (default `../kcp`) |
 | `KCP_STATIC=false` | build kcp from that checkout instead of running published images |
-| `TENANCY_ENABLED=false`, `MARKETPLACE_ENABLED=false` | skip a component |
+| `TENANCY_ENABLED=false`, `MARKETPLACE_ENABLED=false`, `ACCESS_ENABLED=false`, `MCP_ENABLED=false` | skip a component |
 | `DEX_ENABLED=false` | skip the identity provider |
+| `PKI_VALID_DAYS` | development certificate lifetime (default 365) |
 | `SEED_ENABLED=false` | skip the demo tenancy data |
+| `MCP_WORKSPACE` | where mcp's export lives (default `root:mcp:controllers`) |
 
+
+### The modules
+
+Four virtual workspaces come up the same way — an image, a `VirtualWorkspace`
+object the operator turns into a Deployment and Service, and a front-proxy
+path mapping — and differ only in what they need to start:
+
+| Module | Path | Bootstraps | Notes |
+|---|---|---|---|
+| `tenancy` | `/services/tenancy` | four APIExports, three tiers | plus a local operator |
+| `marketplace` | `/services/marketplace` | three APIExports | plus a local operator |
+| `access` | `/services/access` | one APIExport + endpoint slice | separate `access-vw` / `access-vw-init` binaries |
+| `mcp` | `/services/mcp` | one APIExport | reads the access VW; **is a marketplace offering** |
+
+**mcp is the interesting one, because enabling it is a marketplace
+offering.** It is also the case that shows what an offering can be when it
+is not an API.
+
+Behind the front-proxy a caller's bearer token is consumed by the proxy and
+replaced with identity headers, so there is no token left for mcp to
+replay: it acts by *impersonating* the caller, and kcp authorizes every
+request as them. That needs `impersonate` — and deliberately nothing else,
+since everything mcp can do it does as somebody else. kcp's RBAC is per
+logical cluster and does not inherit down the tree, so that grant has to
+exist in each workspace that wants MCP.
+
+Which is exactly an enablement. So mcp's APIExport serves one small report
+kind and *claims* `clusterroles` and `clusterrolebindings`: binding it is
+the consent, `mcp operator` spends those claims on the single impersonation
+grant, and deleting the binding revokes the claims and with them the
+operator's reach into that workspace. Consent and capability are the same
+fact.
+
+Publish it to the catalog once both components are up:
+
+```sh
+tilt trigger mcp-offering     # registers root:mcp:controllers as a producer
+```
+
+Then it is an ordinary offering — enable it in a project from the UI's
+Service Catalog, or:
+
+```sh
+bin/contribctl offers
+bin/contribctl enable mcp.mcp
+
+# where to point a client, reported back in your own workspace
+kubectl --server https://kcp.localhost:8443/clusters/<project> get mcpendpoints
+# NAME   URL                                        PHASE   AGE
+# mcp    https://kcp.localhost:8443/services/mcp    Ready   30s
+```
+
+The consent form is worth reading before you click Enable: the catalog
+entry says this offering wants `clusterroles` and `clusterrolebindings` in
+your project, which is the truth about what enabling MCP means.
+
+Note that `access` runs **without** `--apiexport-endpointslice` here. That
+flag restricts it to workspaces which bind its own export, which would make
+enabling MCP two bindings instead of one; unrestricted, it indexes whatever
+its kubeconfig sees and a caller's own RBAC is what narrows the answer.
 
 ### Check it
 
@@ -274,14 +368,14 @@ way.
 ## 5. The marketplace: publish an API, enable it as a user
 
 The marketplace is the other half of the stack, and it composes with
-tenancy without either component naming the other: a provider publishes an
+tenancy without either component naming the other: a producer publishes an
 API, and a consumer — *any* workspace, including the project alice just
 got a kubeconfig for — enables it by creating an ordinary kcp APIBinding.
 
-### Register a provider
+### Register a producer
 
-A `Provider` record in the catalog makes the operator provision a
-workspace with the `provider` WorkspaceType, which carries the
+A `Producer` record in the catalog makes the operator provision a
+workspace with the `producer` WorkspaceType, which carries the
 `marketplace-publish` binding:
 
 ```sh
@@ -290,17 +384,17 @@ CATALOG=https://kcp.localhost:8443/clusters/root:marketplace:catalog
 
 kubectl --kubeconfig $KC --server $CATALOG apply -f - <<'EOF'
 apiVersion: marketplace.platform.kcp.io/v1alpha1
-kind: Provider
+kind: Producer
 metadata:
   name: acme
 spec:
-  displayName: Acme Provider
+  displayName: Acme Producer
   mode: provisioned
 EOF
 
 kubectl --kubeconfig $KC --server $CATALOG \
-  get providers acme -o jsonpath='{.status.phase} {.status.workspacePath}'
-# Ready root:marketplace:providers:acme
+  get producers acme -o jsonpath='{.status.phase} {.status.workspacePath}'
+# Ready root:marketplace:producers:acme
 ```
 
 ### Publish an offering
@@ -313,12 +407,12 @@ it never runs on its own, because publishing grants `bind` to every
 authenticated user in this stack. Doing it by hand, once, is worth it the
 first time:
 
-Now act as the provider, inside that workspace. The provider brings their
-own APIExport — the marketplace never defines what a provider serves, only
+Now act as the producer, inside that workspace. The producer brings their
+own APIExport — the marketplace never defines what a producer serves, only
 how it is offered:
 
 ```sh
-PROVIDER=https://kcp.localhost:8443/clusters/root:marketplace:providers:acme
+PROVIDER=https://kcp.localhost:8443/clusters/root:marketplace:producers:acme
 
 kubectl --kubeconfig $KC --server $PROVIDER apply -f - <<'EOF'
 apiVersion: apis.kcp.io/v1alpha1
@@ -393,11 +487,11 @@ kubectl --kubeconfig .tilt/tilt-frontproxy.kubeconfig get --raw \
   "items": [
     {
       "metadata": {"name": "acme.things"},
-      "provider": "acme",
+      "producer": "acme",
       "offering": "things",
       "displayName": "Things as a service",
       "export": "things.acme.example",
-      "workspacePath": "root:marketplace:providers:acme",
+      "workspacePath": "root:marketplace:producers:acme",
       "revision": "",
       "ready": true
     }
@@ -421,7 +515,7 @@ metadata:
 spec:
   reference:
     export:
-      path: root:marketplace:providers:acme
+      path: root:marketplace:producers:acme
       name: things.acme.example
 EOF
 # apibinding.apis.kcp.io/things created
@@ -465,7 +559,7 @@ metadata:
 spec:
   reference:
     export:
-      path: root:marketplace:providers:acme
+      path: root:marketplace:producers:acme
       name: things.acme.example
 EOF
 # Error from server (Forbidden): apibindings.apis.kcp.io is forbidden:
@@ -480,4 +574,4 @@ kubectl --kubeconfig /tmp/bob.kubeconfig get things
 Note what never happened: no component wrote into alice's project, no
 marketplace API or WorkspaceType exists there, and nobody relayed her
 identity. "Who may enable what, where" was answered entirely by kcp, from
-her Membership's RBAC and the provider's `bind` grant.
+her Membership's RBAC and the producer's `bind` grant.

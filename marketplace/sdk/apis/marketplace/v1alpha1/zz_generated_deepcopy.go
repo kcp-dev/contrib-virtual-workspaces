@@ -52,7 +52,7 @@ func (in *OfferingClaim) DeepCopy() *OfferingClaim {
 }
 
 // DeepCopyInto is a deepcopy function, copying the receiver, writing into out. in must be non-nil.
-func (in *Provider) DeepCopyInto(out *Provider) {
+func (in *Producer) DeepCopyInto(out *Producer) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
@@ -60,18 +60,18 @@ func (in *Provider) DeepCopyInto(out *Provider) {
 	out.Status = in.Status
 }
 
-// DeepCopy is a deepcopy function, copying the receiver, creating a new Provider.
-func (in *Provider) DeepCopy() *Provider {
+// DeepCopy is a deepcopy function, copying the receiver, creating a new Producer.
+func (in *Producer) DeepCopy() *Producer {
 	if in == nil {
 		return nil
 	}
-	out := new(Provider)
+	out := new(Producer)
 	in.DeepCopyInto(out)
 	return out
 }
 
 // DeepCopyObject is a deepcopy function, copying the receiver, creating a new runtime.Object.
-func (in *Provider) DeepCopyObject() runtime.Object {
+func (in *Producer) DeepCopyObject() runtime.Object {
 	if c := in.DeepCopy(); c != nil {
 		return c
 	}
@@ -79,31 +79,31 @@ func (in *Provider) DeepCopyObject() runtime.Object {
 }
 
 // DeepCopyInto is a deepcopy function, copying the receiver, writing into out. in must be non-nil.
-func (in *ProviderList) DeepCopyInto(out *ProviderList) {
+func (in *ProducerList) DeepCopyInto(out *ProducerList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
-		*out = make([]Provider, len(*in))
+		*out = make([]Producer, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
 }
 
-// DeepCopy is a deepcopy function, copying the receiver, creating a new ProviderList.
-func (in *ProviderList) DeepCopy() *ProviderList {
+// DeepCopy is a deepcopy function, copying the receiver, creating a new ProducerList.
+func (in *ProducerList) DeepCopy() *ProducerList {
 	if in == nil {
 		return nil
 	}
-	out := new(ProviderList)
+	out := new(ProducerList)
 	in.DeepCopyInto(out)
 	return out
 }
 
 // DeepCopyObject is a deepcopy function, copying the receiver, creating a new runtime.Object.
-func (in *ProviderList) DeepCopyObject() runtime.Object {
+func (in *ProducerList) DeepCopyObject() runtime.Object {
 	if c := in.DeepCopy(); c != nil {
 		return c
 	}
@@ -120,6 +120,13 @@ func (in *CatalogOffering) DeepCopyInto(out *CatalogOffering) {
 		*out = make([]OfferingClaim, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+	if in.Instructions != nil {
+		in, out := &in.Instructions, &out.Instructions
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
 		}
 	}
 }

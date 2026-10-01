@@ -61,7 +61,7 @@ import (
 const (
 	exportsPath   = "root:marketplace:controllers"
 	catalogPath   = "root:marketplace:catalog"
-	providersPath = "root:marketplace:providers"
+	producersPath = "root:marketplace:providers"
 )
 
 // The three exports, by the name their APIBinding takes.
@@ -210,14 +210,14 @@ func createWorkspace(t *testing.T, ctx context.Context, name, typeName, typePath
 	return ws
 }
 
-// registerProvider creates a Provider record in the catalog and, for mode
+// registerProducer creates a Provider record in the catalog and, for mode
 // provisioned, waits for its workspace. Cleaned up with the test.
-func registerProvider(t *testing.T, ctx context.Context, name string, mode marketplacev1alpha1.ProviderMode, workspacePath string) *marketplacev1alpha1.Provider {
+func registerProducer(t *testing.T, ctx context.Context, name string, mode marketplacev1alpha1.ProducerMode, workspacePath string) *marketplacev1alpha1.Producer {
 	t.Helper()
 	catalog := adminClient(t, catalogPath)
-	provider := &marketplacev1alpha1.Provider{
+	provider := &marketplacev1alpha1.Producer{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
-		Spec: marketplacev1alpha1.ProviderSpec{
+		Spec: marketplacev1alpha1.ProducerSpec{
 			DisplayName:   strings.ToUpper(name[:1]) + name[1:],
 			Mode:          mode,
 			WorkspacePath: workspacePath,
@@ -229,9 +229,9 @@ func registerProvider(t *testing.T, ctx context.Context, name string, mode marke
 	t.Cleanup(func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
-		_ = catalog.Delete(cleanupCtx, &marketplacev1alpha1.Provider{ObjectMeta: metav1.ObjectMeta{Name: name}})
+		_ = catalog.Delete(cleanupCtx, &marketplacev1alpha1.Producer{ObjectMeta: metav1.ObjectMeta{Name: name}})
 	})
-	if mode == marketplacev1alpha1.ProviderModeProvisioned {
+	if mode == marketplacev1alpha1.ProducerModeProvisioned {
 		waitFor(t, ctx, "provider "+name+" ready", func(ctx context.Context) (bool, error) {
 			if err := catalog.Get(ctx, client.ObjectKey{Name: name}, provider); err != nil {
 				return false, nil
@@ -397,13 +397,13 @@ func acceptedClaimsFrom(export *apisv1alpha2.APIExport) []apisv1alpha2.Acceptabl
 // bindingFor is the APIBinding enabling an offering means: a plain kcp
 // bind, authored by the consumer, referencing the published export with
 // its claims accepted.
-func bindingFor(name, providerPath string, export *apisv1alpha2.APIExport) *apisv1alpha2.APIBinding {
+func bindingFor(name, producerPath string, export *apisv1alpha2.APIExport) *apisv1alpha2.APIBinding {
 	return &apisv1alpha2.APIBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec: apisv1alpha2.APIBindingSpec{
 			Reference: apisv1alpha2.BindingReference{
 				Export: &apisv1alpha2.ExportBindingReference{
-					Path: providerPath,
+					Path: producerPath,
 					Name: export.Name,
 				},
 			},
@@ -414,9 +414,9 @@ func bindingFor(name, providerPath string, export *apisv1alpha2.APIExport) *apis
 
 // bindOffering enables natively as whoever c authenticates as, and waits
 // for the binding to be bound. Cleaned up with the test.
-func bindOffering(t *testing.T, ctx context.Context, c client.Client, name, providerPath string, export *apisv1alpha2.APIExport) {
+func bindOffering(t *testing.T, ctx context.Context, c client.Client, name, producerPath string, export *apisv1alpha2.APIExport) {
 	t.Helper()
-	binding := bindingFor(name, providerPath, export)
+	binding := bindingFor(name, producerPath, export)
 	waitFor(t, ctx, "binding "+name+" to be accepted", func(ctx context.Context) (bool, error) {
 		err := c.Create(ctx, binding.DeepCopy())
 		return err == nil || apierrors.IsAlreadyExists(err), nil

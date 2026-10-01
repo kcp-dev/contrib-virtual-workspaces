@@ -1,0 +1,244 @@
+# How to use MCP, shown in the console to whoever enables it.
+#
+# Each key is a section; a leading number orders them and is not shown.
+# The text is a small markdown subset — headings, paragraphs, lists,
+# fenced code, `inline code`, [links](https://...) — with {{variables}}
+# the console fills in for the person reading: {{server}} is the
+# front-proxy, {{project}} and {{tenant}} are where they are working,
+# {{user}} is who they are. Nothing here is executed anywhere; it is text
+# rendered as text.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mcp-instructions
+  # ConfigMaps are namespaced; the annotation names only the name, so the
+  # convention is the default namespace.
+  namespace: default
+data:
+  00-overview.md: |
+    # Connecting a client
+
+    MCP is served at `{{server}}/services/mcp`, over streamable HTTP. It
+    signs you in with the same account as this console — the first
+    request answers with an OAuth challenge, your client opens the sign-in
+    page, and from then on every tool call runs as **{{user}}**.
+
+    A session sees exactly the projects your access allows. Right now that
+    includes `{{tenant}}/{{project}}`; enabling MCP in another project adds
+    it to the same session, with no client change.
+
+    ## What the tools are
+
+    The default toolset is `core`, read-only:
+
+    - `list_kcp_workspaces` — the projects you can reach, with their ids.
+    - `list_kcp_apibindings`, `get_kcp_apibinding` — what is enabled in one.
+    - `list_kcp_apiexports`, `get_kcp_apiexport` — what a producer publishes.
+    - `list_resources`, `get_resource` — any object of any bound API, by
+      group, version and resource.
+
+    Every tool takes a `workspace`: the logical cluster id, not the name.
+    This project's is `{{cluster}}`. Writes (`create_resource`,
+    `patch_resource`, `delete_resource`, …) are the `write` toolset, which
+    the operator switches on separately — ask before assuming it is there.
+
+    Pick a client below.
+
+  10-claude-code.md: |
+    # Claude Code
+
+    ## Add the server
+
+    This platform signs you in through `{{issuer}}`, which does not do
+    dynamic client registration — so Claude Code cannot invent a client
+    for itself, and the plain `claude mcp add` ends in *Dynamic Client
+    Registration rejected*. Hand it the public client the console already
+    uses instead, and tell it where the issuer is:
+
+    ```sh
+    claude mcp add-json kcp '{"type":"http","url":"{{server}}/services/mcp","oauth":{"clientId":"{{clientId}}","callbackPort":8000,"authServerMetadataUrl":"{{issuer}}/.well-known/openid-configuration"}}'
+    ```
+
+    No secret: `{{clientId}}` is a public client doing PKCE, and port 8000
+    is a redirect it is registered with. To share the server with everyone
+    working in a repository, add `--scope project` — that writes a
+    `.mcp.json` next to the code, which you commit.
+
+    ## Sign in
+
+    ```sh
+    claude mcp login kcp
+    ```
+
+    opens the browser on the same sign-in page as this console. Or, in a
+    session, type `/mcp`, select the server and choose *Authenticate*.
+    Afterwards `/mcp` lists it as *connected* with its tools. If the
+    browser warns about the certificate first, see the last section.
+
+    ## Use it
+
+    Tools are named `mcp__kcp__<tool>`, and Claude picks them from the
+    description; you just ask. Scope your questions to this project by
+    naming it:
+
+    ```
+    > which kcp workspaces can I see?
+    > in workspace {{cluster}}, which APIs are bound?
+    > list the resources of every bound API in {{cluster}} and summarise them
+    > get apibinding {{binding}} in {{cluster}} and explain its status
+    ```
+
+    If you want a tool called exactly, name it:
+
+    ```
+    > use list_resources on workspace {{cluster}} for group "" version v1 resource configmaps
+    ```
+
+    ## Keep it in the loop
+
+    A `CLAUDE.md` line saves saying it every session:
+
+    ```md
+    My kcp project is {{tenant}}/{{project}}, workspace id {{cluster}}.
+    Use the kcp MCP tools for anything about it; never guess resources, list them.
+    ```
+
+    ## Check or remove
+
+    ```sh
+    claude mcp list          # every server, with its health
+    claude mcp get kcp       # this one, with the URL it was added as
+    claude mcp remove kcp
+    ```
+
+  20-claude-desktop.md: |
+    # Claude Desktop
+
+    Settings → Connectors → *Add custom connector*, then:
+
+    - Name: `kcp`
+    - Remote MCP server URL: `{{server}}/services/mcp`
+
+    Click *Add*, then *Connect*: the sign-in page opens in your browser.
+    Once connected, the tools appear under the connector in any chat.
+
+    Ask as you would in Claude Code — name the workspace id `{{cluster}}`
+    when you mean this project, so the answer is about it and not about
+    the first workspace the tools happen to list.
+
+  30-codex.md: |
+    # Codex
+
+    ## Get a token
+
+    Codex's own OAuth flow needs the issuer to register clients on the
+    fly, which `{{issuer}}` does not do. Sign in with the platform CLI
+    instead and give Codex the token it caches:
+
+    ```sh
+    contribctl login --issuer {{issuer}} --url {{server}}
+    export KCP_MCP_TOKEN=$(jq -r '.[].idToken' ~/.config/tenancyctl/tokens.json | head -1)
+    ```
+
+    The token expires with your session; run both again when Codex starts
+    answering 401.
+
+    ## Add the server
+
+    In `~/.codex/config.toml`:
+
+    ```toml
+    [mcp_servers.kcp]
+    url = "{{server}}/services/mcp"
+    bearer_token_env_var = "KCP_MCP_TOKEN"
+    ```
+
+    Start Codex from a shell where `KCP_MCP_TOKEN` is set. `codex mcp
+    list` shows the server; in a session, `/mcp` shows what is connected
+    and which tools came with it. Older Codex releases only spoke HTTP
+    servers behind a flag; if the server is listed but never connects, add
+    `experimental_use_rmcp_client = true` at the top of the file.
+
+    ## Use it
+
+    Codex calls the tools by itself; name the workspace id so it does not
+    have to ask which project you mean:
+
+    ```
+    › list my kcp workspaces
+    › in kcp workspace {{cluster}}, what APIs are bound and what do they serve?
+    › read the configmaps in workspace {{cluster}} and tell me which look like instructions
+    ```
+
+    An `AGENTS.md` in the repository can carry the context so you do not
+    repeat it:
+
+    ```md
+    The kcp project for this repo is {{tenant}}/{{project}} (workspace {{cluster}}).
+    Use the kcp MCP tools to look things up there rather than guessing.
+    ```
+
+    ## Check or remove
+
+    ```sh
+    codex mcp list
+    codex mcp get kcp
+    codex mcp remove kcp
+    ```
+
+  40-cursor.md: |
+    # Cursor
+
+    In the project you are working on, create `.cursor/mcp.json` — or add
+    to it — with:
+
+    ```json
+    {
+      "mcpServers": {
+        "kcp": {
+          "url": "{{server}}/services/mcp"
+        }
+      }
+    }
+    ```
+
+    Cursor shows the server under *Settings → MCP*, with a sign-in prompt
+    on first use. A global `~/.cursor/mcp.json` works the same way for
+    every project.
+
+  90-troubleshooting.md: |
+    # If it does not connect
+
+    - **Dynamic Client Registration rejected (HTTP 401).** The client tried
+      to register itself, and this platform's issuer does not offer that.
+      Add the server with the pre-registered client as shown for your
+      client above; the plain *add* form cannot work here.
+    - **Sign-in works but tools see no workspaces.** MCP acts as you by
+      impersonation, and that right is granted per project when MCP is
+      enabled there. Check `mcpendpoints/mcp` in the project reports
+      `Ready`.
+    - **A tool is refused.** kcp authorizes every call as you, so a refusal
+      means your own role in that project does not allow it.
+    - **A write tool is missing.** The `write` toolset is off unless the
+      operator enabled it; `core` is read-only by design.
+    - **The browser warns about the certificate at sign-in.** Accept it
+      once at `{{issuer}}` and once at `{{server}}/services/mcp`, and again
+      whenever either is regenerated.
+
+    ## The client refuses the certificate
+
+    This development stack serves self-signed certificates — one for the
+    platform, another for the issuer — and a CLI does not share the
+    browser's exceptions. Build one bundle holding both and hand it to the
+    client. The platform's CA is in any kubeconfig that reaches
+    `{{server}}`; the issuer's is the file dex was started with (in this
+    stack, `.tilt/dex/ca.crt` in the repository):
+
+    ```sh
+    kubectl config view --raw -o jsonpath='{.clusters[0].cluster.certificate-authority-data}' | base64 -d > kcp-bundle.pem
+    cat .tilt/dex/ca.crt >> kcp-bundle.pem
+    export NODE_EXTRA_CA_CERTS=$PWD/kcp-bundle.pem   # Claude Code (Node); start claude from this shell
+    ```
+
+    Codex uses the system trust store: import both certificates there (on
+    macOS, Keychain Access → System → import, then trust each for SSL).

@@ -35,23 +35,23 @@ const (
 	PhaseError Phase = "Error"
 )
 
-// ProviderMode says who owns the provider's workspace.
-type ProviderMode string
+// ProducerMode says who owns the producer's workspace.
+type ProducerMode string
 
 const (
-	// ProviderModeProvisioned means the operator creates the provider's
-	// workspace under the providers parent, with the `provider`
+	// ProducerModeProvisioned means the operator creates the producer's
+	// workspace under the producers parent, with the `producer`
 	// WorkspaceType carrying the publish binding.
-	ProviderModeProvisioned ProviderMode = "provisioned"
-	// ProviderModeExternal means the provider brings their own workspace
+	ProducerModeProvisioned ProducerMode = "provisioned"
+	// ProducerModeExternal means the producer brings their own workspace
 	// (anywhere in kcp) and consents by binding marketplace-publish there
 	// themselves.
-	ProviderModeExternal ProviderMode = "external"
+	ProducerModeExternal ProducerMode = "external"
 )
 
-// Provider is the registration record: it says which workspace is allowed
+// Producer is the registration record: it says which workspace is allowed
 // to publish offerings under this name. It lives in the catalog workspace
-// and grants nothing by existing — the reach into a provider workspace
+// and grants nothing by existing — the reach into a producer workspace
 // comes from the marketplace-publish binding there, never from this
 // record.
 //
@@ -59,19 +59,19 @@ const (
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster
 // +kubebuilder:subresource:status
-type Provider struct {
+type Producer struct {
 	metav1.TypeMeta `json:",inline"`
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec ProviderSpec `json:"spec"`
+	Spec ProducerSpec `json:"spec"`
 	// +optional
-	Status ProviderStatus `json:"status,omitempty"`
+	Status ProducerStatus `json:"status,omitempty"`
 }
 
-// ProviderSpec is the desired state of a Provider.
-type ProviderSpec struct {
-	// DisplayName is the human name of the provider, shown in the catalog.
+// ProducerSpec is the desired state of a Producer.
+type ProducerSpec struct {
+	// DisplayName is the human name of the producer, shown in the catalog.
 	// +kubebuilder:validation:MinLength=1
 	DisplayName string `json:"displayName"`
 	// Description is free text for humans.
@@ -79,16 +79,16 @@ type ProviderSpec struct {
 	Description string `json:"description,omitempty"`
 	// Mode is provisioned or external.
 	// +kubebuilder:validation:Enum=provisioned;external
-	Mode ProviderMode `json:"mode"`
-	// WorkspacePath is the canonical path of the provider's own workspace,
+	Mode ProducerMode `json:"mode"`
+	// WorkspacePath is the canonical path of the producer's own workspace,
 	// for mode external. Ignored for mode provisioned, where the operator
 	// computes it.
 	// +optional
 	WorkspacePath string `json:"workspacePath,omitempty"`
 }
 
-// ProviderStatus is the observed state of a Provider.
-type ProviderStatus struct {
+// ProducerStatus is the observed state of a Producer.
+type ProducerStatus struct {
 	// +optional
 	Phase Phase `json:"phase,omitempty"`
 	// +optional
@@ -97,30 +97,30 @@ type ProviderStatus struct {
 	// provisioned.
 	// +optional
 	Workspace string `json:"workspace,omitempty"`
-	// WorkspacePath is the canonical path of the provider's workspace —
+	// WorkspacePath is the canonical path of the producer's workspace —
 	// computed for provisioned, copied from spec for external. Offerings
 	// bind against it.
 	// +optional
 	WorkspacePath string `json:"workspacePath,omitempty"`
-	// WorkspaceCluster is the logical cluster backing the provider's
-	// workspace. For external providers it is learned when the first
+	// WorkspaceCluster is the logical cluster backing the producer's
+	// workspace. For external producers it is learned when the first
 	// Offering is published from that workspace.
 	// +optional
 	WorkspaceCluster string `json:"workspaceCluster,omitempty"`
-	// URL is the direct address of the provider's workspace, when known.
+	// URL is the direct address of the producer's workspace, when known.
 	// +optional
 	URL string `json:"url,omitempty"`
 }
 
-// ProviderList is the list form of Provider.
+// ProducerList is the list form of Producer.
 //
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:object:root=true
-type ProviderList struct {
+type ProducerList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 
-	Items []Provider `json:"items"`
+	Items []Producer `json:"items"`
 }
 
 // The annotations that publish an APIExport to the marketplace.
@@ -138,7 +138,7 @@ const (
 	// AnnotationPublish opts an APIExport into the catalog. Its value must
 	// be "true"; anything else, or its absence, means not published.
 	//
-	// Publishing is the provider's own act, on their own object, in their
+	// Publishing is the producer's own act, on their own object, in their
 	// own workspace — and removing this annotation revokes the `bind`
 	// grant, which is what takes an offering off the catalog.
 	AnnotationPublish = GroupName + "/publish"
@@ -149,6 +149,21 @@ const (
 
 	// AnnotationDescription is free text for humans.
 	AnnotationDescription = GroupName + "/description"
+
+	// AnnotationDocsURL links to the producer's own documentation.
+	AnnotationDocsURL = GroupName + "/docs-url"
+
+	// AnnotationInstructions names a ConfigMap in the same workspace as the
+	// export whose keys are sections of "how to use this" — one per client
+	// or scenario, written by the producer, shown to a consumer after they
+	// enable it. The content is static text the console renders, with a
+	// small set of {{variables}} it fills in: the server, the consumer's
+	// workspace, their identity. See the marketplace README for the list.
+	//
+	// A ConfigMap rather than more annotations because setup instructions
+	// for several clients are paragraphs and code blocks, not a line —
+	// and a ConfigMap is the one core object made for exactly that.
+	AnnotationInstructions = GroupName + "/instructions"
 )
 
 // OfferingClaim is one permission claim as the catalog shows it: what a
@@ -168,7 +183,7 @@ type OfferingClaim struct {
 	// APIExport, copied from the claim.
 	// +optional
 	IdentityHash string `json:"identityHash,omitempty"`
-	// MatchLabels is the scope the provider suggests for this claim, from
+	// MatchLabels is the scope the producer suggests for this claim, from
 	// the claim's defaultSelector. Empty means the claim covers every
 	// object of that resource, which is what a consumer accepts by
 	// default.
@@ -178,8 +193,8 @@ type OfferingClaim struct {
 
 // CatalogOffering is the virtual, read-only view of one offering as the
 // marketplace virtual workspace serves it: a published APIExport joined
-// with the Provider record whose workspace it lives in, named
-// "<provider>.<export>". It carries everything needed to author the
+// with the Producer record whose workspace it lives in, named
+// "<producer>.<export>". It carries everything needed to author the
 // APIBinding that enabling means — the export, the workspace path it lives
 // at, and its claims, identity hashes included. Reading the catalog is
 // reading the consent form.
@@ -190,9 +205,9 @@ type CatalogOffering struct {
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	// Provider is the catalog Provider record's name.
-	Provider string `json:"provider"`
-	// Offering is the name of the published APIExport in the provider's
+	// Producer is the catalog Producer record's name.
+	Producer string `json:"producer"`
+	// Offering is the name of the published APIExport in the producer's
 	// workspace — the offering and the export are the same object.
 	Offering string `json:"offering"`
 	// DisplayName and Description mirror the offering's card.
@@ -225,6 +240,14 @@ type CatalogOffering struct {
 	Claims []OfferingClaim `json:"claims,omitempty"`
 	// Ready reports whether enabling can currently succeed.
 	Ready bool `json:"ready"`
+	// DocsURL links to the producer's own documentation, if they gave one.
+	// +optional
+	DocsURL string `json:"docsURL,omitempty"`
+	// Instructions is the producer's "how to use this", keyed by section.
+	// Static text with {{variables}} the console fills in; see
+	// AnnotationInstructions.
+	// +optional
+	Instructions map[string]string `json:"instructions,omitempty"`
 }
 
 // CatalogOfferingList is the list form of CatalogOffering.

@@ -17,9 +17,9 @@
 # Publishes the example offerings into a running marketplace.
 #
 # Two workspaces are involved and they are not interchangeable, which is
-# why this is a script rather than one `kubectl apply -f`: the Provider
+# why this is a script rather than one `kubectl apply -f`: the Producer
 # record is registration and belongs to the catalog, while the exports are
-# the offerings themselves and belong to the provider's own workspace —
+# the offerings themselves and belong to the producer's own workspace —
 # which does not exist until the operator has read the record.
 #
 # Idempotent: re-running re-applies, so editing an example and triggering
@@ -35,8 +35,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 kube() { kubectl --kubeconfig "$KUBECONFIG_FILE" --server "$1" "${@:2}"; }
 
-echo "==> registering provider acme in $CATALOG"
-kube "$SERVER/clusters/$CATALOG" apply -f "$HERE/provider.yaml"
+echo "==> registering producer acme in $CATALOG"
+kube "$SERVER/clusters/$CATALOG" apply -f "$HERE/producer.yaml"
 
 # The operator provisions the workspace and reports its path back on the
 # record. Waiting for the path rather than for a phase is deliberate: the
@@ -44,13 +44,13 @@ kube "$SERVER/clusters/$CATALOG" apply -f "$HERE/provider.yaml"
 echo "==> waiting for the operator to provision acme's workspace"
 deadline=$((SECONDS + TIMEOUT))
 while :; do
-  path="$(kube "$SERVER/clusters/$CATALOG" get provider acme \
+  path="$(kube "$SERVER/clusters/$CATALOG" get producer acme \
     -o jsonpath='{.status.workspacePath}' 2>/dev/null || true)"
-  phase="$(kube "$SERVER/clusters/$CATALOG" get provider acme \
+  phase="$(kube "$SERVER/clusters/$CATALOG" get producer acme \
     -o jsonpath='{.status.phase}' 2>/dev/null || true)"
   [ -n "$path" ] && break
   if [ "$SECONDS" -ge "$deadline" ]; then
-    echo "provider acme has no workspace after ${TIMEOUT}s (phase: ${phase:-none})." >&2
+    echo "producer acme has no workspace after ${TIMEOUT}s (phase: ${phase:-none})." >&2
     echo "Is marketplace-operator running?" >&2
     exit 1
   fi
@@ -62,7 +62,7 @@ PROVIDER_WS="$SERVER/clusters/$path"
 
 # The APIExport references a schema by name, so the schema has to land
 # first; both files carry both, in that order.
-for example in things widgets; do
+for example in things things-instructions widgets; do
   echo "==> publishing $example into $path"
   kube "$PROVIDER_WS" apply -f "$HERE/$example.yaml"
 done
@@ -76,7 +76,7 @@ for export_name in things.acme.example widgets.acme.example; do
   while ! kube "$PROVIDER_WS" get clusterrole "marketplace:bind:$export_name" >/dev/null 2>&1; do
     if [ "$SECONDS" -ge "$deadline" ]; then
       echo "no bind grant for $export_name after ${TIMEOUT}s." >&2
-      echo "The operator only grants it for a workspace a Provider record names." >&2
+      echo "The operator only grants it for a workspace a Producer record names." >&2
       exit 1
     fi
     sleep 2

@@ -5,7 +5,7 @@
 //
 // The form is not a replacement for the YAML. A form rendered from JSON
 // Schema has to hold opinions about oneOf, arrays and every
-// x-kubernetes-* extension, and would hold them wrongly for providers
+// x-kubernetes-* extension, and would hold them wrongly for producers
 // nobody has seen. So it covers the scalar fields, names what it is not
 // covering, and the YAML tab is always there and always authoritative for
 // the shape as a whole.

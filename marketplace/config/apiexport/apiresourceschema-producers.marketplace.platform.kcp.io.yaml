@@ -1,22 +1,22 @@
 apiVersion: apis.kcp.io/v1alpha1
 kind: APIResourceSchema
 metadata:
-  name: v260924-7813b03.providers.marketplace.platform.kcp.io
+  name: v261001-fbafaea.producers.marketplace.platform.kcp.io
 spec:
   group: marketplace.platform.kcp.io
   names:
-    kind: Provider
-    listKind: ProviderList
-    plural: providers
-    singular: provider
+    kind: Producer
+    listKind: ProducerList
+    plural: producers
+    singular: producer
   scope: Cluster
   versions:
   - name: v1alpha1
     schema:
       description: |-
-        Provider is the registration record: it says which workspace is allowed
+        Producer is the registration record: it says which workspace is allowed
         to publish offerings under this name. It lives in the catalog workspace
-        and grants nothing by existing — the reach into a provider workspace
+        and grants nothing by existing — the reach into a producer workspace
         comes from the marketplace-publish binding there, never from this
         record.
       properties:
@@ -38,13 +38,13 @@ spec:
         metadata:
           type: object
         spec:
-          description: ProviderSpec is the desired state of a Provider.
+          description: ProducerSpec is the desired state of a Producer.
           properties:
             description:
               description: Description is free text for humans.
               type: string
             displayName:
-              description: DisplayName is the human name of the provider, shown in
+              description: DisplayName is the human name of the producer, shown in
                 the catalog.
               minLength: 1
               type: string
@@ -56,7 +56,7 @@ spec:
               type: string
             workspacePath:
               description: |-
-                WorkspacePath is the canonical path of the provider's own workspace,
+                WorkspacePath is the canonical path of the producer's own workspace,
                 for mode external. Ignored for mode provisioned, where the operator
                 computes it.
               type: string
@@ -65,7 +65,7 @@ spec:
           - mode
           type: object
         status:
-          description: ProviderStatus is the observed state of a Provider.
+          description: ProducerStatus is the observed state of a Producer.
           properties:
             message:
               type: string
@@ -76,7 +76,7 @@ spec:
                 not Ready.
               type: string
             url:
-              description: URL is the direct address of the provider's workspace,
+              description: URL is the direct address of the producer's workspace,
                 when known.
               type: string
             workspace:
@@ -86,13 +86,13 @@ spec:
               type: string
             workspaceCluster:
               description: |-
-                WorkspaceCluster is the logical cluster backing the provider's
-                workspace. For external providers it is learned when the first
+                WorkspaceCluster is the logical cluster backing the producer's
+                workspace. For external producers it is learned when the first
                 Offering is published from that workspace.
               type: string
             workspacePath:
               description: |-
-                WorkspacePath is the canonical path of the provider's workspace —
+                WorkspacePath is the canonical path of the producer's workspace —
                 computed for provisioned, copied from spec for external. Offerings
                 bind against it.
               type: string

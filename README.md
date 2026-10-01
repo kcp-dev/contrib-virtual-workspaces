@@ -13,9 +13,9 @@ virtual workspaces that stand on their own.
 |---|---|---|
 | [access/](access/) | **SelfClusterAccessReview** — "which workspaces can this user access?" in one call | `ghcr.io/kcp-dev/contrib-virtual-workspaces/access-vw` |
 | [mcp/](mcp/) | [Model Context Protocol](https://modelcontextprotocol.io) as a virtual workspace, scoped to what the caller can see (uses the access VW) | `ghcr.io/kcp-dev/contrib-virtual-workspaces/mcp-vw` |
-| [ephemeral/](ephemeral/) | Non-persisted resources: `POST` in, a provider webhook answers, nothing reaches etcd | `ghcr.io/kcp-dev/contrib-virtual-workspaces/ephemeral-vw` |
+| [ephemeral/](ephemeral/) | Non-persisted resources: `POST` in, a producer webhook answers, nothing reaches etcd | `ghcr.io/kcp-dev/contrib-virtual-workspaces/ephemeral-vw` |
 | [tenancy/](tenancy/) | Tenants, projects and memberships as kcp workspaces and RBAC, plus **SelfTenancyReview** — "which tenants am I in?" — and the `tenancyctl` client | `ghcr.io/kcp-dev/contrib-virtual-workspaces/tenancy-vw` |
-| [marketplace/](marketplace/) | Providers and offerings: a read-only catalog, where enabling is a plain kcp `APIBinding` the consumer authors themselves | `ghcr.io/kcp-dev/contrib-virtual-workspaces/marketplace-vw` |
+| [marketplace/](marketplace/) | Producers and offerings: a read-only catalog, where enabling is a plain kcp `APIBinding` the consumer authors themselves | `ghcr.io/kcp-dev/contrib-virtual-workspaces/marketplace-vw` |
 
 Each component's README documents its design, deployment and limits.
 

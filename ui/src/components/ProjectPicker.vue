@@ -46,7 +46,9 @@ const value = computed({
       </optgroup>
     </select>
   </div>
-  <RouterLink v-else-if="!session.loading" to="/tenants" class="text-xs text-muted hover:text-ink">
-    No tenants — create one
+  <!-- Nothing to pick yet: point at the thing that fixes that, not at a
+       list that would also be empty. -->
+  <RouterLink v-else-if="!session.loading" to="/welcome" class="text-xs text-muted hover:text-ink">
+    Get started →
   </RouterLink>
 </template>

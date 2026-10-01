@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // Package server wires the marketplace virtual workspace binary together:
-// the directory, the provider that fills it, and a virtual-workspace root
+// the directory, the producer that fills it, and a virtual-workspace root
 // apiserver serving the catalog read-only at /services/marketplace behind
 // kcp's front-proxy.
 package server
@@ -59,7 +59,7 @@ func retargetHost(host, workspacePath string) string {
 	return strings.TrimSuffix(host, "/") + "/clusters/" + workspacePath
 }
 
-// Run starts the directory provider and serves the marketplace virtual
+// Run starts the directory producer and serves the marketplace virtual
 // workspace until ctx is cancelled.
 func Run(ctx context.Context, o *Options) error {
 	if err := o.Complete(); err != nil {
@@ -88,7 +88,7 @@ func Run(ctx context.Context, o *Options) error {
 		}, dir)
 	}()
 
-	klog.InfoS("marketplace directory provider running",
+	klog.InfoS("marketplace directory producer running",
 		"catalogSlice", o.CatalogSlice, "publishSlice", o.PublishSlice,
 		"kubeconfig", o.Kubeconfig, "host", restConfig.Host)
 
@@ -147,11 +147,11 @@ func Run(ctx context.Context, o *Options) error {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		providers, offerings := dir.Counts()
+		producers, offerings := dir.Counts()
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(map[string]any{
 			"ready":     dir.Ready(),
-			"providers": providers,
+			"producers": producers,
 			"offerings": offerings,
 		}); err != nil {
 			klog.ErrorS(err, "encoding directory counts")
@@ -172,7 +172,7 @@ func Run(ctx context.Context, o *Options) error {
 	select {
 	case err := <-providerErr:
 		if err != nil && !errors.Is(err, context.Canceled) {
-			return fmt.Errorf("directory provider failed: %w", err)
+			return fmt.Errorf("directory producer failed: %w", err)
 		}
 		<-serveErr
 		return nil

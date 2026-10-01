@@ -15,8 +15,8 @@ limitations under the License.
 */
 
 // Package bootstrap installs the kcp-side objects the marketplace needs:
-// the three APIExports and their endpoint slices, the provider
-// WorkspaceType, and the two hand-bound tiers (catalog and providers
+// the three APIExports and their endpoint slices, the producer
+// WorkspaceType, and the two hand-bound tiers (catalog and producers
 // parent).
 //
 // Workspace-path plumbing is shared with the access component
@@ -55,22 +55,22 @@ import (
 // exported into consumer workspaces: enabling is a plain kcp APIBinding
 // the consumer creates, so the marketplace has no footprint there.
 const (
-	// ExportCatalog serves Providers in the catalog workspace.
+	// ExportCatalog serves Producers in the catalog workspace.
 	ExportCatalog = "marketplace-catalog"
 	// ExportPublish serves no resources; it carries the claims the publish
-	// flow needs in provider workspaces, with the
+	// flow needs in producer workspaces, with the
 	// publish-side claims.
 	ExportPublish = "marketplace-publish"
-	// ExportProvisioner grants the claim to create provider workspaces.
+	// ExportProvisioner grants the claim to create producer workspaces.
 	ExportProvisioner = "marketplace-provisioner"
 )
 
-// The workspace type the operator provisions provider workspaces with. It
-// deliberately does not extend root:universal, so a provider workspace
+// The workspace type the operator provisions producer workspaces with. It
+// deliberately does not extend root:universal, so a producer workspace
 // serves apis.kcp.io and the kcp built-ins but neither tenancy.kcp.io nor
 // topology.kcp.io.
 const (
-	WorkspaceTypeProvider = "provider"
+	WorkspaceTypeProvider = "producer"
 )
 
 // Defaults for where things are installed.
@@ -78,15 +78,15 @@ const (
 	DefaultWorkspacePrefix      = "root:marketplace"
 	DefaultControllersWorkspace = "controllers"
 
-	// DefaultCatalogWorkspace is the registry: the workspace Provider
-	// records live in. Deliberately not the workspace providers are
+	// DefaultCatalogWorkspace is the registry: the workspace Producer
+	// records live in. Deliberately not the workspace producers are
 	// provisioned under.
 	DefaultCatalogWorkspace = "catalog"
 
-	// DefaultProvidersWorkspace is the provisioning parent: every
-	// provisioned provider workspace is created as its child. It holds no
+	// DefaultProducersWorkspace is the provisioning parent: every
+	// provisioned producer workspace is created as its child. It holds no
 	// marketplace objects at all.
-	DefaultProvidersWorkspace = "providers"
+	DefaultProducersWorkspace = "producers"
 )
 
 // Options configures Bootstrap.
@@ -168,8 +168,8 @@ func Bootstrap(ctx context.Context, cfg *rest.Config, exportsPath string, opts O
 	}, nil
 }
 
-// BindCatalog makes the workspace cfg points at the Provider registry: it
-// binds marketplace-catalog, then waits until Providers are servable.
+// BindCatalog makes the workspace cfg points at the Producer registry: it
+// binds marketplace-catalog, then waits until Producers are servable.
 func BindCatalog(ctx context.Context, cfg *rest.Config, result *Result) error {
 	if err := applyTier(ctx, cfg, result, apiexport.CatalogOrder); err != nil {
 		return err
@@ -179,9 +179,9 @@ func BindCatalog(ctx context.Context, cfg *rest.Config, result *Result) error {
 	if err != nil {
 		return fmt.Errorf("build dynamic client: %w", err)
 	}
-	klog.FromContext(ctx).Info("waiting for the Provider API to become servable in the catalog workspace")
+	klog.FromContext(ctx).Info("waiting for the Producer API to become servable in the catalog workspace")
 	providersGVR := schema.GroupVersionResource{
-		Group: marketplacev1alpha1.GroupName, Version: "v1alpha1", Resource: "providers",
+		Group: marketplacev1alpha1.GroupName, Version: "v1alpha1", Resource: "producers",
 	}
 	if err := wait.PollUntilContextTimeout(ctx, 2*time.Second, time.Minute, true, func(ctx context.Context) (bool, error) {
 		if _, err := dyn.Resource(providersGVR).List(ctx, metav1.ListOptions{Limit: 1}); err != nil {
@@ -189,17 +189,17 @@ func BindCatalog(ctx context.Context, cfg *rest.Config, result *Result) error {
 		}
 		return true, nil
 	}); err != nil {
-		return fmt.Errorf("the Provider API did not become usable after binding: %w", err)
+		return fmt.Errorf("the Producer API did not become usable after binding: %w", err)
 	}
 	return nil
 }
 
 // BindProvidersParent makes the workspace cfg points at the provisioning
-// parent: it binds marketplace-provisioner, so provider workspaces can be
+// parent: it binds marketplace-provisioner, so producer workspaces can be
 // created as its children. Nothing to wait for — the claim adds reach, not
 // a servable API.
 func BindProvidersParent(ctx context.Context, cfg *rest.Config, result *Result) error {
-	return applyTier(ctx, cfg, result, apiexport.ProvidersOrder)
+	return applyTier(ctx, cfg, result, apiexport.ProducersOrder)
 }
 
 // applyTier applies one hand-bound tier's assets. These two tiers are the

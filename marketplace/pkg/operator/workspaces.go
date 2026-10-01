@@ -36,7 +36,7 @@ import (
 // with someone else's is told apart from an earlier run.
 const ownerUIDLabel = marketplacev1alpha1.GroupName + "/owner-uid"
 
-// provisioned describes the workspace a provider ended up with.
+// provisioned describes the workspace a producer ended up with.
 type provisioned struct {
 	Name    string
 	Ready   bool
@@ -46,7 +46,7 @@ type provisioned struct {
 
 // ensureWorkspace makes sure a workspace named name exists under the
 // parent addressed by c, owned by ownerUID, with the given type. A
-// Provider's name is already a DNS label, so unlike tenancy there is no
+// Producer's name is already a DNS label, so unlike tenancy there is no
 // naming strategy: the workspace is named after the record, and a name
 // held by a workspace with a different owner is an error, not a retry.
 func ensureWorkspace(ctx context.Context, c client.Client, name, ownerUID, wsType, typePath string) (provisioned, error) {

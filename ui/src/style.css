@@ -213,6 +213,34 @@ body {
     background: color-mix(in srgb, var(--color-danger) 85%, #000000);
   }
 
+  /* ── Stepper ── */
+  .k-step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 999px;
+    border: 1px solid var(--color-edge-strong);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-faint);
+    background: var(--color-raised);
+    flex: none;
+  }
+  /* Glow only on the live one: it is the thing happening now. */
+  .k-step--current {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+    background: var(--color-accent-subtle);
+    box-shadow: 0 0 12px var(--accent-glow);
+  }
+  .k-step--done {
+    border-color: var(--color-accent);
+    background: var(--color-accent);
+    color: var(--color-on-accent);
+  }
+
   /* ── Inputs and selects ── */
   .k-input {
     box-sizing: border-box;

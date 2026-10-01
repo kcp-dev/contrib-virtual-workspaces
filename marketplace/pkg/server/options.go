@@ -80,7 +80,7 @@ func (o *Options) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&o.CatalogSlice, "catalog-endpointslice", bootstrap.ExportCatalog,
 		"APIExportEndpointSlice serving Providers.")
 	fs.StringVar(&o.PublishSlice, "publish-endpointslice", bootstrap.ExportPublish,
-		"APIExportEndpointSlice reaching the APIExports in provider workspaces.")
+		"APIExportEndpointSlice reaching the APIExports in producer workspaces.")
 	fs.StringVar(&o.WorkspacePath, "workspace-path", "",
 		"Workspace path the kubeconfig is retargeted to, e.g. root:marketplace:controllers. "+
 			"Must be the workspace containing the APIExportEndpointSlices. "+

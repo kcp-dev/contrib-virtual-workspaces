@@ -30,31 +30,54 @@ const tenantNav = computed(() =>
     : [],
 )
 
+// The top of the sidebar is this project's own things; what you could add
+// to it, and discovery over it, sit at the bottom.
 const nav = computed(() => {
-  const items = [{ to: '/catalog', label: 'Service Catalog' }]
+  const items: { to: string; label: string }[] = []
   if (session.admin) items.push({ to: '/admin', label: 'Admin' })
   return items
 })
 
 // Anything enabled in this project earns its own entry, because that is
-// what enabling was for: the offering becomes an ordinary API here, and
-// should be one click away rather than something to find in discovery.
-const enabledNav = computed(() =>
-  session.enabled.map((e) => ({
-    to: `/r/${e.group || '-'}/${e.resource}`,
-    label: e.resource.charAt(0).toUpperCase() + e.resource.slice(1),
-    hint: e.group || 'core',
-  })),
-)
+// what enabling was for. One entry per PRODUCER — grouped by the binding
+// that enabled it — not per kind it serves: a producer serving three kinds
+// is one thing you enabled, and its page lists the three.
+const enabledNav = computed(() => {
+  const byBinding = new Map<string, number>()
+  for (const e of session.enabled) byBinding.set(e.binding, (byBinding.get(e.binding) ?? 0) + 1)
+  return [...byBinding].map(([binding, kinds]) => ({
+    to: `/p/${binding}`,
+    label: binding
+      .split(/[.-]/)[0]
+      .replace(/^\w/, (c) => c.toUpperCase()),
+    hint: kinds === 1 ? '1 kind' : `${kinds} kinds`,
+  }))
+})
 
 // The bottom of the sidebar is about the place rather than the work done
 // in it.
-const bottomNav = [{ to: '/api', label: 'API Explorer' }]
+const bottomNav = [
+  { to: '/catalog', label: 'Producers' },
+  { to: '/api', label: 'API Explorer' },
+]
 
 onMounted(async () => {
-  if (session.authenticated) {
-    await session.load()
-    await session.checkAdmin()
+  if (!session.authenticated) return
+  await session.load()
+  await session.checkAdmin()
+
+  // Every screen here is relative to a project, so having none is the one
+  // state the app cannot show anything useful in — whether that is because
+  // the identity belongs to nothing at all, or belongs to a tenant nobody
+  // has added a project to. Both land on the wizard, which asks for
+  // whichever of the two is missing.
+  //
+  // Only when the review succeeded: an error, or a refused sign-in, means
+  // we do not know what they have, which is not the same as knowing they
+  // have nothing.
+  const nothingToWorkIn = !session.error && !session.unauthorized && !session.projects.length
+  if (nothingToWorkIn && !route.meta.public && route.name !== 'welcome') {
+    router.replace({ name: 'welcome' })
   }
 })
 
@@ -94,6 +117,16 @@ function logout() {
       </div>
     </header>
 
+    <div v-if="session.unauthorized" class="px-7 pt-4">
+      <div class="k-note k-note--danger flex items-center gap-3">
+        <span>
+          The servers did not accept your sign-in. It may have expired — or a
+          validator may be unable to reach the identity provider.
+        </span>
+        <button class="k-btn k-btn--ghost ml-auto shrink-0" @click="logout">Sign in again</button>
+      </div>
+    </div>
+
     <div class="flex-1 flex min-h-0">
       <!-- Side: in the tenant section, what you can do to a tenant;
            everywhere else, the places inside the selected project. -->
@@ -115,7 +148,7 @@ function logout() {
           </RouterLink>
 
           <template v-if="enabledNav.length">
-            <div class="k-eyebrow px-2.5 pt-4 pb-1">Providers</div>
+            <div class="k-eyebrow px-2.5 pb-1" :class="nav.length > 0 ? 'pt-4' : ''">Producers</div>
             <RouterLink v-for="item in enabledNav" :key="item.to" :to="item.to" class="k-nav-link">
               <span class="truncate">{{ item.label }}</span>
               <span class="ml-auto font-mono text-[9px] text-faint truncate max-w-20">{{ item.hint }}</span>

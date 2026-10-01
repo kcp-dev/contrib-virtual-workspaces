@@ -40,8 +40,8 @@ func Kind(kind string) schema.GroupKind {
 
 func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(SchemeGroupVersion,
-		&Provider{},
-		&ProviderList{},
+		&Producer{},
+		&ProducerList{},
 		&CatalogOffering{},
 		&CatalogOfferingList{},
 	)

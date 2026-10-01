@@ -235,7 +235,7 @@ start_bg operator "${MARKETPLACE_BIN}" operator \
   --kubeconfig "${KUBECONFIG_PATH}" \
   --workspace-path root:marketplace:controllers \
   --catalog-workspace root:marketplace:catalog \
-  --providers-workspace root:marketplace:providers \
+  --producers-workspace root:marketplace:producers \
   --v=4
 
 log "starting the marketplace virtual workspace on :${VW_PORT}"

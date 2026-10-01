@@ -30,8 +30,8 @@ import (
 )
 
 // OfferingsREST is the read-only catalog: every published APIExport joined
-// with the Provider record that owns its workspace, named
-// "<provider>.<export>". Reading it is reading the consent form — Claims is
+// with the Producer record that owns its workspace, named
+// "<producer>.<export>". Reading it is reading the consent form — Claims is
 // exactly what enabling accepts, and Revision identifies that surface.
 type OfferingsREST struct {
 	directory *directory.Directory
@@ -89,7 +89,7 @@ func (r *OfferingsREST) List(_ context.Context, _ *metainternalversion.ListOptio
 func toCatalogOffering(entry directory.Entry) *marketplacev1alpha1.CatalogOffering {
 	return &marketplacev1alpha1.CatalogOffering{
 		ObjectMeta:    metav1.ObjectMeta{Name: entry.Name()},
-		Provider:      entry.Provider,
+		Producer:      entry.Producer,
 		Offering:      entry.Offering,
 		DisplayName:   entry.Detail.DisplayName,
 		Description:   entry.Detail.Description,
@@ -98,5 +98,7 @@ func toCatalogOffering(entry directory.Entry) *marketplacev1alpha1.CatalogOfferi
 		Revision:      entry.Detail.Revision,
 		Claims:        entry.Detail.Claims,
 		Ready:         entry.Detail.Ready,
+		DocsURL:       entry.Detail.DocsURL,
+		Instructions:  entry.Instructions,
 	}
 }

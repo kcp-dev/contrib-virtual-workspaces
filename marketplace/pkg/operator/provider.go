@@ -31,33 +31,33 @@ import (
 	marketplacev1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1"
 )
 
-// reconcileProvider turns a Provider record into a workspace (for mode
-// provisioned) or records the workspace the provider brought (for mode
-// external). Either way the record grants nothing: reach into a provider
+// reconcileProducer turns a Provider record into a workspace (for mode
+// provisioned) or records the workspace the producer brought (for mode
+// external). Either way the record grants nothing: reach into a producer
 // workspace comes from the marketplace-publish binding there, which for
-// provisioned workspaces the `provider` WorkspaceType carries and for
-// external ones the provider creates themselves — that binding, not this
+// provisioned workspaces the `producer` WorkspaceType carries and for
+// external ones the producer creates themselves — that binding, not this
 // object, is the consent.
-func (r *reconcilers) reconcileProvider(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx).WithValues("cluster", req.ClusterName, "provider", req.Name)
+func (r *reconcilers) reconcileProducer(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
+	logger := log.FromContext(ctx).WithValues("cluster", req.ClusterName, "producer", req.Name)
 
 	c, err := clientFor(ctx, r.m.catalog, req.ClusterName)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	var provider marketplacev1alpha1.Provider
-	if err := c.Get(ctx, req.NamespacedName, &provider); err != nil {
+	var producer marketplacev1alpha1.Producer
+	if err := c.Get(ctx, req.NamespacedName, &producer); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if !provider.DeletionTimestamp.IsZero() {
-		if provider.Spec.Mode == marketplacev1alpha1.ProviderModeProvisioned {
-			prov, err := clientFor(ctx, r.m.provisioner, r.providersCluster)
+	if !producer.DeletionTimestamp.IsZero() {
+		if producer.Spec.Mode == marketplacev1alpha1.ProducerModeProvisioned {
+			prov, err := clientFor(ctx, r.m.provisioner, r.producersCluster)
 			if err != nil {
 				return ctrl.Result{}, err
 			}
-			done, err := deleteWorkspace(ctx, prov, provider.Status.Workspace, string(provider.UID))
+			done, err := deleteWorkspace(ctx, prov, producer.Status.Workspace, string(producer.UID))
 			if err != nil {
 				return ctrl.Result{}, err
 			}
@@ -65,17 +65,17 @@ func (r *reconcilers) reconcileProvider(ctx context.Context, req mcreconcile.Req
 				return requeue()
 			}
 		}
-		if controllerutil.RemoveFinalizer(&provider, finalizer) {
-			if err := c.Update(ctx, &provider); err != nil {
+		if controllerutil.RemoveFinalizer(&producer, finalizer) {
+			if err := c.Update(ctx, &producer); err != nil {
 				return ctrl.Result{}, client.IgnoreNotFound(err)
 			}
-			logger.Info("provider cleaned up")
+			logger.Info("producer cleaned up")
 		}
 		return ctrl.Result{}, nil
 	}
 
-	if controllerutil.AddFinalizer(&provider, finalizer) {
-		if err := c.Update(ctx, &provider); err != nil {
+	if controllerutil.AddFinalizer(&producer, finalizer) {
+		if err := c.Update(ctx, &producer); err != nil {
 			if apierrors.IsConflict(err) {
 				return requeue()
 			}
@@ -83,24 +83,24 @@ func (r *reconcilers) reconcileProvider(ctx context.Context, req mcreconcile.Req
 		}
 	}
 
-	switch provider.Spec.Mode {
-	case marketplacev1alpha1.ProviderModeProvisioned:
-		prov, err := clientFor(ctx, r.m.provisioner, r.providersCluster)
+	switch producer.Spec.Mode {
+	case marketplacev1alpha1.ProducerModeProvisioned:
+		prov, err := clientFor(ctx, r.m.provisioner, r.producersCluster)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		ws, err := ensureWorkspace(ctx, prov, provider.Name, string(provider.UID),
+		ws, err := ensureWorkspace(ctx, prov, producer.Name, string(producer.UID),
 			bootstrap.WorkspaceTypeProvider, r.exportsPath)
 		if err != nil {
-			return ctrl.Result{}, updateProviderStatus(ctx, c, &provider, marketplacev1alpha1.ProviderStatus{
+			return ctrl.Result{}, updateProviderStatus(ctx, c, &producer, marketplacev1alpha1.ProducerStatus{
 				Phase: marketplacev1alpha1.PhaseError, Message: err.Error(),
 			})
 		}
-		status := marketplacev1alpha1.ProviderStatus{
+		status := marketplacev1alpha1.ProducerStatus{
 			Phase:            marketplacev1alpha1.PhasePending,
 			Message:          "waiting for the workspace to become ready",
 			Workspace:        ws.Name,
-			WorkspacePath:    r.providersPath + ":" + ws.Name,
+			WorkspacePath:    r.producersPath + ":" + ws.Name,
 			WorkspaceCluster: ws.Cluster,
 			URL:              ws.URL,
 		}
@@ -108,20 +108,20 @@ func (r *reconcilers) reconcileProvider(ctx context.Context, req mcreconcile.Req
 			status.Phase = marketplacev1alpha1.PhaseReady
 			status.Message = ""
 		}
-		if err := updateProviderStatus(ctx, c, &provider, status); err != nil {
+		if err := updateProviderStatus(ctx, c, &producer, status); err != nil {
 			return ctrl.Result{}, err
 		}
 		if !ws.Ready {
 			return requeue()
 		}
-		logger.V(2).Info("provider workspace ready", "workspace", ws.Name, "workspaceCluster", ws.Cluster)
+		logger.V(2).Info("producer workspace ready", "workspace", ws.Name, "workspaceCluster", ws.Cluster)
 		return ctrl.Result{}, nil
 
-	case marketplacev1alpha1.ProviderModeExternal:
-		if provider.Spec.WorkspacePath == "" {
-			return ctrl.Result{}, updateProviderStatus(ctx, c, &provider, marketplacev1alpha1.ProviderStatus{
+	case marketplacev1alpha1.ProducerModeExternal:
+		if producer.Spec.WorkspacePath == "" {
+			return ctrl.Result{}, updateProviderStatus(ctx, c, &producer, marketplacev1alpha1.ProducerStatus{
 				Phase:   marketplacev1alpha1.PhaseError,
-				Message: "mode external requires spec.workspacePath: the canonical path of the provider's own workspace",
+				Message: "mode external requires spec.workspacePath: the canonical path of the producer's own workspace",
 			})
 		}
 		// The workspace's logical cluster cannot be resolved from here —
@@ -129,9 +129,9 @@ func (r *reconcilers) reconcileProvider(ctx context.Context, req mcreconcile.Req
 		// owner binds marketplace-publish. The offering reconciler learns
 		// the cluster when the first Offering arrives from a workspace
 		// whose path matches, and fills it in.
-		status := marketplacev1alpha1.ProviderStatus{
-			WorkspacePath:    provider.Spec.WorkspacePath,
-			WorkspaceCluster: provider.Status.WorkspaceCluster, // preserved, learned at publish
+		status := marketplacev1alpha1.ProducerStatus{
+			WorkspacePath:    producer.Spec.WorkspacePath,
+			WorkspaceCluster: producer.Status.WorkspaceCluster, // preserved, learned at publish
 		}
 		if status.WorkspaceCluster != "" {
 			status.Phase = marketplacev1alpha1.PhaseReady
@@ -139,22 +139,22 @@ func (r *reconcilers) reconcileProvider(ctx context.Context, req mcreconcile.Req
 			status.Phase = marketplacev1alpha1.PhasePending
 			status.Message = "waiting for the workspace to bind marketplace-publish and publish an Offering"
 		}
-		return ctrl.Result{}, updateProviderStatus(ctx, c, &provider, status)
+		return ctrl.Result{}, updateProviderStatus(ctx, c, &producer, status)
 
 	default:
-		return ctrl.Result{}, updateProviderStatus(ctx, c, &provider, marketplacev1alpha1.ProviderStatus{
+		return ctrl.Result{}, updateProviderStatus(ctx, c, &producer, marketplacev1alpha1.ProducerStatus{
 			Phase:   marketplacev1alpha1.PhaseError,
 			Message: "spec.mode must be provisioned or external",
 		})
 	}
 }
 
-func updateProviderStatus(ctx context.Context, c client.Client, provider *marketplacev1alpha1.Provider, status marketplacev1alpha1.ProviderStatus) error {
-	if provider.Status == status {
+func updateProviderStatus(ctx context.Context, c client.Client, producer *marketplacev1alpha1.Producer, status marketplacev1alpha1.ProducerStatus) error {
+	if producer.Status == status {
 		return nil
 	}
-	provider.Status = status
-	if err := c.Status().Update(ctx, provider); err != nil && !apierrors.IsConflict(err) {
+	producer.Status = status
+	if err := c.Status().Update(ctx, producer); err != nil && !apierrors.IsConflict(err) {
 		return err
 	}
 	return nil

@@ -4,7 +4,7 @@
 // into one: a scalar leaf becomes an input, an enum becomes a select. Lists
 // and free-form objects are left alone rather than guessed at — there is no
 // single right control for them, and inventing one would be wrong for
-// exactly the providers nobody has seen yet. Those stay in the YAML tab,
+// exactly the producers nobody has seen yet. Those stay in the YAML tab,
 // and the form says so instead of pretending they do not exist.
 
 import type { OpenAPISchema } from './api'

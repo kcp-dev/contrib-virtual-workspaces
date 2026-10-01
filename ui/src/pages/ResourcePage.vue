@@ -2,9 +2,9 @@
 // One enabled offering's resources, with the ordinary Kubernetes verbs.
 //
 // Nothing here knows what the resource is. The columns are the ones the
-// provider declared on their APIResourceSchema, rendered by the server in
+// producer declared on their APIResourceSchema, rendered by the server in
 // answer to a Table request — the same path kubectl takes — and which
-// buttons exist comes from discovery's verbs. A provider publishes a
+// buttons exist comes from discovery's verbs. A producer publishes a
 // schema and gets this screen; there is no place for them to put UI code.
 //
 // The table and the editor sit side by side rather than one replacing the

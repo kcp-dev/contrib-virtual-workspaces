@@ -104,6 +104,22 @@ local_resource('contrib-kubeconfig',
     labels=['contrib'],
 )
 
+# Everything in this stack is addressed through one port on the host, so
+# keeping it up is not a detail: lose it and every kubeconfig, the UI and
+# the CLI all fail at once, which looks like the components being broken
+# rather than the address being gone. Tilt restarts a serve_cmd, and the
+# script re-resolves the gateway Service each time round.
+local_resource('ingress-forward',
+    serve_cmd='hack/tilt/ingress-forward.sh',
+    deps=['hack/tilt/ingress-forward.sh'],
+    readiness_probe=probe(
+        period_secs=5,
+        exec=exec_action(command=['sh', '-c',
+            'curl -sk -o /dev/null --max-time 3 https://kcp.localhost:8443/readyz']),
+    ),
+    labels=['contrib'],
+)
+
 KUBECONFIG = TILT_DIR + '/tilt-contrib.kubeconfig'
 FRONT_PROXY_URL = os.getenv('KCP_FRONT_PROXY_URL', 'https://kcp.localhost:8443')
 
@@ -134,7 +150,27 @@ if DEX_ENABLED:
         labels=['auth'],
         allow_parallel=True,
     )
-    k8s_yaml('hack/tilt/dex.yaml')
+    # Stamp the serving cert's fingerprint onto the pod template.
+    #
+    # dex reads its certificate once, at boot. Depending on dex-secret only
+    # orders startup — replacing a Secret does not roll a Deployment — so a
+    # regenerated cert left dex serving one that nothing trusted any more,
+    # and every OIDC validator answered 401 because it could not even fetch
+    # the discovery document. Making the cert part of the pod spec is what
+    # ties the two together: a new cert is a new Deployment, and Tilt rolls
+    # it. watch_file is what re-evaluates this when the cert changes.
+    watch_file(TILT_DIR + '/dex/tls.crt')
+    dex_cert_stamp = str(local(
+        'shasum -a 256 %s/dex/tls.crt 2>/dev/null | cut -c1-16 || echo bootstrap' % TILT_DIR,
+        quiet=True, echo_off=True)).strip()
+
+    dex_objects = read_yaml_stream('hack/tilt/dex.yaml')
+    for obj in dex_objects:
+        if obj['kind'] == 'Deployment' and obj['metadata']['name'] == 'dex':
+            template = obj['spec']['template']
+            template.setdefault('metadata', {}).setdefault('annotations', {})
+            template['metadata']['annotations']['kcp.localhost/serving-cert'] = dex_cert_stamp
+    k8s_yaml(encode_yaml_stream(dex_objects))
     k8s_resource('dex', resource_deps=['dex-secret'], labels=['auth'])
 
     # The issuer URL must resolve on the host too (the pods get it via
@@ -195,8 +231,25 @@ VW_PATH_MAPPINGS = []
 # The kind cluster images are side-loaded into; matches hack/tilt/up.sh.
 KIND_CLUSTER = os.getenv('CLUSTER_NAME', 'kcp-tilt')
 
-def virtual_workspace(name, image_target, service, init_args, vw_args):
-    """Deploy one component's virtual workspace through the operator."""
+def yaml_list(items):
+    """Render a list of strings as a YAML flow sequence."""
+    return '[' + ', '.join(['"%s"' % i for i in items]) + ']'
+
+
+def virtual_workspace(name, image_target, service, init_args, vw_args,
+                      server_cmd=None, init_cmd=None):
+    """Deploy one component's virtual workspace through the operator.
+
+    server_cmd and init_cmd are the container commands. They default to
+    the single-binary-with-subcommands shape tenancy and marketplace use;
+    access ships separate binaries, and mcp has nothing to bootstrap at
+    all, so both are overridable. init_cmd=[] means this component
+    installs nothing and gets no bootstrap credential.
+    """
+    if server_cmd == None:
+        server_cmd = ['/' + image_target, 'virtualworkspace']
+    if init_cmd == None:
+        init_cmd = ['/' + image_target, 'init']
 
     # Built and side-loaded by hand rather than with docker_build: the
     # operator composes the image as "<repository>:<tag>", so there is no
@@ -206,8 +259,11 @@ def virtual_workspace(name, image_target, service, init_args, vw_args):
         cmd=('docker build --target %s -t %s:dev . && ' % (image_target, image_target) +
              'kind load docker-image %s:dev --name %s && ' % (image_target, KIND_CLUSTER) +
              'kubectl rollout restart deploy/%s-virtual-workspace 2>/dev/null || true' % name),
-        deps=['go.mod', 'go.sum', 'Dockerfile',
-              name + '/main.go', name + '/cmd', name + '/pkg', name + '/config', name + '/sdk'],
+        deps=['go.mod', 'go.sum', 'Dockerfile'] + [
+            p for p in [name + '/main.go', name + '/cmd', name + '/pkg',
+                        name + '/internal', name + '/config', name + '/sdk']
+            if os.path.exists(p)
+        ],
         ignore=['**/*_test.go'],
         labels=[name],
         allow_parallel=True,
@@ -217,8 +273,9 @@ def virtual_workspace(name, image_target, service, init_args, vw_args):
     # ones: init walks the workspace tree and installs exports (admin),
     # while the server only reads what its exports give it — init grants
     # that identity the server role with --server-user.
-    k8s_yaml(blob("""
-apiVersion: operator.kcp.io/v1alpha1
+    bootstrap_kubeconfig = ""
+    if init_cmd:
+        bootstrap_kubeconfig = """apiVersion: operator.kcp.io/v1alpha1
 kind: Kubeconfig
 metadata:
   name: %(name)s-vw-bootstrap
@@ -233,7 +290,25 @@ spec:
     frontProxyRef:
       name: frontproxy
 ---
-apiVersion: operator.kcp.io/v1alpha1
+""" % {'name': name}
+
+    init_containers = ""
+    if init_cmd:
+        init_containers = """  initContainers:
+    - name: init
+      kubeconfigSecretRef:
+        name: %(name)s-vw-bootstrap-kubeconfig
+      command: %(init_cmd)s
+      args:
+        - --kubeconfig=/etc/kcp/init-kubeconfig/kubeconfig
+        - --server-user=%(name)s-vw
+%(init_args)s""" % {
+            'name': name,
+            'init_cmd': yaml_list(init_cmd),
+            'init_args': init_args,
+        }
+
+    k8s_yaml(blob("""%(bootstrap_kubeconfig)sapiVersion: operator.kcp.io/v1alpha1
 kind: Kubeconfig
 metadata:
   name: %(name)s-vw-server
@@ -263,18 +338,20 @@ spec:
   image:
     repository: %(image)s
     tag: dev
-  command: ["/%(image)s", "virtualworkspace"]
+  # One replica, small: this is a one-node development cluster. The
+  # operator's default is two replicas requesting a whole CPU each, which
+  # for four virtual workspaces is eight CPUs before anything else runs —
+  # and a rollout adds a surge pod on top, which then cannot schedule and
+  # leaves the old image serving while the new one sits Pending forever.
+  replicas: 1
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+  command: %(server_cmd)s
   kubeconfigSecretRef:
     name: %(name)s-vw-server-kubeconfig
-  initContainers:
-    - name: init
-      kubeconfigSecretRef:
-        name: %(name)s-vw-bootstrap-kubeconfig
-      command: ["/%(image)s", "init"]
-      args:
-        - --kubeconfig=/etc/kcp/init-kubeconfig/kubeconfig
-        - --server-user=%(name)s-vw
-%(init_args)s
+%(init_containers)s
   extraArgs:
 %(vw_args)s
 %(dex_volumes)s
@@ -290,7 +367,9 @@ spec:
 """ % {
         'name': name,
         'image': image_target,
-        'init_args': init_args,
+        'server_cmd': yaml_list(server_cmd),
+        'bootstrap_kubeconfig': bootstrap_kubeconfig,
+        'init_containers': init_containers,
         'vw_args': vw_args,
         'dex_volumes': DEX_VW_VOLUMES,
     }))
@@ -309,7 +388,10 @@ spec:
         resource_deps=['%s-image' % name, 'contrib-kubeconfig'],
         labels=[name],
     )
-    for kubeconfig in ['%s-vw-bootstrap' % name, '%s-vw-server' % name]:
+    kubeconfigs = ['%s-vw-server' % name]
+    if init_cmd:
+        kubeconfigs.append('%s-vw-bootstrap' % name)
+    for kubeconfig in kubeconfigs:
         k8s_resource(kubeconfig, labels=[name])
 
     VW_PATH_MAPPINGS.append({
@@ -337,7 +419,9 @@ def component(name, binary, operator_args):
 
     local_resource('%s-build' % name,
         cmd='make --no-print-directory build-%s' % name,
-        deps=[name + '/main.go', name + '/cmd', name + '/pkg', name + '/config', name + '/sdk'],
+        deps=[p for p in [name + '/main.go', name + '/cmd', name + '/pkg',
+                          name + '/internal', name + '/config', name + '/sdk']
+              if os.path.exists(p)],
         ignore=['**/*_test.go'],
         labels=[name],
         allow_parallel=True,
@@ -351,6 +435,70 @@ def component(name, binary, operator_args):
         resource_deps=['%s-build' % name, '%s-vw' % name, 'contrib-kubeconfig'],
         labels=[name],
     )
+
+# access — SelfClusterAccessReview: "which workspaces can this identity
+# reach?" in one call. It ships separate binaries rather than one with
+# subcommands, so the commands are spelled out.
+if enabled('ACCESS'):
+    virtual_workspace('access', 'access-vw', 'access',
+        # The server kubeconfig already targets root:access:controllers, so
+        # the slice is looked up there without a --workspace-path.
+        init_args='',
+        # Deliberately NOT --apiexport-endpointslice: that restricts access
+        # to workspaces which bind its own export, which would make enabling
+        # MCP two bindings rather than one. Here it indexes everything its
+        # kubeconfig can see, and a caller's RBAC is what narrows the answer.
+        vw_args='    - --endpoint-base=%s/clusters/\n' % FRONT_PROXY_URL +
+                ''.join(['    - %s\n' % a for a in OIDC_VW_ARGS_LIST]),
+        server_cmd=['/access-vw'],
+        init_cmd=['/access-vw-init'],
+    )
+    print('access VW → %s/services/access' % FRONT_PROXY_URL)
+
+# mcp — the Model Context Protocol over whatever the caller can reach,
+# which it learns from the access VW above.
+#
+# It is also a marketplace offering, which is the interesting part. MCP is
+# not an API, so there is nothing for a consumer to bind in order to "get"
+# it; what they actually have to do is let the server act as them in their
+# workspace. Its APIExport claims exactly the RBAC for that, so binding IS
+# the consent, and the operator below spends those claims on the one grant.
+if enabled('MCP'):
+    virtual_workspace('mcp', 'mcp-vw', 'mcp',
+        init_args='',
+        # It reaches the access VW through the front-proxy like any other
+        # client, trusting the root CA the operator mounts into every
+        # virtual workspace pod.
+        vw_args='    - --access-url=%s/services/access\n' % FRONT_PROXY_URL +
+                '    - --access-ca-file=/etc/kcp/tls/ca/root/tls.crt\n' +
+                ''.join(['    - %s\n' % a for a in OIDC_VW_ARGS_LIST]),
+        server_cmd=['/mcp-virtual-workspace', 'serve'],
+        init_cmd=['/mcp-virtual-workspace', 'init'],
+    )
+    component('mcp', 'mcp-virtual-workspace',
+        operator_args='--workspace-path root:mcp:controllers ' +
+                      '--apiexport-endpointslice=mcp ' +
+                      '--server-url=%s/services/mcp ' % FRONT_PROXY_URL +
+                      # The identity the operator mints for this VW's server
+                      # kubeconfig, and so the subject the grant names.
+                      '--impersonate-user=mcp-vw',
+    )
+
+    # Register the mcp workspace as a marketplace provider, so its export
+    # shows up in the catalog as something to enable. Ad-hoc: it only makes
+    # sense once both components are up, and publishing grants `bind` to
+    # every authenticated user in this stack.
+    local_resource('mcp-offering',
+        cmd='hack/tilt/mcp-offering.sh',
+        env={'KUBECONFIG': KUBECONFIG, 'KCP_FRONT_PROXY_URL': FRONT_PROXY_URL},
+        deps=['hack/tilt/mcp-offering.sh'],
+        resource_deps=['mcp-operator', 'marketplace-operator'],
+        trigger_mode=TRIGGER_MODE_MANUAL,
+        auto_init=False,
+        labels=['mcp'],
+    )
+    print('mcp VW → %s/services/mcp' % FRONT_PROXY_URL)
+    print('  publish it to the catalog: tilt trigger mcp-offering')
 
 if enabled('TENANCY'):
     virtual_workspace('tenancy', 'tenancy-vw', 'tenancy',
@@ -394,7 +542,7 @@ if enabled('MARKETPLACE'):
     component('marketplace', 'marketplace-vw',
         operator_args='--workspace-path root:marketplace:controllers ' +
                       '--catalog-workspace root:marketplace:catalog ' +
-                      '--providers-workspace root:marketplace:providers',
+                      '--producers-workspace root:marketplace:producers',
     )
     # Example offerings, on demand: `tilt trigger marketplace-examples`.
     #

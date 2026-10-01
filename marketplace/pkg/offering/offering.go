@@ -16,7 +16,7 @@ limitations under the License.
 
 // Package offering reads an APIExport as a catalog card.
 //
-// An offering has no object of its own: a provider publishes by annotating
+// An offering has no object of its own: a producer publishes by annotating
 // their APIExport, and the export's own permission claims are the claim
 // surface a consumer accepts. This package is the single place that knows
 // how to read that, so the operator (which grants `bind`) and the
@@ -49,6 +49,11 @@ type Card struct {
 	Claims []marketplacev1alpha1.OfferingClaim
 	// Revision is a digest of Claims.
 	Revision string
+	// DocsURL is the producer's documentation link, if any.
+	DocsURL string
+	// InstructionsRef names the ConfigMap holding the producer's "how to
+	// use this", in the export's own workspace. Empty means none.
+	InstructionsRef string
 }
 
 // Published reports whether an export opts into the catalog.
@@ -67,10 +72,12 @@ func Published(export *apisv1alpha2.APIExport) bool {
 // From reads the card off a published export.
 func From(export *apisv1alpha2.APIExport) Card {
 	card := Card{
-		DisplayName:  export.Annotations[marketplacev1alpha1.AnnotationDisplayName],
-		Description:  export.Annotations[marketplacev1alpha1.AnnotationDescription],
-		IdentityHash: export.Status.IdentityHash,
-		Claims:       Claims(export.Spec.PermissionClaims),
+		DisplayName:     export.Annotations[marketplacev1alpha1.AnnotationDisplayName],
+		Description:     export.Annotations[marketplacev1alpha1.AnnotationDescription],
+		IdentityHash:    export.Status.IdentityHash,
+		Claims:          Claims(export.Spec.PermissionClaims),
+		DocsURL:         export.Annotations[marketplacev1alpha1.AnnotationDocsURL],
+		InstructionsRef: export.Annotations[marketplacev1alpha1.AnnotationInstructions],
 	}
 	if card.DisplayName == "" {
 		card.DisplayName = export.Name
@@ -96,7 +103,7 @@ func Claims(declared []apisv1alpha2.PermissionClaim) []marketplacev1alpha1.Offer
 			Verbs:        verbs,
 			IdentityHash: claim.IdentityHash,
 		}
-		// The provider's suggested scope for this claim. Only matchLabels
+		// The producer's suggested scope for this claim. Only matchLabels
 		// is carried: it is what a consumer can act on when authoring the
 		// binding, and an unset selector already means "every object",
 		// which is the default a binding takes anyway.

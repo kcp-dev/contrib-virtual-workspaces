@@ -48,11 +48,11 @@ func bindRoleName(export string) string {
 // the catalog gets the `bind` grant that makes it enableable, and one that
 // is not — never annotated, un-annotated, or deleted — does not.
 //
-// Nothing is written back to the export. It belongs to the provider, and
+// Nothing is written back to the export. It belongs to the producer, and
 // the operator only reads it: there is no status to maintain (the catalog
 // derives what it shows) and no finalizer to add, which matters because a
 // finalizer of ours on someone else's object would let a wedged marketplace
-// operator block a provider from deleting their own export.
+// operator block a producer from deleting their own export.
 func (r *reconcilers) reconcileAPIExport(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("cluster", req.ClusterName, "export", req.Name)
 
@@ -86,7 +86,7 @@ func (r *reconcilers) reconcileAPIExport(ctx context.Context, req mcreconcile.Re
 	// the record. A workspace no record names publishes into the void, and
 	// gets no grant: an unregistered workspace must not be able to hand
 	// `bind` to the world by annotating its own export.
-	providerName, err := r.resolveProviderFor(ctx, c, string(req.ClusterName))
+	producerName, err := r.resolveProducerFor(ctx, c, string(req.ClusterName))
 	if err != nil {
 		logger.V(2).Info("published export has no Provider record yet; not granting bind", "reason", err.Error())
 		return ctrl.Result{RequeueAfter: requeueWhileUnregistered}, nil
@@ -97,15 +97,15 @@ func (r *reconcilers) reconcileAPIExport(ctx context.Context, req mcreconcile.Re
 	}
 
 	card := offering.From(&export)
-	logger.V(2).Info("offering published", "provider", providerName,
+	logger.V(2).Info("offering published", "producer", producerName,
 		"revision", card.Revision, "claims", len(card.Claims))
 	return ctrl.Result{}, nil
 }
 
-// resolveProviderFor matches the publishing workspace's canonical path
+// resolveProducerFor matches the publishing workspace's canonical path
 // against the Provider records, and teaches an external Provider its
 // logical cluster on first contact.
-func (r *reconcilers) resolveProviderFor(ctx context.Context, publishClient client.Client, cluster string) (string, error) {
+func (r *reconcilers) resolveProducerFor(ctx context.Context, publishClient client.Client, cluster string) (string, error) {
 	var lc corev1alpha1.LogicalCluster
 	if err := publishClient.Get(ctx, types.NamespacedName{Name: "cluster"}, &lc); err != nil {
 		return "", fmt.Errorf("read this workspace's LogicalCluster: %w", err)
@@ -119,12 +119,12 @@ func (r *reconcilers) resolveProviderFor(ctx context.Context, publishClient clie
 	if err != nil {
 		return "", err
 	}
-	var providers marketplacev1alpha1.ProviderList
-	if err := catalog.List(ctx, &providers); err != nil {
+	var producers marketplacev1alpha1.ProducerList
+	if err := catalog.List(ctx, &producers); err != nil {
 		return "", fmt.Errorf("list Provider records: %w", err)
 	}
-	for i := range providers.Items {
-		p := &providers.Items[i]
+	for i := range producers.Items {
+		p := &producers.Items[i]
 		if p.Status.WorkspacePath != path {
 			continue
 		}
@@ -133,10 +133,10 @@ func (r *reconcilers) resolveProviderFor(ctx context.Context, publishClient clie
 			p.Status.Phase = marketplacev1alpha1.PhaseReady
 			p.Status.Message = ""
 			if err := catalog.Status().Update(ctx, p); err != nil && !apierrors.IsConflict(err) {
-				return "", fmt.Errorf("record the provider's logical cluster: %w", err)
+				return "", fmt.Errorf("record the producer's logical cluster: %w", err)
 			}
 		} else if p.Status.WorkspaceCluster != cluster {
-			return "", fmt.Errorf("provider %q maps %s to cluster %s, but this export is in %s",
+			return "", fmt.Errorf("producer %q maps %s to cluster %s, but this export is in %s",
 				p.Name, path, p.Status.WorkspaceCluster, cluster)
 		}
 		return p.Name, nil
@@ -184,7 +184,7 @@ func (r *reconcilers) ensureBindGrant(ctx context.Context, c client.Client, expo
 
 // removeBindGrant revokes `bind` on one export.
 //
-// Every APIExport in every provider workspace reaches this reconciler, so
+// Every APIExport in every producer workspace reaches this reconciler, so
 // the common case by far is an export that never had a grant. It checks
 // before deleting to keep that case to one read.
 func (r *reconcilers) removeBindGrant(ctx context.Context, c client.Client, export string) error {
