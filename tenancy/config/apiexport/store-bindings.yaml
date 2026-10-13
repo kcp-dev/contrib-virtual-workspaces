@@ -1,0 +1,15 @@
+# Applied into the STORE workspace: the registry of Tenant records.
+#
+# It binds the Tenant API and nothing else. In particular it does NOT bind
+# tenancy-provisioner: no workspace is ever created here, so the capability
+# to create one has no business being granted here. The records and the
+# workspace tree they describe are deliberately different tiers.
+apiVersion: apis.kcp.io/v1alpha2
+kind: APIBinding
+metadata:
+  name: tenancy-platform
+spec:
+  reference:
+    export:
+      path: __EXPORTS_PATH__
+      name: tenancy-platform

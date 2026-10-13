@@ -1,0 +1,31 @@
+# Binding an organization workspace to the tenancy APIExport. Applied in
+# the workspace that will hold Tenant, Project and Membership objects.
+#
+# The permission claim must be accepted: it is what lets the operator
+# create each tenant's Workspace object next to the Tenant that asked for
+# it. Without acceptance tenants stay Pending forever.
+#
+# identityHash is per-deployment: tenancy.kcp.io is itself one of kcp's
+# exported APIs, so the claim must name that export's identity. Copy the
+# hash from the claim on the installed APIExport (init discovered and
+# injected it there):
+#
+#   kubectl get apiexport tenancy.contrib.kcp.io \
+#     -o jsonpath='{.spec.permissionClaims[0].identityHash}'
+apiVersion: apis.kcp.io/v1alpha2
+kind: APIBinding
+metadata:
+  name: tenancy.contrib.kcp.io
+spec:
+  reference:
+    export:
+      path: root:tenancy:controllers
+      name: tenancy.contrib.kcp.io
+  permissionClaims:
+    - group: tenancy.kcp.io
+      resource: workspaces
+      identityHash: REPLACE_WITH_THE_EXPORTS_CLAIM_HASH
+      verbs: [get, list, watch, create, update, patch, delete]
+      state: Accepted
+      selector:
+        matchAll: true

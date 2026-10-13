@@ -1,0 +1,88 @@
+apiVersion: apis.kcp.io/v1alpha1
+kind: APIResourceSchema
+metadata:
+  name: v1alpha1.memberships.tenancy.contrib.kcp.io
+spec:
+  group: tenancy.contrib.kcp.io
+  names:
+    kind: Membership
+    listKind: MembershipList
+    plural: memberships
+    singular: membership
+  scope: Cluster
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      schema:
+        description: |
+          Membership grants one subject one role in one tenant, or in one
+          project of that tenant. The operator materializes it as RBAC in
+          the target workspace; deleting the Membership removes that RBAC
+          again.
+        type: object
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            type: object
+            required:
+              - subject
+              - role
+              - tenant
+            properties:
+              subject:
+                description: Who the grant is for.
+                type: object
+                required:
+                  - kind
+                  - name
+                properties:
+                  kind:
+                    description: User or Group.
+                    type: string
+                    enum:
+                      - User
+                      - Group
+                  name:
+                    description: |
+                      Username or group name, compared verbatim against
+                      the identity kcp authenticates.
+                    type: string
+                    minLength: 1
+              role:
+                description: Access level granted.
+                type: string
+                enum:
+                  - view
+                  - edit
+                  - admin
+              tenant:
+                description: |
+                  Name of the Tenant (in the same workspace) the grant
+                  applies to.
+                type: string
+                minLength: 1
+              project:
+                description: |
+                  Optionally narrows the grant to one project of the
+                  tenant. Empty means the grant applies to the tenant's
+                  workspace, which every project workspace nests under.
+                type: string
+          status:
+            type: object
+            properties:
+              phase:
+                description: Pending, Ready or Error.
+                type: string
+              message:
+                description: Detail when phase is not Ready.
+                type: string
+        required:
+          - spec

@@ -1,0 +1,34 @@
+# One slice per export. Each is a separate virtual workspace, and the
+# operator runs one manager per slice — which is how "this controller may
+# only do this" is enforced structurally rather than by convention.
+apiVersion: apis.kcp.io/v1alpha1
+kind: APIExportEndpointSlice
+metadata:
+  name: tenancy-platform
+spec:
+  export:
+    name: tenancy-platform
+---
+apiVersion: apis.kcp.io/v1alpha1
+kind: APIExportEndpointSlice
+metadata:
+  name: tenancy
+spec:
+  export:
+    name: tenancy
+---
+apiVersion: apis.kcp.io/v1alpha1
+kind: APIExportEndpointSlice
+metadata:
+  name: tenancy-provisioner
+spec:
+  export:
+    name: tenancy-provisioner
+---
+apiVersion: apis.kcp.io/v1alpha1
+kind: APIExportEndpointSlice
+metadata:
+  name: tenancy-access
+spec:
+  export:
+    name: tenancy-access

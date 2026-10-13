@@ -82,7 +82,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        component: [access, mcp, ephemeral]
+        component: [access, mcp, ephemeral, tenancy]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # tag=v7.0.1
@@ -97,7 +97,7 @@ jobs:
       - name: Run e2e tests
         run: make test-e2e-${{ matrix.component }}
         env:
-          # Only the ephemeral harness reads this. Set the KCP_IMAGE
+          # Only the ephemeral and tenancy harnesses read this. Set the KCP_IMAGE
           # repository variable to pin a tag when kcp main is broken and the
           # noise is not useful.
           KCP_IMAGE: ${{ vars.KCP_IMAGE || 'ghcr.io/kcp-dev/kcp:main' }}

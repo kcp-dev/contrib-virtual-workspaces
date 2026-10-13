@@ -69,6 +69,16 @@ func (c *Authentication) OIDCEnabled() bool {
 	return c.BuiltInOptions.OIDC != nil && c.BuiltInOptions.OIDC.IssuerURL != ""
 }
 
+// ClientCertEnabled reports whether client certificate authentication is
+// configured. Certificates are a complete authentication method on their
+// own: the CommonName becomes the username and the Organizations the
+// groups.
+func (c *Authentication) ClientCertEnabled() bool {
+	return c.BuiltInOptions != nil &&
+		c.BuiltInOptions.ClientCert != nil &&
+		c.BuiltInOptions.ClientCert.ClientCA != ""
+}
+
 // RequestHeaderEnabled reports whether identity headers from a trusted proxy
 // are accepted.
 func (c *Authentication) RequestHeaderEnabled() bool {

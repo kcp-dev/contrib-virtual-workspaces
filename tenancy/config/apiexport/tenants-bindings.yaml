@@ -1,0 +1,35 @@
+# Applied into the TENANTS workspace: the parent every tenant workspace is
+# created under.
+#
+# It binds only the capability to create workspaces. It does NOT bind the
+# Tenant API — a Tenant record lives in the store, and nothing here should
+# be able to read or write one, so a bug in the provisioning path cannot
+# reach the registry that drives it.
+apiVersion: apis.kcp.io/v1alpha2
+kind: APIBinding
+metadata:
+  name: tenancy-provisioner
+spec:
+  reference:
+    export:
+      path: __EXPORTS_PATH__
+      name: tenancy-provisioner
+  permissionClaims:
+    - group: tenancy.kcp.io
+      resource: workspaces
+      verbs: [get, list, watch, create, delete]
+      # MUST match the identityHash on the export's claim, or the two are
+      # different claims: kcp compares them by (group, resource,
+      # identityHash), so an empty hash here leaves the claim
+      # exported-but-never-applied. The binding still reports Bound, and
+      # the only symptom is the operator being told `cannot create resource
+      # "workspaces" ... access denied` much later.
+      identityHash: __TENANCY_KCP_IO_IDENTITY_HASH__
+      state: Accepted
+      # An accepted claim must say which objects it covers. The consumer
+      # chooses the scope: accepting a claim is not "the provider may do
+      # this", it is "the provider may do this TO THESE OBJECTS". matchAll
+      # because the operator must see and create every tenant workspace in
+      # this tier — that IS the capability.
+      selector:
+        matchAll: true
