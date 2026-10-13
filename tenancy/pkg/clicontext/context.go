@@ -21,10 +21,12 @@ limitations under the License.
 // of thing — the local note about which cluster you mean — and because
 // anyone debugging a CLI looks there first.
 //
-// It is shared by the components' CLIs rather than owned by one of them.
-// That is deliberate: `login` learns the server once, and every command
-// after it, whichever component implements it, reads the same file. The
-// components still never import each other; they import this.
+// It belongs to the tenancy CLI because that is where it is written:
+// `login` learns the server, `use` picks the project. Other components'
+// commands are handed what they need from it by whichever binary composes
+// them (contribctl), the way the marketplace's `enable` is handed a
+// workspace resolver — so the components still never import each other,
+// and a component's CLI on its own needs nothing but its flags.
 //
 // Nothing here authorizes anything. It is a convenience that saves
 // repeating flags — kcp decides what the caller may do.

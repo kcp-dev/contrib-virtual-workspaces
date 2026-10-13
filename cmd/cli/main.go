@@ -24,9 +24,10 @@ limitations under the License.
 //
 // The commands themselves belong to the components — every component that
 // ships a client exposes it as importable cobra commands, and this binary
-// only arranges them. The one piece of glue is the workspace resolver
-// handed to the marketplace: it turns "here" into a URL using the tenancy
-// selection, so the two components still never name each other.
+// only arranges them. The glue is two small hand-overs to the marketplace:
+// the server tenancy's login stored, and a workspace resolver that turns
+// "here" into a URL using the tenancy selection. The two components still
+// never name each other.
 package main
 
 import (
@@ -40,6 +41,7 @@ import (
 	accesscli "github.com/kcp-dev/contrib-virtual-workspaces/access/pkg/cli"
 	marketplacecli "github.com/kcp-dev/contrib-virtual-workspaces/marketplace/pkg/cli"
 	tenancycli "github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/cli"
+	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/clicontext"
 )
 
 func main() {
@@ -106,8 +108,8 @@ kubeconfig and are for whoever runs the platform.`,
 		tenancycli.NewTenantsCommand(),
 		tenancycli.NewProjectsCommand(),
 		tenancycli.NewKubeconfigCommand(),
-		marketplacecli.NewOffersCommand(),
-		marketplacecli.NewEnableCommand(currentWorkspace),
+		marketplacecli.NewOffersCommand(marketplaceDefaults()),
+		marketplacecli.NewEnableCommand(marketplaceDefaults(), currentWorkspace),
 	)
 
 	add(groupAdmin,
@@ -118,6 +120,19 @@ kubeconfig and are for whoever runs the platform.`,
 
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
+	}
+}
+
+// marketplaceDefaults is the other piece of glue: the server `login --url`
+// stored, and how to verify it, handed to the marketplace commands as
+// their flag defaults. The marketplace never reads the context file; it
+// only knows it was told an address.
+func marketplaceDefaults() marketplacecli.ServerDefaults {
+	stored := clicontext.Load()
+	return marketplacecli.ServerDefaults{
+		URL:                  stored.ServiceURL("marketplace"),
+		CertificateAuthority: stored.CertificateAuthority,
+		Insecure:             stored.Insecure,
 	}
 }
 

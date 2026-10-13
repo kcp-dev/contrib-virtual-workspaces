@@ -17,7 +17,7 @@ limitations under the License.
 package cli
 
 import (
-	"github.com/kcp-dev/contrib-virtual-workspaces/pkg/clicontext"
+	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/clicontext"
 )
 
 // Selection is the tenant and project the user is currently working in:

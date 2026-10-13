@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// One enabled producer, in this project: what it serves, with how to use
-// it alongside.
+// One enabled producer, in this project: how to use it, then what it
+// serves.
 //
 // This is the page the sidebar lands on, instead of a bare table for
 // whichever kind the producer happens to serve first. A producer that is
@@ -80,6 +80,41 @@ const vars = computed<Variables>(() => ({
   clientId: oidc.config().clientId,
 }))
 
+// Whether the instructions are open. Remembered per browser, per producer:
+// once you have connected your client you want the tables, not the
+// walkthrough, but the next producer's steps are still new to you.
+// localStorage is a convenience, not state — it can be absent or throw
+// (private window, blocked site data), and then the page simply opens.
+const STORAGE_HIDDEN = 'contrib.producer.howtoHidden'
+
+function readHidden(): Set<string> {
+  try {
+    const raw = localStorage.getItem(STORAGE_HIDDEN)
+    return new Set(raw ? (JSON.parse(raw) as string[]) : [])
+  } catch {
+    return new Set()
+  }
+}
+
+const hidden = ref<Set<string>>(readHidden())
+const howtoHidden = computed(() => hidden.value.has(name.value))
+
+function toggleHowto() {
+  const next = new Set(hidden.value)
+  if (next.has(name.value)) next.delete(name.value)
+  else next.add(name.value)
+  hidden.value = next
+  try {
+    localStorage.setItem(STORAGE_HIDDEN, JSON.stringify([...next]))
+  } catch {
+    // Nothing to do: the toggle still works for this page view.
+  }
+}
+
+const hasInstructions = computed(
+  () => !!offer.value?.instructions && Object.keys(offer.value.instructions).length > 0,
+)
+
 onMounted(load)
 watch([workspace, name], load)
 </script>
@@ -109,15 +144,49 @@ watch([workspace, name], load)
     </PageHeader>
 
     <StateBlock :loading="loading" :error="error" :empty="!loading && !binding" :empty-text="`Nothing named ${name} is enabled here.`">
-      <!-- The side column is the editor width ResourcePage uses, so the
-           two pages line up: code blocks in instructions need the room, and
-           the content area is capped at 64rem anyway. -->
-      <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_32rem] items-start">
-        <!-- What the producer serves is the page. Each entry is an
-             ordinary API in this project, one click from its table; no
-             heading because the title already says whose these are. -->
-        <div class="min-w-0">
-          <div v-if="served.length" class="grid gap-3 grid-cols-[repeat(auto-fill,minmax(12rem,1fr))]">
+      <div class="space-y-4">
+        <!-- How to use it, the width of the page: the instructions carry
+             code blocks and tabs, and they are what a service-shaped
+             producer is for. Hideable, because once a client is connected
+             they are in the way; the choice is remembered per browser. -->
+        <Panel v-if="hasInstructions">
+          <template #header>
+            <span>How to use it</span>
+            <button class="ml-auto k-btn k-btn--ghost !px-2 !py-0.5 text-[10px] normal-case tracking-normal" @click="toggleHowto">
+              {{ howtoHidden ? 'Show' : 'Hide' }}
+            </button>
+          </template>
+          <Instructions v-if="!howtoHidden" :instructions="offer!.instructions!" :vars="vars" />
+        </Panel>
+
+        <!-- No instructions is a legitimate state: an API producer's
+             "how to use it" is the tables below. Say so briefly. -->
+        <Panel v-else-if="offer">
+          <div class="px-4 py-3 text-[11px] text-faint">
+            This producer ships no instructions. Each kind below is an ordinary API in this project —
+            open one to list, create and edit its objects.
+          </div>
+        </Panel>
+
+        <Panel v-else-if="binding">
+          <div class="px-4 py-3 text-[11px] text-faint">
+            Enabled here, but not on the catalog — the binding references
+            <code class="font-mono">{{ binding.spec?.reference?.export?.path }}</code> /
+            <code class="font-mono">{{ binding.spec?.reference?.export?.name }}</code>, which no producer
+            currently publishes under those coordinates.
+          </div>
+        </Panel>
+
+        <!-- What it serves. Each entry is an ordinary API in this project,
+             one click from its table. -->
+        <div>
+          <div class="k-eyebrow px-0.5 pb-2 flex items-center gap-2">
+            <span>Kinds</span>
+            <RouterLink to="/catalog" class="ml-auto normal-case tracking-normal text-[11px] text-accent hover:underline">
+              Manage in Producers →
+            </RouterLink>
+          </div>
+          <div v-if="served.length" class="grid gap-3 grid-cols-[repeat(auto-fill,minmax(14rem,1fr))]">
             <RouterLink
               v-for="s in served"
               :key="s.to"
@@ -134,36 +203,6 @@ watch([workspace, name], load)
           <div v-else class="k-card px-4 py-3 text-[11px] text-faint">
             Nothing bound yet — kcp is still establishing the API.
           </div>
-        </div>
-
-        <div class="space-y-4 min-w-0">
-          <Panel v-if="offer?.instructions && Object.keys(offer.instructions).length">
-            <template #header>How to use it</template>
-            <Instructions :instructions="offer.instructions" :vars="vars" />
-          </Panel>
-
-          <!-- No instructions is a legitimate state: an API producer's
-               "how to use it" is the tables. Say so briefly. -->
-          <Panel v-else-if="offer">
-            <template #header>How to use it</template>
-            <div class="px-4 py-3 text-[11px] text-faint">
-              This producer ships no instructions. Each entry it serves is an ordinary API in this
-              project — open one to list, create and edit its objects.
-            </div>
-          </Panel>
-
-          <Panel v-else-if="binding">
-            <div class="px-4 py-3 text-[11px] text-faint">
-              Enabled here, but not on the catalog — the binding references
-              <code class="font-mono">{{ binding.spec?.reference?.export?.path }}</code> /
-              <code class="font-mono">{{ binding.spec?.reference?.export?.name }}</code>, which no producer
-              currently publishes under those coordinates.
-            </div>
-          </Panel>
-
-          <RouterLink to="/catalog" class="block text-[11px] text-accent hover:underline">
-            Manage in Producers →
-          </RouterLink>
         </div>
       </div>
     </StateBlock>

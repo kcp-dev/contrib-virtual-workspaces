@@ -49,6 +49,22 @@ Gateway is recreated. Worth knowing because losing that forward makes
 every kubeconfig, the UI and the CLI fail at once, which looks like the
 components being broken rather than the address being gone.
 
+### How kcp learns about dex
+
+kcp's own `contrib/tilt` entry points know nothing about an OIDC issuer, and
+a Tilt `include()` cannot be parameterized. So instead of including
+`Tiltfile.static`, the Tiltfile here repeats its dozen lines (cert-manager,
+the envoy gateway, etcd, the operator — all addressed through `KCP_DIR`)
+and calls kcp's `deploy_kcp()` itself (loaded through a `.tilt/kcp` symlink
+to `KCP_DIR`, because Starlark's `load()` only takes a literal path), passing
+the `oidc` block (`issuerURL`,
+`clientID: kcp`, `usernameClaim: email`, `caFileRef: dex-tls/ca.crt`) and
+`dex.kcp.localhost` among the pods' hostAliases. That is what puts an OIDC
+authenticator on the shards and the front-proxy; without it every dex token
+is `invalid bearer token` at `:8443` and the console reports that the
+servers did not accept the sign-in. If kcp's entry point grows an `oidc`
+parameter, this collapses back to an include.
+
 ### The dex certificate, and why it matters
 
 dex serves a self-signed certificate, and *changing* it is expensive in two
@@ -78,7 +94,7 @@ Knobs, all optional:
 | Variable | Effect |
 |---|---|
 | `KCP_DIR` | where the kcp checkout lives (default `../kcp`) |
-| `KCP_STATIC=false` | build kcp from that checkout instead of running published images |
+| `KCP_STATIC=false` | build kcp from that checkout instead of running published images. kcp's source-build CRs carry no OIDC issuer, so this needs `DEX_ENABLED=false` too — the Tiltfile refuses the combination rather than bring up a console nobody can sign in to |
 | `TENANCY_ENABLED=false`, `MARKETPLACE_ENABLED=false`, `ACCESS_ENABLED=false`, `MCP_ENABLED=false` | skip a component |
 | `DEX_ENABLED=false` | skip the identity provider |
 | `PKI_VALID_DAYS` | development certificate lifetime (default 365) |

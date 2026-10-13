@@ -81,6 +81,16 @@ kcp would answer for that person.
 http://localhost:5173; `cd ui && npm install && npm run dev` runs it
 against a stack that is already up.
 
+## Building a producer
+
+[producer-quickstart/](producer-quickstart/) is a producer ready to copy: a Go type, the
+schema generated from it, a controller that reconciles it in every workspace
+that enabled it, the instructions the console shows, a Dockerfile, a
+deployment manifest and a CI workflow. Copy the directory, rename the
+group, kind and producer, replace the fake provisioning in the reconciler,
+and `make publish` puts it on the catalog. It is its own Go module so the
+copy builds alone; `make verify` here builds and tests it so it cannot rot.
+
 ## Development with Tilt
 
 `make tilt-up` (or `hack/tilt/up.sh`) brings up the whole stack in one

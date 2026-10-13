@@ -38,7 +38,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
 
-	"github.com/kcp-dev/contrib-virtual-workspaces/pkg/clicontext"
+	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/clicontext"
 )
 
 // Login obtains an ID token — the JWT every other command presents — and

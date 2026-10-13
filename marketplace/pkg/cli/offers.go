@@ -42,7 +42,6 @@ import (
 	apisv1alpha2 "github.com/kcp-dev/sdk/apis/apis/v1alpha2"
 
 	marketplacev1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/marketplace/sdk/apis/marketplace/v1alpha1"
-	"github.com/kcp-dev/contrib-virtual-workspaces/pkg/clicontext"
 )
 
 // WorkspaceResolver reports the workspace URL a command should act on
@@ -61,9 +60,26 @@ func init() {
 	utilruntime.Must(apisv1alpha2.AddToScheme(scheme))
 }
 
+// ServerDefaults is what a composing binary already knows about where the
+// platform is — learned by its own login, remembered in its own way — and
+// hands over so the catalog commands need no address on every call. This
+// package does not read it from anywhere itself: what counts as "the
+// stored server" is the composer's business, not the marketplace's.
+//
+// The zero value means "nothing known", and the flags are then required.
+type ServerDefaults struct {
+	// URL is the marketplace virtual workspace's base URL.
+	URL string
+	// CertificateAuthority verifies its serving certificate; Insecure
+	// skips that, for local testing.
+	CertificateAuthority string
+	Insecure             bool
+}
+
 // catalogOptions are the flags for reaching the marketplace virtual
 // workspace, which any authenticated caller may read.
 type catalogOptions struct {
+	defaults   ServerDefaults
 	url        string
 	kubeconfig string
 	certFile   string
@@ -74,10 +90,9 @@ type catalogOptions struct {
 }
 
 func (o *catalogOptions) addFlags(cmd *cobra.Command) {
-	// Learned once by `login --url` and kept in the shared context, so
+	// Defaulted from what the composing binary learned at login, so
 	// browsing the catalog needs no address of its own.
-	stored := clicontext.Load()
-	cmd.Flags().StringVar(&o.url, "url", envOr("MARKETPLACE_VW_URL", stored.ServiceURL("marketplace")),
+	cmd.Flags().StringVar(&o.url, "url", envOr("MARKETPLACE_VW_URL", o.defaults.URL),
 		"Base URL of the marketplace virtual workspace. Defaults to the server "+
 			"`login --url` stored, or $MARKETPLACE_VW_URL.")
 	cmd.Flags().StringVar(&o.kubeconfig, "kubeconfig", os.Getenv("KUBECONFIG"),
@@ -85,9 +100,9 @@ func (o *catalogOptions) addFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.certFile, "client-cert", "", "Client certificate to authenticate with.")
 	cmd.Flags().StringVar(&o.keyFile, "client-key", "", "Key for --client-cert.")
 	cmd.Flags().StringVar(&o.tokenFile, "token-file", "", "File holding a bearer token to authenticate with.")
-	cmd.Flags().StringVar(&o.caFile, "certificate-authority", stored.CertificateAuthority,
+	cmd.Flags().StringVar(&o.caFile, "certificate-authority", o.defaults.CertificateAuthority,
 		"CA bundle used to verify the virtual workspace's serving certificate.")
-	cmd.Flags().BoolVar(&o.insecure, "insecure-skip-tls-verify", stored.Insecure,
+	cmd.Flags().BoolVar(&o.insecure, "insecure-skip-tls-verify", o.defaults.Insecure,
 		"Do not verify the serving certificate. For local testing only.")
 }
 
@@ -147,8 +162,8 @@ func (o *catalogOptions) client() (client.Client, error) {
 const rootPath = "/services/marketplace"
 
 // NewOffersCommand lists the catalog.
-func NewOffersCommand() *cobra.Command {
-	o := &catalogOptions{}
+func NewOffersCommand(defaults ServerDefaults) *cobra.Command {
+	o := &catalogOptions{defaults: defaults}
 	var wide bool
 
 	cmd := &cobra.Command{
@@ -200,8 +215,8 @@ authenticated caller may read it.`,
 
 // NewEnableCommand enables an offering in a workspace by creating the
 // APIBinding, as the caller.
-func NewEnableCommand(resolve WorkspaceResolver) *cobra.Command {
-	o := &catalogOptions{}
+func NewEnableCommand(defaults ServerDefaults, resolve WorkspaceResolver) *cobra.Command {
+	o := &catalogOptions{defaults: defaults}
 	var (
 		workspace  string
 		kubeconfig string

@@ -75,8 +75,12 @@ tidy: ## Sync go.mod / go.sum
 	$(GO) mod tidy
 
 .PHONY: verify
-verify: verify-gofmt vet verify-fork-pin verify-e2e-manifests ## Run every verification check
+verify: verify-gofmt vet verify-fork-pin verify-e2e-manifests verify-producer-quickstart ## Run every verification check
 	$(GO) mod tidy -diff
+
+.PHONY: verify-producer-quickstart
+verify-producer-quickstart: ## Build and test the producer-quickstart template, which is a Go module of its own
+	cd producer-quickstart && $(GO) mod tidy -diff && $(GO) vet ./... && $(GO) build ./... && $(GO) test ./...
 
 .PHONY: verify-gofmt
 verify-gofmt: ## Check gofmt -s cleanliness
