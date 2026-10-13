@@ -28,7 +28,10 @@ explanation.
 
 | Path | Description |
 |------|-------------|
-| `cmd` | cobra commands: `serve`. |
+| `cmd` | cobra commands: `serve`, `init`, `operator`. |
+| `config/apiexport` | the marketplace offering: the `mcp` APIExport, its `MCPEndpoint` schema, the client instructions ConfigMap, the `bind` grant. |
+| `pkg/bootstrap` | `init`: applies `config/apiexport` into `root:mcp:controllers` and mints the server's identity. |
+| `pkg/operator` | watches the export's endpoint slice; writes the impersonation grant and the `MCPEndpoint` report into each workspace that enabled MCP. |
 | `internal/config` | flag surface. |
 | `internal/access` | client for the access virtual workspace, with the per-caller cache. |
 | `internal/mcp` | the virtual workspace: serving, authentication, per-caller scope. |
@@ -59,6 +62,124 @@ The authentication configuration must match kcp's. Prefer
 `--authentication-config` pointing at the same `AuthenticationConfiguration` file
 kcp is started with; the `--oidc-*` flags work too but have to be kept in step by
 hand.
+
+## Connecting a client
+
+Any MCP client that can send a bearer token works: the front-proxy
+validates it against the same issuer as every other kcp request and
+forwards the identity, and the server then acts as that person. In the
+Tilt stack the issuer is dex at `https://dex.kcp.localhost:8443/dex`, the
+server is `https://kcp.localhost:8443/services/mcp`, and the console's own
+OAuth client — `kcp`, public, PKCE — is the one to use.
+
+### Why dynamic client registration does not work here
+
+The MCP spec expects a client to find its authorization server by itself:
+fetch RFC 9728 metadata from the resource, fetch the server's RFC 8414
+metadata from the issuer, register a client there (RFC 7591), sign in.
+This server implements its half — `--oauth-authorization-servers` turns on
+the `/.well-known/oauth-protected-resource` endpoint and the
+`WWW-Authenticate` hint on every 401, served ahead of the authentication
+filters — but two things in front of and behind it stop the flow:
+
+- **kcp's front-proxy authenticates everything.** An unauthenticated
+  request for the metadata never reaches this server; the proxy answers
+  it with its own 401, a Kubernetes `Status` with no `WWW-Authenticate`.
+  The client then falls back to treating the server's origin as the
+  authorization server and POSTs `/register` to it — which is the
+  `Dynamic Client Registration rejected (HTTP 401): {"kind":"Status",…}`
+  Claude Code reports.
+- **dex has no registration endpoint.** Its metadata carries no
+  `registration_endpoint`, so even a client that found it could not
+  register.
+
+Until that changes — the honest fix is this server on its own hostname,
+authenticating OIDC tokens directly so discovery is reachable, plus a
+registration endpoint that hands every registrant the public client —
+clients have to be given the client up front.
+
+### Claude Code
+
+Pre-registered client, with discovery pointed straight at the issuer:
+
+```sh
+claude mcp add-json kcp '{"type":"http","url":"https://kcp.localhost:8443/services/mcp","oauth":{"clientId":"kcp","callbackPort":8000,"authServerMetadataUrl":"https://dex.kcp.localhost:8443/dex/.well-known/openid-configuration"}}'
+claude mcp login kcp
+```
+
+No secret — `kcp` is a public client — and port 8000 is a redirect URI dex
+has for it (`hack/tilt/dex.yaml`). The plain `claude mcp add` form fails
+for the reasons above. Claude Code runs on Node, which does not share the
+browser's certificate exceptions, and the stack uses two self-signed CAs
+(kcp's and dex's), so start it from a shell with both in one bundle:
+
+```sh
+kubectl --kubeconfig .tilt/tilt-contrib.kubeconfig config view --raw \
+  -o jsonpath='{.clusters[0].cluster.certificate-authority-data}' | base64 -d > /tmp/kcp-bundle.pem
+cat .tilt/dex/ca.crt >> /tmp/kcp-bundle.pem
+export NODE_EXTRA_CA_CERTS=/tmp/kcp-bundle.pem
+```
+
+### Codex
+
+Codex's OAuth flow needs registration too, so give it a token instead.
+`contribctl login` runs the browser flow against dex and caches the ID
+token, which kcp accepts as a bearer:
+
+```sh
+bin/contribctl login --issuer https://dex.kcp.localhost:8443/dex --url https://kcp.localhost:8443
+export KCP_MCP_TOKEN=$(jq -r '.[].idToken' ~/.config/tenancyctl/tokens.json | head -1)
+```
+
+```toml
+# ~/.codex/config.toml
+[mcp_servers.kcp]
+url = "https://kcp.localhost:8443/services/mcp"
+bearer_token_env_var = "KCP_MCP_TOKEN"
+```
+
+Codex trusts the system store, so import both CA certificates there.
+
+### Checking without a client
+
+The same thing by hand: a token from dex's password grant (development
+only; `enablePasswordDB` in the Tilt dex config) and an `initialize`
+through the front-proxy, the request the e2e tests also start from:
+
+```sh
+TOKEN=$(curl -sk -X POST https://dex.kcp.localhost:8443/dex/token \
+  -d grant_type=password -d client_id=kcp -d scope='openid email groups' \
+  -d username=alice@team-a.example.com -d password=password | jq -r .access_token)
+curl -sk -X POST https://kcp.localhost:8443/services/mcp \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"0"}}}'
+```
+
+A 200 with `"serverInfo":{"name":"kcp"}` means the whole chain — proxy,
+token, server — is fine, and anything a client still reports is on the
+client's side: usually the certificate, or registration.
+
+### The same instructions, in the console
+
+Whoever enables MCP in a project sees these steps on the producer's page
+in the console, with the server, issuer, client id and their own
+workspace filled in. They come from
+[`config/apiexport/instructions.yaml`](config/apiexport/instructions.yaml),
+a ConfigMap the `mcp` APIExport names in its
+`marketplace.platform.kcp.io/instructions` annotation; `init` applies it
+with the export, and the marketplace mirrors it into the catalog. To
+change what people are told, edit that file and apply it into the
+controllers workspace — no rebuild:
+
+```sh
+kubectl --kubeconfig .tilt/tilt-contrib.kubeconfig \
+  --server https://kcp.localhost:8443/clusters/root:mcp:controllers \
+  apply -f mcp/config/apiexport/instructions.yaml
+```
+
+The format and the `{{variables}}` it may use are documented in the
+[marketplace README](../marketplace/README.md#instructions-how-a-producer-says-here-is-how-to-use-this).
 
 ## Testing
 
@@ -123,7 +244,7 @@ operator policy over what AI agents may do, not a client preference.
 
 `core` is everything an agent needs to navigate its workspaces and read any
 resource in them, including CRDs and bound APIs, via the generic
-`list_resources`/`get_resource`. `apis` is API provider machinery, `admin` is
+`list_resources`/`get_resource`. `apis` is API producer machinery, `admin` is
 kcp operator internals (shards and topology exist only in the root workspace),
 and `write` is free-form mutation — all opt-in because they are noise or risk
 for ordinary callers. Every tool remains subject to the caller's scope and to
@@ -144,6 +265,24 @@ internal function call. The cost is an HTTP hop, which the per-caller cache
 (`--access-cache-ttl`, default 30s) amortises across the many tool calls a single
 MCP session makes. The access graph is already eventually consistent, so the TTL
 widens an existing staleness window rather than introducing a new one.
+
+**Enabling MCP is a marketplace offering.** MCP is not an API, so there is
+nothing for a consumer to bind in order to "get" it. What they actually
+have to do is let this server act as them in their workspace — see the
+impersonation note below — and that is a per-workspace, opt-in, revocable
+grant, which is exactly the shape of an enablement.
+
+So `config/apiexport/` publishes one APIExport whose permission claims
+cover the RBAC that grant needs. Binding it is the consent; `mcp operator`
+watching the export's endpoint slice spends those claims on the single
+impersonation ClusterRole and ClusterRoleBinding, and then writes an
+`MCPEndpoint` into the workspace so whoever enabled it can see that it
+worked and where to point a client. Deleting the binding revokes the
+claims and with them the operator's reach — consent and capability are the
+same fact, rather than two things that can drift.
+
+`MCPEndpoint` has no spec on purpose: there is nothing to ask for, because
+the binding is the request. It is a report.
 
 **Why impersonation, not the caller's token.** Behind kcp's front-proxy the
 caller's bearer token is consumed by the proxy, which forwards identity as

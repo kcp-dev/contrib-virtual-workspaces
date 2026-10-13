@@ -37,6 +37,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
+
+	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/clicontext"
 )
 
 // Login obtains an ID token — the JWT every other command presents — and
@@ -197,17 +199,20 @@ func httpClientFor(caFile string, insecure bool) (*http.Client, error) {
 
 func newLoginCommand() *cobra.Command {
 	var (
-		issuer        string
-		clientID      string
-		clientSecret  string
-		scopes        []string
-		username      string
-		passwordStdin bool
-		password      string
-		listen        string
-		caFile        string
-		insecure      bool
-		cachePath     string
+		issuer         string
+		clientID       string
+		clientSecret   string
+		scopes         []string
+		username       string
+		passwordStdin  bool
+		password       string
+		listen         string
+		caFile         string
+		insecure       bool
+		cachePath      string
+		server         string
+		serverCAFile   string
+		serverInsecure bool
 	)
 
 	cmd := &cobra.Command{
@@ -305,6 +310,24 @@ a Membership has to name.`,
 			if !token.Expiry.IsZero() {
 				fmt.Printf("expires %s\n", token.Expiry.Local().Format(time.RFC1123))
 			}
+
+			// Remember the server, so nothing after this has to be told
+			// where kcp is. Every virtual workspace hangs off it under
+			// /services/<name>, so one address covers them all.
+			if server != "" {
+				if err := clicontext.Update(func(c *clicontext.Context) {
+					c.Server = strings.TrimSuffix(server, "/")
+					c.CertificateAuthority = serverCAFile
+					c.Insecure = serverInsecure
+				}); err != nil {
+					return err
+				}
+				fmt.Printf("server %s saved in %s\n", strings.TrimSuffix(server, "/"), clicontext.Where())
+			} else if clicontext.Load().Server == "" {
+				fmt.Fprintf(os.Stderr,
+					"\nno server known yet: pass --url https://<front-proxy>:8443 to store one, "+
+						"or give each command --url\n")
+			}
 			return nil
 		},
 	}
@@ -329,6 +352,14 @@ a Membership has to name.`,
 		"Do not verify the issuer's certificate. For a local provider only.")
 	cmd.Flags().StringVar(&cachePath, "token-cache", defaultTokenCachePath(),
 		"File the token is cached in.")
+	cmd.Flags().StringVar(&server, "url", "",
+		"Base URL of the kcp front-proxy, e.g. https://kcp.example.com:8443. Remembered in "+
+			clicontext.Where()+" so later commands need no --url: every virtual workspace "+
+			"answers on it under /services/<name>.")
+	cmd.Flags().StringVar(&serverCAFile, "server-certificate-authority", "",
+		"CA bundle that verifies the server's certificate. Remembered with --url.")
+	cmd.Flags().BoolVar(&serverInsecure, "server-insecure-skip-tls-verify", false,
+		"Do not verify the server's certificate. For local testing only. Remembered with --url.")
 
 	return cmd
 }

@@ -166,6 +166,38 @@ func (d *Directory) RemoveMembership(k Key) {
 	delete(d.memberships, k)
 }
 
+// NamedMembership is a membership together with the name of the object it
+// was mirrored from, which is what a caller needs to delete it again.
+type NamedMembership struct {
+	Name string
+	Membership
+}
+
+// MembershipsIn lists every grant recorded in one tenant workspace,
+// sorted by name so the answer is stable.
+//
+// Unlike ReviewFor this is not filtered to one identity: it reports who
+// else holds what, which only an administrator of that tenant may see.
+// Callers are responsible for having established that first.
+func (d *Directory) MembershipsIn(cluster string) []NamedMembership {
+	if cluster == "" {
+		return nil
+	}
+
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	out := make([]NamedMembership, 0, len(d.memberships))
+	for k, m := range d.memberships {
+		if k.Cluster != cluster {
+			continue
+		}
+		out = append(out, NamedMembership{Name: k.Name, Membership: m})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
 // ForgetCluster drops everything recorded for one organization workspace,
 // for when a cluster leaves the fleet.
 func (d *Directory) ForgetCluster(cluster string) {

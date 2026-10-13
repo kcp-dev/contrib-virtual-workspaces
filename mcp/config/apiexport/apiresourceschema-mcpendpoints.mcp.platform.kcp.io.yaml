@@ -1,0 +1,81 @@
+apiVersion: apis.kcp.io/v1alpha1
+kind: APIResourceSchema
+metadata:
+  name: v261001-fbafaea.mcpendpoints.mcp.platform.kcp.io
+spec:
+  group: mcp.platform.kcp.io
+  names:
+    kind: MCPEndpoint
+    listKind: MCPEndpointList
+    plural: mcpendpoints
+    singular: mcpendpoint
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.url
+      name: URL
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    - jsonPath: .status.message
+      name: Message
+      priority: 1
+      type: string
+    name: v1alpha1
+    schema:
+      description: |-
+        MCPEndpoint reports that MCP is enabled in this workspace, and where to
+        reach it.
+
+        It carries no spec because there is nothing to ask for: enabling MCP is
+        the APIBinding, and this object is what the operator writes back once
+        that binding has let it grant itself the impersonation it needs. Reading
+        it answers the two questions enabling raises — "did it work?" and "where
+        do I point my client?" — without leaving the workspace.
+      properties:
+        apiVersion:
+          description: |-
+            APIVersion defines the versioned schema of this representation of an object.
+            Servers should convert recognized schemas to the latest internal value, and
+            may reject unrecognized values.
+            More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+          type: string
+        kind:
+          description: |-
+            Kind is a string value representing the REST resource this object represents.
+            Servers may infer this from the endpoint the client submits requests to.
+            Cannot be updated.
+            In CamelCase.
+            More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+          type: string
+        metadata:
+          type: object
+        status:
+          description: MCPEndpointStatus is everything this kind has to say.
+          properties:
+            message:
+              type: string
+            phase:
+              description: Phase describes whether MCP is usable in this workspace.
+              type: string
+            toolsets:
+              description: Toolsets are the tool groups the server exposes.
+              items:
+                type: string
+              type: array
+            url:
+              description: |-
+                URL is where an MCP client connects. It is the same address for
+                every workspace — which workspaces a session can see comes from the
+                caller's own access, not from the URL.
+              type: string
+          type: object
+      type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

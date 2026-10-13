@@ -109,7 +109,10 @@ root down. Idempotent: safe to run on every pod start and every upgrade.`,
 				if err != nil {
 					return fmt.Errorf("resolve workspace path %s: %w", storePath, err)
 				}
-				if err := bootstrap.BindStore(ctx, storeCfg, result); err != nil {
+				if err := bootstrap.BindStore(ctx, storeCfg, result, bootstrap.Options{
+					ServerUsers:  serverUsers,
+					ServerGroups: serverGroups,
+				}); err != nil {
 					return fmt.Errorf("bind the Tenant API into %s: %w", storePath, err)
 				}
 				logger.Info("tenant store ready", "workspace", storePath)

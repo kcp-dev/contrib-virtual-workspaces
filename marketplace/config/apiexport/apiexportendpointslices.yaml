@@ -1,0 +1,25 @@
+# One slice per export. Each is a separate virtual workspace, and the
+# operator runs one manager (or holds one client) per slice.
+apiVersion: apis.kcp.io/v1alpha1
+kind: APIExportEndpointSlice
+metadata:
+  name: marketplace-catalog
+spec:
+  export:
+    name: marketplace-catalog
+---
+apiVersion: apis.kcp.io/v1alpha1
+kind: APIExportEndpointSlice
+metadata:
+  name: marketplace-publish
+spec:
+  export:
+    name: marketplace-publish
+---
+apiVersion: apis.kcp.io/v1alpha1
+kind: APIExportEndpointSlice
+metadata:
+  name: marketplace-provisioner
+spec:
+  export:
+    name: marketplace-provisioner

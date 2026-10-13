@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // Package server wires the tenancy virtual workspace binary together: the
-// directory, the provider that fills it from organization workspaces, and
+// directory, the provider that fills it from tenant workspaces, and
 // a virtual-workspace root apiserver serving SelfTenancyReview at
 // /services/tenancy behind kcp's front-proxy.
 package server
@@ -46,7 +46,9 @@ import (
 	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/directory"
 	generatedopenapi "github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/generated/openapi"
 	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/provider"
+	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/virtual/membership"
 	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/virtual/selftenancyreview"
+	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/virtual/selftenantrequest"
 	tenancyv1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/tenancy/sdk/apis/tenancy/v1alpha1"
 )
 
@@ -90,12 +92,18 @@ func Run(ctx context.Context, o *Options) error {
 
 	dir := directory.New()
 
+	// The writes below go through the same discovery that fills the
+	// directory, which is what makes them land on the shard that actually
+	// hosts the workspace.
+	clusters := provider.NewClusters()
+
 	providerErr := make(chan error, 1)
 	go func() {
 		providerErr <- provider.Run(ctx, provider.Options{
 			RestConfig:    restConfig,
 			PlatformSlice: o.PlatformSlice,
 			TenancySlice:  o.TenancySlice,
+			Clusters:      clusters,
 		}, dir)
 	}()
 
@@ -103,12 +111,41 @@ func Run(ctx context.Context, o *Options) error {
 		"platformSlice", o.PlatformSlice, "tenancySlice", o.TenancySlice,
 		"kubeconfig", o.Kubeconfig, "host", restConfig.Host)
 
-	vws := []rootapiserver.NamedVirtualWorkspace{
-		selftenancyreview.NewVirtualWorkspace(dir, endpointFor(o.EndpointBase)),
-	}
-
 	scheme := runtime.NewScheme()
 	utilruntime.Must(tenancyv1alpha1.AddToScheme(scheme))
+
+	// The writes this server performs on a caller's behalf, all through
+	// the tenancy export, because the tenant tier is closed to its own
+	// members by design: a project in a tenant they administer, and the
+	// grants deciding who else may reach it.
+	writer := newProjectWriter(clusters)
+	grants := newMembershipWriter(clusters)
+
+	// And the one that starts someone off with nothing: a tenant, with
+	// themselves as its admin. Off unless the deployment enabled it.
+	storeCluster, err := resolveCluster(restConfig, o.StoreWorkspace)
+	if err != nil && o.SelfServiceTenants {
+		return fmt.Errorf("resolve the tenant store %s: %w", o.StoreWorkspace, err)
+	}
+	tenants := newTenantWriter(clusters, storeCluster)
+
+	vws := []rootapiserver.NamedVirtualWorkspace{
+		selftenancyreview.NewVirtualWorkspace(selftenancyreview.Config{
+			Directory:     dir,
+			EndpointFor:   endpointFor(o.EndpointBase),
+			CreateProject: writer.CreateProject,
+			Tenants: selftenantrequest.Options{
+				Enabled: o.SelfServiceTenants,
+				Groups:  o.SelfServiceTenantGroups,
+			},
+			CreateTenant: tenants.CreateTenant,
+			Memberships: membership.Options{
+				Create: grants.Create,
+				Delete: grants.Delete,
+			},
+		}),
+	}
+
 	codecs := serializer.NewCodecFactory(scheme)
 
 	recommended := genericapiserver.NewRecommendedConfig(codecs)

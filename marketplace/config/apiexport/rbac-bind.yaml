@@ -1,0 +1,63 @@
+# Who may BIND these exports. Applied into the workspace that hosts them.
+#
+# kcp gates APIBinding and APIExportEndpointSlice creation on a `bind` verb
+# against the APIExport, evaluated in the EXPORT's own workspace, and
+# cluster-admin does not satisfy it. Open to system:authenticated because a
+# claim only takes effect once the consumer accepts it; a deployment
+# wanting the exports restricted replaces the subject.
+#
+# The PROVIDER exports a consumer actually enables are not listed here:
+# `bind` on those is materialized per published export, in the producer's
+# own workspace, by the publish reconciler — and revoked when the publish
+# annotation is removed.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: system:kcp:apiexport:marketplace:bind
+rules:
+  - apiGroups: ["apis.kcp.io"]
+    resources: ["apiexports"]
+    resourceNames:
+      - marketplace-catalog
+      - marketplace-publish
+      - marketplace-provisioner
+    verbs: ["bind"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: system:kcp:authenticated:apiexport:marketplace:bind
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:kcp:apiexport:marketplace:bind
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: system:authenticated
+---
+# The `producer` WorkspaceType is referenced from Workspace objects created
+# in other logical clusters; kcp gates that on a `use` verb against the
+# type, in the type's own workspace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: system:kcp:workspacetype:marketplace:use
+rules:
+  - apiGroups: ["tenancy.kcp.io"]
+    resources: ["workspacetypes"]
+    resourceNames: ["producer"]
+    verbs: ["use"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: system:kcp:authenticated:workspacetype:marketplace:use
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:kcp:workspacetype:marketplace:use
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: system:authenticated

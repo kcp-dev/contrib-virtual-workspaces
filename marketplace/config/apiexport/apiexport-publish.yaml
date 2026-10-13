@@ -1,0 +1,46 @@
+# marketplace-publish - the producer-side export.
+#
+# It serves NO resources: publishing is annotating an APIExport, so there
+# is no marketplace object in a producer workspace and nothing to serve.
+# What this export carries is the reach the publish flow needs inside one:
+#
+#   - read apiexports, because an annotated export IS an offering: this is
+#     how one is noticed, read, and noticed again when un-annotated;
+#   - read their endpoint slices, to follow the exports that are published;
+#   - read the LogicalCluster, so the workspace's canonical path can be
+#     matched against the Producer record that names it (that match is how
+#     an external producer's workspace is recognized);
+#   - read ConfigMaps, which is how a producer ships "how to use this": an
+#     annotated export names one, and the catalog shows its sections to
+#     whoever enables it. Read-only, and the only thing read from it is
+#     the data a producer put there to be read;
+#   - write ClusterRoles and ClusterRoleBindings, to materialize the ONE
+#     grant publishing means: `bind` on the annotated export. Delete is
+#     load-bearing - removing the annotation revokes it.
+#
+# Binding this export IS a producer's consent: kcp auto-accepts these
+# claims on binding, and deleting the binding revokes every one of them.
+apiVersion: apis.kcp.io/v1alpha2
+kind: APIExport
+metadata:
+  name: marketplace-publish
+spec:
+  permissionClaims:
+    - group: apis.kcp.io
+      resource: apiexports
+      verbs: [get, list, watch]
+    - group: apis.kcp.io
+      resource: apiexportendpointslices
+      verbs: [get, list, watch]
+    - group: core.kcp.io
+      resource: logicalclusters
+      verbs: [get, list, watch]
+    - group: ""
+      resource: configmaps
+      verbs: [get, list, watch]
+    - group: rbac.authorization.k8s.io
+      resource: clusterroles
+      verbs: [get, list, watch, create, update, delete]
+    - group: rbac.authorization.k8s.io
+      resource: clusterrolebindings
+      verbs: [get, list, watch, create, update, delete]

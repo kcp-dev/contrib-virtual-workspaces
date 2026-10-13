@@ -99,7 +99,10 @@ them.`,
 			if err != nil {
 				return fmt.Errorf("resolve workspace path %s: %w", orgPath, err)
 			}
-			if err := bootstrap.BindStore(cmd.Context(), orgCfg, result); err != nil {
+			// No server identities here: `org bootstrap` makes an additional
+			// platform workspace, and which servers may locate it is init's
+			// business rather than this command's.
+			if err := bootstrap.BindStore(cmd.Context(), orgCfg, result, bootstrap.Options{}); err != nil {
 				return fmt.Errorf("bind the Tenant API into %s: %w", orgPath, err)
 			}
 

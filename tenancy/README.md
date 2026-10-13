@@ -47,7 +47,7 @@ root
           │     │
           │     ├── web ................... WorkspaceType: project
           │     │     APIBinding tenancy-access ... from the WorkspaceType
-          │     │     ClusterRole  tenancy.contrib.kcp.io:role:admin
+          │     │     ClusterRole  tenancy.platform.kcp.io:role:admin
           │     │     ClusterRoleBinding ...:membership:alice-admin
           │     │     Namespace "default" ... created by the operator
           │     │
@@ -304,7 +304,7 @@ Workspace names are DNS labels; display names are arbitrary UTF-8. The
 - `slug` (default): lowercase the display name, collapse everything else to
   dashes ("Acme Corp" → `acme-corp`). On collision with a workspace owned by
   a different object, fall back to the slug plus a hash of the object's UID.
-  Ownership is tracked with a `tenancy.contrib.kcp.io/owner-uid` label, so
+  Ownership is tracked with a `tenancy.platform.kcp.io/owner-uid` label, so
   reconciles converge without storing decisions anywhere.
 - `uid`: always name by UID hash. Opaque, but immune to display-name games.
 
@@ -317,7 +317,7 @@ always proposes the same candidates.
 front-proxy:
 
 ```
-POST /services/tenancy/apis/tenancy.contrib.kcp.io/v1alpha1/selftenancyreviews
+POST /services/tenancy/apis/tenancy.platform.kcp.io/v1alpha1/selftenancyreviews
 ```
 
 The caller POSTs an empty object; the answer lists their tenants with
@@ -410,8 +410,12 @@ is for a self-signed local serving certificate; in a deployment pass
 `--certificate-authority` instead.
 
 `kubeconfig` is the other half of a login: it asks the virtual workspace
-what the caller can reach and writes one context per tenant and per
-project, each pointing at that workspace's own URL. There is still no user
+what the caller can reach and writes one context per **project**, each
+pointing at that workspace's own URL. Projects only, because a tenant
+workspace is where this system keeps its own records — a Membership
+materializes RBAC in that tenant's projects, never in the tenant itself,
+so no member can enter it and a context for it would only ever answer
+`Forbidden`. There is still no user
 registry to enrol into — `login` obtains a credential, it does not create
 an identity. Issuing identities belongs to your provider, and a
 `Membership` only records what one may do.
@@ -471,8 +475,8 @@ PKI=$PWD/pki   # or tenancy/.e2e/pki
 # ask who you are:
 curl -ks --cert "$PKI/alice.crt" --key "$PKI/alice.key" \
   -X POST -H 'Content-Type: application/json' \
-  -d '{"apiVersion":"tenancy.contrib.kcp.io/v1alpha1","kind":"SelfTenancyReview"}' \
-  https://localhost:9445/services/tenancy/apis/tenancy.contrib.kcp.io/v1alpha1/selftenancyreviews
+  -d '{"apiVersion":"tenancy.platform.kcp.io/v1alpha1","kind":"SelfTenancyReview"}' \
+  https://localhost:9445/services/tenancy/apis/tenancy.platform.kcp.io/v1alpha1/selftenancyreviews
 
 # ...and whether the directory is being fed at all:
 curl -ks --cert "$PKI/alice.crt" --key "$PKI/alice.key" \
@@ -489,6 +493,15 @@ Reading the answers:
   `openssl verify -CAfile "$PKI/ca.crt" "$PKI/alice.crt"`.
 - `403 ... authentication required` means no certificate was presented at
   all; the review is only served to an authenticated caller.
+
+## Regenerating the schemas
+
+The `apiresourceschema-*.yaml` assets are generated from the Go types by
+`make generate` (controller-gen + kcp's `apigen`; see
+[../hack/update-apiresourceschemas.sh](../hack/update-apiresourceschemas.sh)).
+After changing anything under `sdk/apis/`, run it and commit the result —
+and if a schema's name changed, update `ExportsOrder` in
+[config/apiexport/bootstrap.go](config/apiexport/bootstrap.go).
 
 ## Testing
 
