@@ -4,8 +4,9 @@
 # https://dex.kcp.localhost:8443/dex both from the host (the ingress
 # port-forward) and from the kcp pods (hostAliases -> the envoy gateway).
 #
-# The identities mirror hack/dex/dex.sh: alice/bob/mallory, one shared
-# password ("password"), a public client "kcp" for PKCE and the password
+# The identities mirror hack/dex/dex.sh: alice/bob/mallory, plus admin,
+# the platform administrator the Tiltfile grants the platform-admin role
+# to. One shared password ("password"), a public client "kcp" for PKCE and the password
 # grant. With kcp's operator-side claim mapping (usernameClaim: email, no
 # prefix) the resulting kcp username is the plain email,
 # e.g. alice@team-a.example.com.
@@ -116,6 +117,10 @@ data:
         hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
         username: mallory
         userID: "3"
+      - email: admin@platform.example.com
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: admin
+        userID: "4"
 ---
 apiVersion: apps/v1
 kind: Deployment

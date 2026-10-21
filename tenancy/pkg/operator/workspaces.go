@@ -27,15 +27,13 @@ import (
 
 	corev1alpha1 "github.com/kcp-dev/sdk/apis/core/v1alpha1"
 	kcptenancyv1alpha1 "github.com/kcp-dev/sdk/apis/tenancy/v1alpha1"
-
-	tenancyv1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/tenancy/sdk/apis/tenancy/v1alpha1"
 )
 
 // ownerUIDLabel ties a provisioned Workspace to the Tenant or Project that
 // asked for it. It is how a reconcile recognizes its own workspace among
 // naming candidates, and how a collision with someone else's workspace is
 // told apart from an earlier run of the same reconcile.
-const ownerUIDLabel = tenancyv1alpha1.GroupName + "/owner-uid"
+const ownerUIDLabel = "tenancy.kcp.hub/owner-uid"
 
 // provisioned describes the workspace a tenant or project ended up with.
 type provisioned struct {

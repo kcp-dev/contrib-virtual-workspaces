@@ -61,7 +61,7 @@ import (
 const (
 	exportsPath   = "root:marketplace:controllers"
 	catalogPath   = "root:marketplace:catalog"
-	producersPath = "root:marketplace:providers"
+	producersPath = "root:marketplace:producers"
 )
 
 // The three exports, by the name their APIBinding takes.

@@ -9,13 +9,13 @@ metadata:
   name: dbaas.example.com
   annotations:
     # Only the exact string "true" publishes.
-    marketplace.platform.kcp.io/publish: "true"
-    marketplace.platform.kcp.io/display-name: Databases
-    marketplace.platform.kcp.io/description: Managed databases, one object per instance.
+    marketplace.kcp.hub/publish: "true"
+    marketplace.kcp.hub/display-name: Databases
+    marketplace.kcp.hub/description: Managed databases, one object per instance.
     # A ConfigMap in this workspace (config/instructions.yaml): what the
     # console shows a consumer after they enable this.
-    marketplace.platform.kcp.io/instructions: dbaas-instructions
-    # marketplace.platform.kcp.io/docs-url: https://docs.example.com/dbaas
+    marketplace.kcp.hub/instructions: dbaas-instructions
+    # marketplace.kcp.hub/docs-url: https://docs.example.com/dbaas
 spec:
   resources:
     - name: databases

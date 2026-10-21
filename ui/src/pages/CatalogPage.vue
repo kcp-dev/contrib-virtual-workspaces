@@ -144,7 +144,7 @@ watch(workspace, load)
   <div>
     <PageHeader
       title="Producers"
-      subtitle="Each entry carries the coordinates of the APIBinding enabling it creates."
+      subtitle="APIs other teams have published. Enable one to use it in this project."
     >
       <template #actions>
         <span v-if="session.project" class="k-badge k-badge--muted">
@@ -160,8 +160,31 @@ watch(workspace, load)
       </RouterLink>
     </div>
 
-    <StateBlock :loading="loading" :error="error" :empty="!items.length" empty-text="The catalog is empty.">
-      <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+    <StateBlock :loading="loading" :error="error">
+      <div v-if="!items.length" class="k-card p-5 max-w-2xl text-xs text-muted leading-relaxed">
+        <div class="text-[13px] font-semibold text-ink mb-1">Nothing has been published yet</div>
+        <p class="mb-3">APIs appear here once a producer publishes one. To publish an API:</p>
+        <ol class="list-decimal pl-4 space-y-1.5 mb-3">
+          <li>Ask a platform admin to register you as a producer. This gives you your own producer workspace.</li>
+          <li>In that workspace, define your API as an <code class="font-mono text-[11px] text-ink bg-overlay px-1 rounded-[3px]">APIResourceSchema</code> and an <code class="font-mono text-[11px] text-ink bg-overlay px-1 rounded-[3px]">APIExport</code>.</li>
+          <li>
+            Add the annotation <code class="font-mono text-[11px] text-ink bg-overlay px-1 rounded-[3px]">marketplace.kcp.hub/publish: "true"</code> to the <code class="font-mono text-[11px] text-ink bg-overlay px-1 rounded-[3px]">APIExport</code>,
+            and <code class="font-mono text-[11px] text-ink bg-overlay px-1 rounded-[3px]">marketplace.kcp.hub/display-name</code> and
+            <code class="font-mono text-[11px] text-ink bg-overlay px-1 rounded-[3px]">marketplace.kcp.hub/description</code> to control how it looks here.
+          </li>
+        </ol>
+        <p>
+          For a complete example to copy, see
+          <a
+            href="https://github.com/kcp-dev/contrib-virtual-workspaces/tree/marketplace.vw/producer-quickstart"
+            target="_blank"
+            rel="noreferrer"
+            class="text-accent underline"
+          ><code class="font-mono text-[11px] bg-overlay px-1 rounded-[3px]">producer-quickstart</code></a>
+          in the contrib-virtual-workspaces repository.
+        </p>
+      </div>
+      <div v-else class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <div v-for="o in items" :key="o.metadata.name" class="k-card p-4 flex flex-col gap-2.5">
           <div class="flex items-start gap-2">
             <div class="min-w-0">

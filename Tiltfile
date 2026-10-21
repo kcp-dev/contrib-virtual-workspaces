@@ -271,8 +271,8 @@ if DEX_ENABLED:
     if str(local('grep -qs dex.kcp.localhost /etc/hosts && echo yes || echo no', quiet=True)).strip() == 'no':
         print('WARNING: dex.kcp.localhost missing from /etc/hosts — add it to the 127.0.0.1 line for login to work')
 
-    print('dex → %s (alice@team-a.example.com / bob@team-b.example.com / mallory@strangers.example.com, password "password")' % DEX_ISSUER)
-    print('login: bin/contribctl tenancy login --issuer %s --certificate-authority %s/dex/ca.crt' % (DEX_ISSUER, TILT_DIR))
+    print('dex → %s (alice@team-a.example.com / bob@team-b.example.com / mallory@strangers.example.com / admin@platform.example.com, password "password")' % DEX_ISSUER)
+    print('login: bin/contribctl login --issuer %s --certificate-authority %s/dex/ca.crt' % (DEX_ISSUER, TILT_DIR))
     print('walkthrough: hack/tilt/README.md')
     print('JWT usernames arrive as the plain email, e.g. alice@team-a.example.com')
 
@@ -524,8 +524,10 @@ def component(name, binary, operator_args):
         serve_cmd='%s operator --kubeconfig %s %s --v=4' % (bin_path, KUBECONFIG, operator_args),
         deps=[bin_path],
         # The exports it reconciles are installed by the virtual
-        # workspace's init container.
-        resource_deps=['%s-build' % name, '%s-vw' % name, 'contrib-kubeconfig'],
+        # workspace's init container. ingress-forward is only ready once
+        # kcp answers on the host, and the operator exits if it cannot
+        # reach kcp at startup.
+        resource_deps=['%s-build' % name, '%s-vw' % name, 'contrib-kubeconfig', 'ingress-forward'],
         labels=[name],
     )
 
@@ -593,9 +595,15 @@ if enabled('MCP'):
     print('mcp VW → %s/services/mcp' % FRONT_PROXY_URL)
     print('  publish it to the catalog: tilt trigger mcp-offering')
 
+# The dex user who runs the platform: init binds it to the platform-admin
+# role in the tenancy store and the marketplace catalog, which is what
+# makes the console's Admin page appear for it.
+PLATFORM_ADMIN = 'admin@platform.example.com'
+PLATFORM_ADMIN_INIT_ARGS = '        - --platform-admin-user=%s\n' % PLATFORM_ADMIN
+
 if enabled('TENANCY'):
     virtual_workspace('tenancy', 'tenancy-vw', 'tenancy',
-        init_args='',
+        init_args=PLATFORM_ADMIN_INIT_ARGS,
         # No --workspace-path: the server kubeconfig is already scoped to
         # root:tenancy:controllers by targetWorkspace, and retargeting it
         # would append a second /clusters/ segment.
@@ -611,14 +619,14 @@ if enabled('TENANCY'):
                       '--tenants-workspace root:tenancy:tenants',
     )
     # Demo data, so a fresh environment answers whoami with something:
-    # the component's own `tenancy seed` command converges on tenant acme
+    # the component's own `admin seed` command converges on tenant acme
     # + project web, alice admin / bob view — each granted under both
     # identities (dex email and dev-cert CN). Idempotent; re-run anytime
     # with `tilt trigger tenancy-seed`. SEED_ENABLED=false skips it.
     if os.getenv('SEED_ENABLED', 'true').lower() not in ('false', '0', 'no', 'off'):
         local_resource('tenancy-seed',
             cmd='make --no-print-directory build-cli && ' +
-                'bin/contribctl tenancy seed --kubeconfig ' + KUBECONFIG +
+                'bin/contribctl admin seed --kubeconfig ' + KUBECONFIG +
                 ' --tenant acme --display-name "Acme Corp" --project web' +
                 ' --admin alice@team-a.example.com --admin alice' +
                 ' --view bob@team-b.example.com --view bob',
@@ -629,7 +637,7 @@ if enabled('TENANCY'):
 
 if enabled('MARKETPLACE'):
     virtual_workspace('marketplace', 'marketplace-vw', 'marketplace',
-        init_args='',
+        init_args=PLATFORM_ADMIN_INIT_ARGS,
         vw_args=''.join(['    - %s\n' % a for a in OIDC_VW_ARGS_LIST]),
     )
     component('marketplace', 'marketplace-vw',

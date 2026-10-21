@@ -41,6 +41,8 @@ func newInitCommand() *cobra.Command {
 		workspaceType        string
 		serverUsers          []string
 		serverGroups         []string
+		adminUsers           []string
+		adminGroups          []string
 		timeout              time.Duration
 	)
 
@@ -109,7 +111,11 @@ created. Idempotent: safe to run on every pod start and every upgrade.`,
 				if err := bootstrap.BindCatalog(ctx, catalogCfg, result); err != nil {
 					return fmt.Errorf("bind the Provider API into %s: %w", catalogPath, err)
 				}
-				logger.Info("catalog ready", "workspace", catalogPath)
+				if err := bootstrap.GrantPlatformAdmins(ctx, catalogCfg, adminUsers, adminGroups); err != nil {
+					return fmt.Errorf("grant platform admins in %s: %w", catalogPath, err)
+				}
+				logger.Info("catalog ready", "workspace", catalogPath,
+					"platformAdminUsers", adminUsers, "platformAdminGroups", adminGroups)
 			}
 			if producersWorkspace != "" {
 				producersPath, err = accessbootstrap.JoinWorkspacePath(workspacePrefix, producersWorkspace)
@@ -183,6 +189,11 @@ created. Idempotent: safe to run on every pod start and every upgrade.`,
 			"or the virtual workspace does not run as this bootstrap's own credential.")
 	cmd.Flags().StringSliceVar(&serverGroups, "server-group", nil,
 		"Additional Group to grant the server role to, repeatable.")
+	cmd.Flags().StringSliceVar(&adminUsers, "platform-admin-user", nil,
+		"User who may manage Producers in the catalog workspace, repeatable. Bound to a role "+
+			"that allows exactly that; anyone left off the list on a later run loses it.")
+	cmd.Flags().StringSliceVar(&adminGroups, "platform-admin-group", nil,
+		"Group, as the identity provider asserts it, whose members may manage Producers, repeatable.")
 	cmd.Flags().DurationVar(&timeout, "timeout", 3*time.Minute,
 		"Overall time budget for installing and verifying.")
 

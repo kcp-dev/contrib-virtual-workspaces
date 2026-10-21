@@ -167,7 +167,7 @@ in the console, with the server, issuer, client id and their own
 workspace filled in. They come from
 [`config/apiexport/instructions.yaml`](config/apiexport/instructions.yaml),
 a ConfigMap the `mcp` APIExport names in its
-`marketplace.platform.kcp.io/instructions` annotation; `init` applies it
+`marketplace.kcp.hub/instructions` annotation; `init` applies it
 with the export, and the marketplace mirrors it into the catalog. To
 change what people are told, edit that file and apply it into the
 controllers workspace — no rebuild:

@@ -22,9 +22,9 @@ such kind. The annotations on the `APIExport` are the offering:
 ```yaml
 metadata:
   annotations:
-    marketplace.platform.kcp.io/publish: "true"
-    marketplace.platform.kcp.io/display-name: Things as a service
-    marketplace.platform.kcp.io/description: One Thing per workspace, batteries included.
+    marketplace.kcp.hub/publish: "true"
+    marketplace.kcp.hub/display-name: Things as a service
+    marketplace.kcp.hub/description: One Thing per workspace, batteries included.
 ```
 
 Only the exact string `"true"` publishes; anything else leaves the export

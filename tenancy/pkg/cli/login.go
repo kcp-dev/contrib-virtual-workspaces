@@ -142,6 +142,13 @@ func anyCachedToken(path string) (string, bool) {
 	return found, found != ""
 }
 
+// CachedToken returns the token `login` cached in the default location, or
+// "" when there is none, it expired, or more than one provider is cached.
+func CachedToken() string {
+	token, _ := anyCachedToken(defaultTokenCachePath())
+	return token
+}
+
 // oidcEndpoints is the slice of the discovery document this needs.
 type oidcEndpoints struct {
 	Issuer                string `json:"issuer"`

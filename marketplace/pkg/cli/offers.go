@@ -74,6 +74,9 @@ type ServerDefaults struct {
 	// skips that, for local testing.
 	CertificateAuthority string
 	Insecure             bool
+	// Token is the bearer token the composer's login obtained, used when
+	// no credential is given explicitly.
+	Token string
 }
 
 // catalogOptions are the flags for reaching the marketplace virtual
@@ -142,6 +145,9 @@ func (o *catalogOptions) client() (client.Client, error) {
 			return nil, fmt.Errorf("read token file: %w", err)
 		}
 		cfg.BearerToken = strings.TrimSpace(string(raw))
+	}
+	if cfg.CertFile == "" && cfg.BearerToken == "" && o.kubeconfig == "" {
+		cfg.BearerToken = o.defaults.Token
 	}
 	if o.caFile != "" {
 		cfg.CAFile, cfg.CAData = o.caFile, nil
@@ -346,6 +352,9 @@ func bindingClient(url, kubeconfig string, o *catalogOptions) (client.Client, er
 			return nil, fmt.Errorf("read token file: %w", err)
 		}
 		cfg.BearerToken = strings.TrimSpace(string(raw))
+	}
+	if cfg.CertFile == "" && cfg.BearerToken == "" && kubeconfig == "" {
+		cfg.BearerToken = o.defaults.Token
 	}
 	if o.insecure {
 		cfg.Insecure, cfg.CAFile, cfg.CAData = true, "", nil
