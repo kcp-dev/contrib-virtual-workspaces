@@ -55,8 +55,10 @@ their own idea of who you are.
 It is shown when kcp answers that the identity may create Tenants in
 `root:tenancy:store`, and a tenant admin is not a platform admin — alice
 is not even allowed to ask the question there, which the UI reads as the
-"no" it is. To see that page, sign in as an identity the platform has
-granted rights in those workspaces.
+"no" it is. To see that page, sign in as `admin@platform.example.com`,
+which the tenancy and marketplace init steps bind to their platform-admin
+roles (`--platform-admin-user`). Registering a producer additionally
+needs the marketplace one; the button is hidden without it.
 
 ### Configuration
 

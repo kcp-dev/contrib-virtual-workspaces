@@ -411,6 +411,41 @@ func applyStoreLocator(ctx context.Context, kube kubernetes.Interface, users, gr
 			},
 		},
 	}
+	return applyRoleAndBinding(ctx, kube, role, users, groups)
+}
+
+// GrantPlatformAdmins makes the given identities administrators of the
+// tenant registry cfg points at: they may enter it and manage Tenants,
+// and nothing else. It is applied even with no identities, so that
+// dropping someone from the list revokes them.
+func GrantPlatformAdmins(ctx context.Context, cfg *rest.Config, users, groups []string) error {
+	kube, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return fmt.Errorf("build kubernetes client: %w", err)
+	}
+	role := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{Name: tenancyv1alpha1.GroupName + ":platform-admin"},
+		Rules: []rbacv1.PolicyRule{
+			{
+				Verbs:           []string{"access"},
+				NonResourceURLs: []string{"/"},
+			},
+			{
+				APIGroups: []string{tenancyv1alpha1.GroupName},
+				Resources: []string{"tenants"},
+				Verbs:     []string{"get", "list", "watch", "create", "update", "patch", "delete"},
+			},
+		},
+	}
+	return applyRoleAndBinding(ctx, kube, role, users, groups)
+}
+
+// applyRoleAndBinding creates or updates a ClusterRole and a binding of the
+// same name holding exactly the given subjects. Updates change only rules,
+// subjects and roleRef on the stored object: kcp annotates these objects
+// itself, and writing back a copy without its internal.kcp.io annotations
+// is rejected as modifying reserved metadata.
+func applyRoleAndBinding(ctx context.Context, kube kubernetes.Interface, role *rbacv1.ClusterRole, users, groups []string) error {
 	if _, err := kube.RbacV1().ClusterRoles().Create(ctx, role, metav1.CreateOptions{}); err != nil {
 		if !apierrors.IsAlreadyExists(err) {
 			return err
@@ -480,47 +515,7 @@ func applyServerIdentity(ctx context.Context, kube kubernetes.Interface, users, 
 			},
 		},
 	}
-	if _, err := kube.RbacV1().ClusterRoles().Create(ctx, role, metav1.CreateOptions{}); err != nil {
-		if !apierrors.IsAlreadyExists(err) {
-			return err
-		}
-		if _, err := kube.RbacV1().ClusterRoles().Update(ctx, role, metav1.UpdateOptions{}); err != nil {
-			return err
-		}
-	}
-
-	binding := &rbacv1.ClusterRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{Name: tenancyv1alpha1.GroupName + ":server"},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: rbacv1.GroupName,
-			Kind:     "ClusterRole",
-			Name:     role.Name,
-		},
-	}
-	for _, u := range users {
-		binding.Subjects = append(binding.Subjects, rbacv1.Subject{
-			APIGroup: rbacv1.GroupName, Kind: "User", Name: u,
-		})
-	}
-	for _, g := range groups {
-		binding.Subjects = append(binding.Subjects, rbacv1.Subject{
-			APIGroup: rbacv1.GroupName, Kind: "Group", Name: g,
-		})
-	}
-	if _, err := kube.RbacV1().ClusterRoleBindings().Create(ctx, binding, metav1.CreateOptions{}); err != nil {
-		if !apierrors.IsAlreadyExists(err) {
-			return err
-		}
-		existing, err := kube.RbacV1().ClusterRoleBindings().Get(ctx, binding.Name, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
-		binding.ResourceVersion = existing.ResourceVersion
-		if _, err := kube.RbacV1().ClusterRoleBindings().Update(ctx, binding, metav1.UpdateOptions{}); err != nil {
-			return err
-		}
-	}
-	return nil
+	return applyRoleAndBinding(ctx, kube, role, users, groups)
 }
 
 // WaitForEndpointSliceURLs reports the virtual workspace URLs one endpoint

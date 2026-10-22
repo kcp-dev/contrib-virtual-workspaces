@@ -135,23 +135,26 @@ type ProducerList struct {
 // own spec.permissionClaims are the claim surface, so there is nothing
 // left to reconcile them against.
 const (
+	// MetadataDomain prefixes the marketplace's label and annotation keys.
+	MetadataDomain = "marketplace.kcp.hub"
+
 	// AnnotationPublish opts an APIExport into the catalog. Its value must
 	// be "true"; anything else, or its absence, means not published.
 	//
 	// Publishing is the producer's own act, on their own object, in their
 	// own workspace — and removing this annotation revokes the `bind`
 	// grant, which is what takes an offering off the catalog.
-	AnnotationPublish = GroupName + "/publish"
+	AnnotationPublish = MetadataDomain + "/publish"
 
 	// AnnotationDisplayName is the human name shown in the catalog.
 	// Absent, the export's own name is used.
-	AnnotationDisplayName = GroupName + "/display-name"
+	AnnotationDisplayName = MetadataDomain + "/display-name"
 
 	// AnnotationDescription is free text for humans.
-	AnnotationDescription = GroupName + "/description"
+	AnnotationDescription = MetadataDomain + "/description"
 
 	// AnnotationDocsURL links to the producer's own documentation.
-	AnnotationDocsURL = GroupName + "/docs-url"
+	AnnotationDocsURL = MetadataDomain + "/docs-url"
 
 	// AnnotationInstructions names a ConfigMap in the same workspace as the
 	// export whose keys are sections of "how to use this" — one per client
@@ -163,7 +166,7 @@ const (
 	// A ConfigMap rather than more annotations because setup instructions
 	// for several clients are paragraphs and code blocks, not a line —
 	// and a ConfigMap is the one core object made for exactly that.
-	AnnotationInstructions = GroupName + "/instructions"
+	AnnotationInstructions = MetadataDomain + "/instructions"
 )
 
 // OfferingClaim is one permission claim as the catalog shows it: what a

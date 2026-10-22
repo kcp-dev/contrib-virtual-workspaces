@@ -124,15 +124,16 @@ kubeconfig and are for whoever runs the platform.`,
 }
 
 // marketplaceDefaults is the other piece of glue: the server `login --url`
-// stored, and how to verify it, handed to the marketplace commands as
-// their flag defaults. The marketplace never reads the context file; it
-// only knows it was told an address.
+// stored, how to verify it, and the token `login` cached, handed to the
+// marketplace commands as their flag defaults. The marketplace never reads
+// the context file or the token cache; it only knows what it was told.
 func marketplaceDefaults() marketplacecli.ServerDefaults {
 	stored := clicontext.Load()
 	return marketplacecli.ServerDefaults{
 		URL:                  stored.ServiceURL("marketplace"),
 		CertificateAuthority: stored.CertificateAuthority,
 		Insecure:             stored.Insecure,
+		Token:                tenancycli.CachedToken(),
 	}
 }
 

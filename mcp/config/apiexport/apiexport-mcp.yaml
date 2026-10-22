@@ -22,11 +22,11 @@ metadata:
   name: mcp
   # Published to the marketplace catalog. The offering IS this export.
   annotations:
-    marketplace.platform.kcp.io/publish: "true"
-    marketplace.platform.kcp.io/display-name: MCP
+    marketplace.kcp.hub/publish: "true"
+    marketplace.kcp.hub/display-name: MCP
     # The ConfigMap below, in this same workspace: how to connect a client.
-    marketplace.platform.kcp.io/instructions: mcp-instructions
-    marketplace.platform.kcp.io/description: >-
+    marketplace.kcp.hub/instructions: mcp-instructions
+    marketplace.kcp.hub/description: >-
       The Model Context Protocol over this workspace. Enabling lets the MCP
       server act as you here; what a session can see is whatever your own
       access allows.

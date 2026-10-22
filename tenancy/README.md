@@ -203,6 +203,14 @@ run it twice and the second run is a no-op. Quote `"$KUBECONFIG"` — unset
 and unquoted, the shell drops the argument and `--kubeconfig` swallows the
 next flag, giving the baffling `load kubeconfig: stat --workspace-path`.
 
+Platform administrators — whoever creates and deletes Tenants — are named
+here too: `--platform-admin-user` and `--platform-admin-group` (both
+repeatable) bind them to `tenancy.platform.kcp.io:platform-admin` in the
+store, a role that may enter it and manage Tenants and nothing else. The
+binding holds exactly the identities of the latest run, so dropping one
+from the flags revokes it. In production, name a group your identity
+provider asserts rather than individual users.
+
 ### 5. Run the operator
 
 ```sh
@@ -304,7 +312,7 @@ Workspace names are DNS labels; display names are arbitrary UTF-8. The
 - `slug` (default): lowercase the display name, collapse everything else to
   dashes ("Acme Corp" → `acme-corp`). On collision with a workspace owned by
   a different object, fall back to the slug plus a hash of the object's UID.
-  Ownership is tracked with a `tenancy.platform.kcp.io/owner-uid` label, so
+  Ownership is tracked with a `tenancy.kcp.hub/owner-uid` label, so
   reconciles converge without storing decisions anywhere.
 - `uid`: always name by UID hash. Opaque, but immune to display-name games.
 
@@ -554,14 +562,21 @@ SelfTenancyReview scenarios authenticate with.
    identity exists because your IdP issued it a credential, and a
    `Membership` names it verbatim. A typo in a subject name is not an
    error, it is a grant nobody holds.
-6. **There is no tenant self-service.** The virtual workspace serves
-   `SelfTenancyReview` and nothing else, so Projects and Memberships are
-   written straight to kcp by someone holding an admin kubeconfig —
-   `tenancyctl` included. A tenant cannot manage their own projects,
-   because the tier those objects live in names no tenant identity. The
-   intended shape is for those writes to arrive through the virtual
-   workspace, which would hold the only credential into that tier and
-   could enforce guards a direct write bypasses.
+6. **Self-service is narrow, and mediated.** Besides `SelfTenancyReview`,
+   the virtual workspace accepts exactly three writes, each performed with
+   its own credential into the tenant tier rather than a grant to the
+   caller:
+   - `SelfTenantRequest` gives a caller their first tenant, with the
+     caller as its admin. It is off unless the deployment passes
+     `--self-service-tenants`, and `--self-service-tenant-groups` limits it
+     to groups the identity provider asserts.
+   - `SelfProjectRequest` creates a project in a tenant the caller
+     administers. The caller names the project and nothing else.
+   - `memberships` lists, grants and revokes access in tenants the caller
+     administers.
+
+   Anything else — deleting a tenant or project, renaming one — is still
+   written straight to kcp by someone holding an admin kubeconfig.
 7. **The operator is not an administrator, and that is load-bearing.** It
    holds no admin client; every write goes through one of the four exports,
    so its reach is exactly their claims. The flip side is that a workspace

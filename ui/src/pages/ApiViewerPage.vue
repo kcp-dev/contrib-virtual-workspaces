@@ -29,6 +29,7 @@ const kind = ref('')
 // than a second opinion about how to display it.
 const columns = ref<TableColumn[]>([])
 const rows = ref<TableRow[]>([])
+const listable = ref(true)
 
 const loadingGroups = ref(false)
 const loadingKinds = ref(false)
@@ -76,8 +77,11 @@ async function loadObjects(name: string) {
   kind.value = name
   rows.value = []
   columns.value = []
-  loadingObjects.value = true
   error.value = ''
+  listable.value = (kinds.value.find((k) => k.name === name)?.verbs ?? []).includes('list')
+  if (!listable.value) return
+
+  loadingObjects.value = true
   try {
     const t = await objectTable(workspace.value, groupVersion.value, name)
     // Kept whole: a cell is addressed by its column's index, so filtering
@@ -127,7 +131,7 @@ watch(groupVersion, loadKinds)
   <div>
     <PageHeader
       title="API Explorer"
-      subtitle="Discovery for this workspace, as you."
+      subtitle="Browse the APIs this project offers and the objects in them you have access to."
     >
       <template #actions>
         <span v-if="session.project" class="k-badge k-badge--muted">
@@ -191,7 +195,7 @@ watch(groupVersion, loadKinds)
           :loading="loadingObjects"
           :error="error"
           :empty="!kind || !rows.length"
-          :empty-text="kind ? 'None.' : 'Select a kind.'"
+          :empty-text="!kind ? 'Select a kind.' : listable ? 'None.' : 'This kind can only be created, not listed, so there are no objects to show.'"
         >
           <table class="k-table">
             <thead>

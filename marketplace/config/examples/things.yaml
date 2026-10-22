@@ -50,10 +50,10 @@ metadata:
     # Only the exact string "true" publishes. Anything else leaves the
     # export off the catalog, which is the safe direction: being on it is
     # what grants `bind` to strangers.
-    marketplace.platform.kcp.io/publish: "true"
-    marketplace.platform.kcp.io/display-name: Things as a service
-    marketplace.platform.kcp.io/instructions: things-instructions
-    marketplace.platform.kcp.io/description: One Thing per workspace, batteries included.
+    marketplace.kcp.hub/publish: "true"
+    marketplace.kcp.hub/display-name: Things as a service
+    marketplace.kcp.hub/instructions: things-instructions
+    marketplace.kcp.hub/description: One Thing per workspace, batteries included.
 spec:
   resources:
     - name: things

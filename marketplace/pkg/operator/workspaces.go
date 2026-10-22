@@ -34,7 +34,7 @@ import (
 // ownerUIDLabel ties a provisioned Workspace to the Provider that asked
 // for it, so a reconcile recognizes its own workspace and a name collision
 // with someone else's is told apart from an earlier run.
-const ownerUIDLabel = marketplacev1alpha1.GroupName + "/owner-uid"
+const ownerUIDLabel = marketplacev1alpha1.MetadataDomain + "/owner-uid"
 
 // provisioned describes the workspace a producer ended up with.
 type provisioned struct {

@@ -176,8 +176,7 @@ func Run(ctx context.Context, o *Options) error {
 		if err != nil && !errors.Is(err, context.Canceled) {
 			return fmt.Errorf("rbac provider failed: %w", err)
 		}
-		<-serveErr
-		return nil
+		return <-serveErr
 	case err := <-serveErr:
 		return err
 	}

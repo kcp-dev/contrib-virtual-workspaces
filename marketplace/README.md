@@ -149,6 +149,13 @@ bin/marketplace-vw init --kubeconfig "$KUBECONFIG"
 This creates the three workspaces from [the model](#the-model) and nothing
 below them. Idempotent: run it twice and the second run is a no-op.
 
+`--platform-admin-user` and `--platform-admin-group` (both repeatable) name
+who may register Producers: they are bound to
+`marketplace.platform.kcp.io:platform-admin` in the catalog, a role that
+may enter it and manage Producers and nothing else. The binding holds
+exactly the identities of the latest run, so dropping one from the flags
+revokes it.
+
 ### 5. Run the operator
 
 ```sh
@@ -238,9 +245,9 @@ metadata:
   name: things.acme.example
   # These three annotations are the offering. There is no other object.
   annotations:
-    marketplace.platform.kcp.io/publish: "true"
-    marketplace.platform.kcp.io/display-name: "Things as a service"
-    marketplace.platform.kcp.io/description: "One Thing per workspace, batteries included."
+    marketplace.kcp.hub/publish: "true"
+    marketplace.kcp.hub/display-name: "Things as a service"
+    marketplace.kcp.hub/description: "One Thing per workspace, batteries included."
 spec:
   resources:
     - name: things
@@ -273,7 +280,7 @@ with it, and the export and everyone already bound to it are untouched:
 
 ```sh
 kubectl --server "$PRODUCER" annotate apiexport things.acme.example \
-  marketplace.platform.kcp.io/publish-
+  marketplace.kcp.hub/publish-
 ```
 
 ### 8. Create a consumer workspace and enable
@@ -467,8 +474,8 @@ the APIExport:
 ```yaml
 metadata:
   annotations:
-    marketplace.platform.kcp.io/instructions: things-instructions   # a ConfigMap, same workspace
-    marketplace.platform.kcp.io/docs-url: https://docs.example/things
+    marketplace.kcp.hub/instructions: things-instructions   # a ConfigMap, same workspace
+    marketplace.kcp.hub/docs-url: https://docs.example/things
 ```
 
 The ConfigMap's keys are sections, shown as tabs; a leading `NN-` orders

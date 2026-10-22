@@ -41,6 +41,8 @@ func newInitCommand() *cobra.Command {
 		workspaceType        string
 		serverUsers          []string
 		serverGroups         []string
+		adminUsers           []string
+		adminGroups          []string
 		timeout              time.Duration
 	)
 
@@ -115,7 +117,11 @@ root down. Idempotent: safe to run on every pod start and every upgrade.`,
 				}); err != nil {
 					return fmt.Errorf("bind the Tenant API into %s: %w", storePath, err)
 				}
-				logger.Info("tenant store ready", "workspace", storePath)
+				if err := bootstrap.GrantPlatformAdmins(ctx, storeCfg, adminUsers, adminGroups); err != nil {
+					return fmt.Errorf("grant platform admins in %s: %w", storePath, err)
+				}
+				logger.Info("tenant store ready", "workspace", storePath,
+					"platformAdminUsers", adminUsers, "platformAdminGroups", adminGroups)
 			}
 			if tenantsWorkspace != "" {
 				tenantsPath, err = accessbootstrap.JoinWorkspacePath(workspacePrefix, tenantsWorkspace)
@@ -190,6 +196,11 @@ root down. Idempotent: safe to run on every pod start and every upgrade.`,
 			"or the virtual workspace does not run as this bootstrap's own credential.")
 	cmd.Flags().StringSliceVar(&serverGroups, "server-group", nil,
 		"Additional Group to grant the server role to, repeatable.")
+	cmd.Flags().StringSliceVar(&adminUsers, "platform-admin-user", nil,
+		"User who may manage Tenants in the store workspace, repeatable. Bound to a role "+
+			"that allows exactly that; anyone left off the list on a later run loses it.")
+	cmd.Flags().StringSliceVar(&adminGroups, "platform-admin-group", nil,
+		"Group, as the identity provider asserts it, whose members may manage Tenants, repeatable.")
 	cmd.Flags().DurationVar(&timeout, "timeout", 3*time.Minute,
 		"Overall time budget for installing and verifying.")
 

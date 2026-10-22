@@ -206,7 +206,7 @@ fills it.
 ## 2. Log in with Dex
 
 Dex is the one identity provider kcp and both virtual workspaces trust, so
-a token names the same user everywhere. Three users, all with the password
+a token names the same user everywhere. Four users, all with the password
 `password`:
 
 | Login | Identity everywhere |
@@ -214,6 +214,13 @@ a token names the same user everywhere. Three users, all with the password
 | `alice@team-a.example.com` | `alice@team-a.example.com` |
 | `bob@team-b.example.com` | `bob@team-b.example.com` |
 | `mallory@strangers.example.com` | `mallory@strangers.example.com` |
+| `admin@platform.example.com` | `admin@platform.example.com` |
+
+`admin` is the platform administrator: the tenancy and marketplace init
+steps run with `--platform-admin-user=admin@platform.example.com`, which
+binds it to a role that may manage Tenants in `root:tenancy:store` and
+Producers in `root:marketplace:catalog`, and nothing else. It is the only
+user the console shows the Admin page to.
 
 The identity is the **plain email, with no groups**: the kcp-operator only
 speaks the legacy `--oidc-*` claim mapping, so the CEL claim mapping used
@@ -461,9 +468,9 @@ metadata:
   # The offering is the export: these annotations publish it, and its own
   # permissionClaims (none here) are the consent form.
   annotations:
-    marketplace.platform.kcp.io/publish: "true"
-    marketplace.platform.kcp.io/display-name: "Things as a service"
-    marketplace.platform.kcp.io/description: "One Thing per workspace, batteries included."
+    marketplace.kcp.hub/publish: "true"
+    marketplace.kcp.hub/display-name: "Things as a service"
+    marketplace.kcp.hub/description: "One Thing per workspace, batteries included."
 spec:
   resources:
     - name: things

@@ -49,9 +49,9 @@ kind: APIExport
 metadata:
   name: widgets.acme.example
   annotations:
-    marketplace.platform.kcp.io/publish: "true"
-    marketplace.platform.kcp.io/display-name: Widgets
-    marketplace.platform.kcp.io/description: A widget kind, and nothing else.
+    marketplace.kcp.hub/publish: "true"
+    marketplace.kcp.hub/display-name: Widgets
+    marketplace.kcp.hub/description: A widget kind, and nothing else.
 spec:
   resources:
     - name: widgets
