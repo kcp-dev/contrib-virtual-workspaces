@@ -1,0 +1,70 @@
+# An offering WITH a consent form, applied to the PROVIDER's workspace.
+#
+# There is no Offering object: the annotations below publish this export,
+# so the offering and the export are one thing that cannot disagree with
+# itself. Its spec.permissionClaims are what the catalog advertises and
+# what a consumer accepts when they enable it.
+apiVersion: apis.kcp.io/v1alpha1
+kind: APIResourceSchema
+metadata:
+  name: v1alpha1.things.acme.example
+spec:
+  group: acme.example
+  names:
+    kind: Thing
+    listKind: ThingList
+    plural: things
+    singular: thing
+  scope: Cluster
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      # The columns any client gets when it asks for a Table — kubectl and
+      # the web console alike. Declaring them here is the whole of making
+      # this resource presentable: neither has to know what a Thing is.
+      additionalPrinterColumns:
+        - name: Message
+          type: string
+          jsonPath: .spec.message
+          description: What this Thing says.
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        type: object
+        properties:
+          apiVersion: {type: string}
+          kind: {type: string}
+          metadata: {type: object}
+          spec:
+            type: object
+            properties:
+              message: {type: string}
+---
+apiVersion: apis.kcp.io/v1alpha2
+kind: APIExport
+metadata:
+  name: things.acme.example
+  annotations:
+    # Only the exact string "true" publishes. Anything else leaves the
+    # export off the catalog, which is the safe direction: being on it is
+    # what grants `bind` to strangers.
+    marketplace.kcp.hub/publish: "true"
+    marketplace.kcp.hub/display-name: Things as a service
+    marketplace.kcp.hub/instructions: things-instructions
+    marketplace.kcp.hub/description: One Thing per workspace, batteries included.
+spec:
+  resources:
+    - name: things
+      group: acme.example
+      schema: v1alpha1.things.acme.example
+      storage:
+        crd: {}
+  # The consent form. defaultSelector is the scope the producer suggests
+  # for a claim; the catalog carries it through as the offering's
+  # matchLabels, and a consumer can narrow further on their own binding.
+  permissionClaims:
+    - group: ""
+      resource: configmaps
+      verbs: [get, list, watch]

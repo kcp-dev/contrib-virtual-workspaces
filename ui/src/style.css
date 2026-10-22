@@ -1,0 +1,311 @@
+@import 'tailwindcss';
+
+/*
+ * "Precision Flat", after railgrid: one surface, one accent, sharp radii
+ * (cards 6px, controls 4px, badges 3px square mono tags — never pills),
+ * mono uppercase micro-labels. Only live things emit light: the active
+ * nav item, the primary action, a focused control.
+ */
+@theme {
+  --font-sans: 'Instrument Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Archivo Variable', 'Instrument Sans Variable', ui-sans-serif, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Sharp radius scale: overrides Tailwind's defaults so every rounded-*
+   * utility lands on the same law without per-component edits. */
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 6px;
+  --radius-2xl: 8px;
+
+  --color-surface: #f1f1f6;
+  --color-raised: #ffffff;
+  --color-overlay: #eaeaf2;
+  --color-hover: #e3e3ee;
+  --color-edge: #e7e6f1;
+  --color-edge-strong: #dfdeeb;
+  --color-ink: #14152a;
+  --color-muted: #565975;
+  --color-faint: #60637b;
+  --color-accent: #6b48e8;
+  --color-accent-hover: #5a38d6;
+  --color-accent-subtle: rgba(107, 72, 232, 0.1);
+  --color-success: #067246;
+  --color-success-subtle: #e5f6ef;
+  --color-warning: #8f5500;
+  --color-warning-subtle: #fdf2e0;
+  --color-danger: #b22a32;
+  --color-danger-subtle: #fcebec;
+  --color-on-accent: #ffffff;
+}
+
+:root {
+  /* Light dials the glow down to a shadow: on a pale surface a halo reads
+   * as blur rather than as life. */
+  --accent-glow: rgba(107, 72, 232, 0.18);
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+body {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  accent-color: var(--color-accent);
+}
+
+@layer components {
+  /* ── Micro-label: small, mono, uppercase, tracked ── */
+  .k-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.2;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--color-muted);
+  }
+
+  /* ── Card ── */
+  .k-card {
+    background: var(--color-raised);
+    border: 1px solid var(--color-edge);
+    border-radius: 6px;
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--color-ink) 4%, transparent);
+  }
+
+  /* ── Table: mono uppercase headers, 13px rows, accent-tinted hover ── */
+  .k-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .k-table thead tr {
+    border-bottom: 1px solid var(--color-edge);
+  }
+  .k-table th {
+    padding: 9px 16px;
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--color-muted);
+  }
+  .k-table tbody tr {
+    border-bottom: 1px solid var(--color-edge);
+    transition: background 0.15s ease;
+  }
+  .k-table tbody tr:last-child {
+    border-bottom: 0;
+  }
+  .k-table tbody tr.is-interactive {
+    cursor: pointer;
+  }
+  .k-table tbody tr.is-interactive:hover {
+    background: color-mix(in srgb, var(--color-accent) 5%, transparent);
+  }
+  .k-table tbody tr.is-selected {
+    background: var(--color-accent-subtle);
+  }
+  .k-table td {
+    padding: 9px 16px;
+    font-size: 13px;
+  }
+
+  /* ── Badge: 3px square mono tag, never a pill ── */
+  .k-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 3px;
+    border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+    padding: 2px 7px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .k-badge--accent {
+    background: var(--color-accent-subtle);
+    color: var(--color-accent-hover);
+  }
+  .k-badge--success {
+    background: var(--color-success-subtle);
+    color: var(--color-success);
+  }
+  .k-badge--warning {
+    background: var(--color-warning-subtle);
+    color: var(--color-warning);
+  }
+  .k-badge--danger {
+    background: var(--color-danger-subtle);
+    color: var(--color-danger);
+  }
+  .k-badge--muted {
+    background: var(--color-overlay);
+    color: var(--color-faint);
+  }
+  .k-badge__dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 9999px;
+    background: currentColor;
+  }
+
+  /* ── Buttons ── */
+  .k-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease,
+      color 0.15s ease,
+      box-shadow 0.15s ease;
+  }
+  .k-btn:disabled {
+    pointer-events: none;
+    opacity: 0.4;
+  }
+  .k-btn--primary {
+    background: var(--color-accent);
+    color: var(--color-on-accent);
+    box-shadow: 0 0 16px var(--accent-glow);
+  }
+  .k-btn--primary:hover {
+    background: var(--color-accent-hover);
+    box-shadow: 0 0 22px var(--accent-glow);
+  }
+  .k-btn--ghost {
+    background: var(--color-overlay);
+    border-color: var(--color-edge-strong);
+    color: var(--color-ink);
+  }
+  .k-btn--ghost:hover {
+    background: var(--color-hover);
+    border-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
+  }
+  /* For the one action that cannot be undone. No glow: this is not a
+     thing to be drawn towards. */
+  .k-btn--danger {
+    background: var(--color-danger);
+    color: #ffffff;
+    border-color: var(--color-danger);
+  }
+  .k-btn--danger:hover {
+    background: color-mix(in srgb, var(--color-danger) 85%, #000000);
+  }
+
+  /* ── Stepper ── */
+  .k-step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 999px;
+    border: 1px solid var(--color-edge-strong);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-faint);
+    background: var(--color-raised);
+    flex: none;
+  }
+  /* Glow only on the live one: it is the thing happening now. */
+  .k-step--current {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+    background: var(--color-accent-subtle);
+    box-shadow: 0 0 12px var(--accent-glow);
+  }
+  .k-step--done {
+    border-color: var(--color-accent);
+    background: var(--color-accent);
+    color: var(--color-on-accent);
+  }
+
+  /* ── Inputs and selects ── */
+  .k-input {
+    box-sizing: border-box;
+    width: 100%;
+    border-radius: 4px;
+    border: 1px solid var(--color-edge-strong);
+    background: var(--color-overlay);
+    padding: 6px 10px;
+    font-size: 13px;
+    color: var(--color-ink);
+    transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease;
+  }
+  .k-input::placeholder {
+    color: var(--color-faint);
+  }
+  .k-input:focus {
+    outline: none;
+    border-color: var(--color-accent);
+    box-shadow:
+      0 0 0 3px var(--color-accent-subtle),
+      0 0 14px var(--accent-glow);
+  }
+
+  /* ── Sidebar nav link: 11px, glow when it is where you are ── */
+  .k-nav-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-radius: 4px;
+    padding: 7px 10px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--color-muted);
+    transition:
+      background 0.2s ease,
+      color 0.2s ease,
+      box-shadow 0.2s ease;
+  }
+  .k-nav-link:hover {
+    background: color-mix(in srgb, var(--color-overlay) 50%, transparent);
+    color: var(--color-ink);
+  }
+  .k-nav-link.router-link-active {
+    background: var(--color-accent-subtle);
+    color: var(--color-accent-hover);
+    box-shadow: 0 0 14px var(--accent-glow);
+  }
+
+  /* ── Notices ── */
+  .k-note {
+    border-radius: 4px;
+    border: 1px solid;
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+  .k-note--success {
+    border-color: color-mix(in srgb, var(--color-success) 30%, transparent);
+    background: var(--color-success-subtle);
+    color: var(--color-success);
+  }
+  .k-note--danger {
+    border-color: color-mix(in srgb, var(--color-danger) 30%, transparent);
+    background: var(--color-danger-subtle);
+    color: var(--color-danger);
+  }
+}

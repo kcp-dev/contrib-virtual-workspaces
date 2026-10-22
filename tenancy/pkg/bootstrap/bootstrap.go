@@ -35,7 +35,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/discovery"
@@ -44,6 +43,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/restmapper"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 
 	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/config/apiexport"
@@ -86,12 +86,6 @@ const (
 	// all.
 	DefaultTenantsWorkspace = "tenants"
 )
-
-// NudgeAnnotation is bumped on an endpoint slice to make kcp recompute its
-// URLs. kcp's URLs controller runs when the slice object is reconciled, and
-// a consumer binding the export is not a slice event, so a slice created
-// before its first consumer would otherwise stay URL-less indefinitely.
-const NudgeAnnotation = tenancyv1alpha1.GroupName + "/nudged-at"
 
 // Options configures Bootstrap.
 type Options struct {
@@ -174,9 +168,25 @@ func Bootstrap(ctx context.Context, cfg *rest.Config, exportsPath string, opts O
 
 // BindStore makes the workspace cfg points at the tenant registry: it
 // binds tenancy-platform, then waits until Tenants are actually servable.
-func BindStore(ctx context.Context, cfg *rest.Config, result *Result) error {
+func BindStore(ctx context.Context, cfg *rest.Config, result *Result, opts Options) error {
 	if err := applyTier(ctx, cfg, result, apiexport.StoreOrder); err != nil {
 		return err
+	}
+
+	// The virtual workspace writes a requested tenant here, through the
+	// platform export — which needs no standing in this workspace. What it
+	// does need is to know which logical cluster this is, because an
+	// export's virtual workspace addresses clusters and not paths. That is
+	// the whole grant: enter, and read the one object that says where you
+	// are.
+	if len(opts.ServerUsers)+len(opts.ServerGroups) > 0 {
+		kube, err := kubernetes.NewForConfig(cfg)
+		if err != nil {
+			return fmt.Errorf("build kubernetes client: %w", err)
+		}
+		if err := applyStoreLocator(ctx, kube, opts.ServerUsers, opts.ServerGroups); err != nil {
+			return fmt.Errorf("grant the server identities the store locator role: %w", err)
+		}
 	}
 
 	dyn, err := dynamic.NewForConfig(cfg)
@@ -335,15 +345,42 @@ func applyManifests(ctx context.Context, dyn dynamic.Interface, mapper *restmapp
 
 		client := dyn.Resource(mapping.Resource)
 		if _, err := client.Create(ctx, &obj, metav1.CreateOptions{}); err != nil {
+			// A hand-bound tier can land on a different shard than the
+			// exports, and the `bind` RBAC applied moments ago reaches that
+			// shard through cache replication — so a Forbidden here is
+			// usually a propagation lag, not a verdict. Retry it briefly.
+			if apierrors.IsForbidden(err) && gvk.Kind == "APIBinding" {
+				retryErr := wait.PollUntilContextTimeout(ctx, 3*time.Second, 2*time.Minute, false, func(ctx context.Context) (bool, error) {
+					_, err := client.Create(ctx, &obj, metav1.CreateOptions{})
+					if err == nil || apierrors.IsAlreadyExists(err) {
+						return true, nil
+					}
+					if apierrors.IsForbidden(err) {
+						return false, nil
+					}
+					return false, err
+				})
+				if retryErr != nil {
+					return fmt.Errorf("create %s %s (after retrying propagation of the bind grant): %w", gvk.Kind, obj.GetName(), retryErr)
+				}
+				continue
+			}
 			if !apierrors.IsAlreadyExists(err) {
 				return fmt.Errorf("create %s %s: %w", gvk.Kind, obj.GetName(), err)
 			}
-			existing, err := client.Get(ctx, obj.GetName(), metav1.GetOptions{})
+			// kcp reconciles some of these objects concurrently (it creates
+			// and keeps updating a default APIExportEndpointSlice per
+			// export), so a single get+update can 409. Re-read and retry.
+			err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+				existing, err := client.Get(ctx, obj.GetName(), metav1.GetOptions{})
+				if err != nil {
+					return err
+				}
+				obj.SetResourceVersion(existing.GetResourceVersion())
+				_, err = client.Update(ctx, &obj, metav1.UpdateOptions{})
+				return err
+			})
 			if err != nil {
-				return fmt.Errorf("get existing %s %s: %w", gvk.Kind, obj.GetName(), err)
-			}
-			obj.SetResourceVersion(existing.GetResourceVersion())
-			if _, err := client.Update(ctx, &obj, metav1.UpdateOptions{}); err != nil {
 				// Some kcp objects reject spec updates (APIResourceSchemas
 				// are immutable); existing is as good as applied.
 				if apierrors.IsInvalid(err) || apierrors.IsForbidden(err) {
@@ -353,6 +390,108 @@ func applyManifests(ctx context.Context, dyn dynamic.Interface, mapper *restmapp
 			}
 		}
 	}
+}
+
+// applyStoreLocator grants the least a server needs to find out which
+// logical cluster the store workspace is: kcp's workspace gate, and a read
+// of the LogicalCluster that names it. Deliberately not the Tenant API —
+// tenants are written through the platform export, not through here.
+func applyStoreLocator(ctx context.Context, kube kubernetes.Interface, users, groups []string) error {
+	role := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{Name: tenancyv1alpha1.GroupName + ":store-locator"},
+		Rules: []rbacv1.PolicyRule{
+			{
+				Verbs:           []string{"access"},
+				NonResourceURLs: []string{"/"},
+			},
+			{
+				APIGroups: []string{"core.kcp.io"},
+				Resources: []string{"logicalclusters"},
+				Verbs:     []string{"get"},
+			},
+		},
+	}
+	return applyRoleAndBinding(ctx, kube, role, users, groups)
+}
+
+// GrantPlatformAdmins makes the given identities administrators of the
+// tenant registry cfg points at: they may enter it and manage Tenants,
+// and nothing else. It is applied even with no identities, so that
+// dropping someone from the list revokes them.
+func GrantPlatformAdmins(ctx context.Context, cfg *rest.Config, users, groups []string) error {
+	kube, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return fmt.Errorf("build kubernetes client: %w", err)
+	}
+	role := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{Name: tenancyv1alpha1.GroupName + ":platform-admin"},
+		Rules: []rbacv1.PolicyRule{
+			{
+				Verbs:           []string{"access"},
+				NonResourceURLs: []string{"/"},
+			},
+			{
+				APIGroups: []string{tenancyv1alpha1.GroupName},
+				Resources: []string{"tenants"},
+				Verbs:     []string{"get", "list", "watch", "create", "update", "patch", "delete"},
+			},
+		},
+	}
+	return applyRoleAndBinding(ctx, kube, role, users, groups)
+}
+
+// applyRoleAndBinding creates or updates a ClusterRole and a binding of the
+// same name holding exactly the given subjects. Updates change only rules,
+// subjects and roleRef on the stored object: kcp annotates these objects
+// itself, and writing back a copy without its internal.kcp.io annotations
+// is rejected as modifying reserved metadata.
+func applyRoleAndBinding(ctx context.Context, kube kubernetes.Interface, role *rbacv1.ClusterRole, users, groups []string) error {
+	if _, err := kube.RbacV1().ClusterRoles().Create(ctx, role, metav1.CreateOptions{}); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			return err
+		}
+		if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			existing, err := kube.RbacV1().ClusterRoles().Get(ctx, role.Name, metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
+			existing.Rules = role.Rules
+			_, err = kube.RbacV1().ClusterRoles().Update(ctx, existing, metav1.UpdateOptions{})
+			return err
+		}); err != nil {
+			return err
+		}
+	}
+
+	subjects := make([]rbacv1.Subject, 0, len(users)+len(groups))
+	for _, u := range users {
+		subjects = append(subjects, rbacv1.Subject{Kind: rbacv1.UserKind, APIGroup: rbacv1.GroupName, Name: u})
+	}
+	for _, g := range groups {
+		subjects = append(subjects, rbacv1.Subject{Kind: rbacv1.GroupKind, APIGroup: rbacv1.GroupName, Name: g})
+	}
+
+	binding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: role.Name},
+		RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: role.Name},
+		Subjects:   subjects,
+	}
+	if _, err := kube.RbacV1().ClusterRoleBindings().Create(ctx, binding, metav1.CreateOptions{}); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			return err
+		}
+		return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			existing, err := kube.RbacV1().ClusterRoleBindings().Get(ctx, binding.Name, metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
+			existing.Subjects = subjects
+			existing.RoleRef = binding.RoleRef
+			_, err = kube.RbacV1().ClusterRoleBindings().Update(ctx, existing, metav1.UpdateOptions{})
+			return err
+		})
+	}
+	return nil
 }
 
 // applyServerIdentity grants the server role to the given identities.
@@ -370,60 +509,13 @@ func applyServerIdentity(ctx context.Context, kube kubernetes.Interface, users, 
 				Verbs:     []string{"get", "list", "watch"},
 			},
 			{
-				// The operator nudges a URL-less endpoint slice to work
-				// around kcp not reconciling slices on new bindings.
-				APIGroups: []string{"apis.kcp.io"},
-				Resources: []string{"apiexportendpointslices"},
-				Verbs:     []string{"patch"},
-			},
-			{
 				APIGroups: []string{"apis.kcp.io"},
 				Resources: []string{"apiexports/content"},
 				Verbs:     []string{"*"},
 			},
 		},
 	}
-	if _, err := kube.RbacV1().ClusterRoles().Create(ctx, role, metav1.CreateOptions{}); err != nil {
-		if !apierrors.IsAlreadyExists(err) {
-			return err
-		}
-		if _, err := kube.RbacV1().ClusterRoles().Update(ctx, role, metav1.UpdateOptions{}); err != nil {
-			return err
-		}
-	}
-
-	binding := &rbacv1.ClusterRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{Name: tenancyv1alpha1.GroupName + ":server"},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: rbacv1.GroupName,
-			Kind:     "ClusterRole",
-			Name:     role.Name,
-		},
-	}
-	for _, u := range users {
-		binding.Subjects = append(binding.Subjects, rbacv1.Subject{
-			APIGroup: rbacv1.GroupName, Kind: "User", Name: u,
-		})
-	}
-	for _, g := range groups {
-		binding.Subjects = append(binding.Subjects, rbacv1.Subject{
-			APIGroup: rbacv1.GroupName, Kind: "Group", Name: g,
-		})
-	}
-	if _, err := kube.RbacV1().ClusterRoleBindings().Create(ctx, binding, metav1.CreateOptions{}); err != nil {
-		if !apierrors.IsAlreadyExists(err) {
-			return err
-		}
-		existing, err := kube.RbacV1().ClusterRoleBindings().Get(ctx, binding.Name, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
-		binding.ResourceVersion = existing.ResourceVersion
-		if _, err := kube.RbacV1().ClusterRoleBindings().Update(ctx, binding, metav1.UpdateOptions{}); err != nil {
-			return err
-		}
-	}
-	return nil
+	return applyRoleAndBinding(ctx, kube, role, users, groups)
 }
 
 // WaitForEndpointSliceURLs reports the virtual workspace URLs one endpoint
@@ -444,14 +536,6 @@ func waitForEndpointSlice(ctx context.Context, dyn dynamic.Interface, sliceName 
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-
-	// See NudgeAnnotation: without a write to the slice, the URLs for a
-	// freshly bound export never appear and this wait is 30 seconds of
-	// nothing.
-	patch := fmt.Sprintf(`{"metadata":{"annotations":{%q:%q}}}`, NudgeAnnotation, time.Now().UTC().Format(time.RFC3339))
-	if _, err := dyn.Resource(endpointSliceGVR).Patch(ctx, sliceName, types.MergePatchType, []byte(patch), metav1.PatchOptions{}); err != nil {
-		logger.V(2).Info("could not nudge the endpoint slice", "slice", sliceName, "error", err.Error())
-	}
 
 	var urls []string
 	err := wait.PollUntilContextCancel(ctx, 2*time.Second, true, func(ctx context.Context) (bool, error) {

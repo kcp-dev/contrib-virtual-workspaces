@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package provider populates the tenancy directory from the organization
+// Package provider populates the tenancy directory from the tenant
 // workspaces bound to the tenancy APIExport. It is the read side of the
 // operator: the same discovery (multicluster-runtime over the apiexport
 // endpoint slice), but instead of materializing workspaces it only mirrors
@@ -63,6 +63,10 @@ type Options struct {
 	// different tiers, so the directory is fed by two managers.
 	PlatformSlice string
 	TenancySlice  string
+	// Clusters, when non-nil, is filled with a handle on the two managers,
+	// so the caller can address a write to the shard that hosts a given
+	// workspace. See the type for why that is not a free choice.
+	Clusters *Clusters
 }
 
 // Run fills dir until ctx is cancelled. It marks the directory ready once
@@ -110,6 +114,10 @@ func Run(ctx context.Context, opts Options, dir *directory.Directory) error {
 	tenancy, err := newMgr(opts.TenancySlice)
 	if err != nil {
 		return err
+	}
+
+	if opts.Clusters != nil {
+		opts.Clusters.set(platform, tenancy)
 	}
 
 	if err := registerTenantMirror(platform, dir); err != nil {
@@ -161,7 +169,7 @@ func (c clusterLifecycle) OnDelete(obj client.Object) {
 	if cluster == "" {
 		return
 	}
-	c.logger.Info("organization workspace left the fleet, dropping from directory", "cluster", cluster)
+	c.logger.Info("workspace left the fleet, dropping from directory", "cluster", cluster)
 	c.dir.ForgetCluster(cluster)
 }
 

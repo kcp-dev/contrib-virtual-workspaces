@@ -1,0 +1,195 @@
+# Dex for the Tilt setup: the OIDC issuer kcp and the virtual workspaces
+# share. It runs in the same kind cluster, terminates its own TLS (secret
+# dex-tls, minted by dex-pki.sh) and is reachable as
+# https://dex.kcp.localhost:8443/dex both from the host (the ingress
+# port-forward) and from the kcp pods (hostAliases -> the envoy gateway).
+#
+# The identities mirror hack/dex/dex.sh: alice/bob/mallory, plus admin,
+# the platform administrator the Tiltfile grants the platform-admin role
+# to. One shared password ("password"), a public client "kcp" for PKCE and the password
+# grant. With kcp's operator-side claim mapping (usernameClaim: email, no
+# prefix) the resulting kcp username is the plain email,
+# e.g. alice@team-a.example.com.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dex
+  namespace: default
+---
+# Kubernetes storage means dex creates its own CRDs on first start and
+# then reads and writes them — including the signing keys whose survival
+# across restarts is the whole point.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dex
+rules:
+  - apiGroups: ["dex.coreos.com"]
+    resources: ["*"]
+    verbs: ["*"]
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["create", "get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dex
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dex
+subjects:
+  - kind: ServiceAccount
+    name: dex
+    namespace: default
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dex
+  namespace: default
+data:
+  config.yaml: |
+    issuer: https://dex.kcp.localhost:8443/dex
+    # Kubernetes storage, not memory, because dex mints its signing keys
+    # on first start and keeps them in storage. With memory storage every
+    # restart produces new keys, which invalidates every token already
+    # issued AND leaves the front-proxy, both shards and both virtual
+    # workspaces holding a JWKS that no longer verifies anything — the
+    # whole stack rejects logins until each of them is restarted too.
+    # Persisting the keys in the cluster makes a dex restart a non-event.
+    storage:
+      type: kubernetes
+      config:
+        inCluster: true
+    web:
+      https: 0.0.0.0:5556
+      tlsCert: /etc/dex/tls/tls.crt
+      tlsKey: /etc/dex/tls/tls.key
+      # The browser fetches discovery and exchanges the code from the UI's
+      # own origin, which is a different one than dex — so dex has to say
+      # those origins may read its answers. Without this the sign-in fails
+      # at the first request, before anything reaches kcp.
+      #
+      # A few ports, because vite moves up one when the last is taken.
+      allowedOrigins:
+        - http://localhost:5173
+        - http://localhost:5174
+        - http://localhost:5175
+      # The token exchange itself needs none of these — form-encoded POSTs
+      # are CORS-safelisted and never preflight — but anything that adds a
+      # header later would be refused with a bare 403 at the preflight,
+      # which is a confusing way to find out.
+      allowedHeaders:
+        - Content-Type
+        - Authorization
+    oauth2:
+      # The password grant needs a nominated connector and a public
+      # client; PKCE (contribctl tenancy login without --username) works
+      # with the same client.
+      passwordConnector: local
+      skipApprovalScreen: true
+    staticClients:
+      - id: kcp
+        public: true
+        name: kcp
+        # The CLI's loopback listener, and the UI's dev server. Both are
+        # public clients doing authorization-code + PKCE: neither has a
+        # secret to keep, which is what PKCE is for.
+        redirectURIs:
+          - 'http://localhost:8000/callback'
+          - 'http://localhost:5173/callback'
+          - 'http://localhost:5174/callback'
+          - 'http://localhost:5175/callback'
+    enablePasswordDB: true
+    # All hashes are bcrypt("password").
+    staticPasswords:
+      - email: alice@team-a.example.com
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: alice
+        userID: "1"
+      - email: bob@team-b.example.com
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: bob
+        userID: "2"
+      - email: mallory@strangers.example.com
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: mallory
+        userID: "3"
+      - email: admin@platform.example.com
+        hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+        username: admin
+        userID: "4"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dex
+  namespace: default
+  labels:
+    app: dex
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dex
+  template:
+    metadata:
+      labels:
+        app: dex
+    spec:
+      serviceAccountName: dex
+      containers:
+        - name: dex
+          image: ghcr.io/dexidp/dex:v2.44.0
+          command: ["/usr/local/bin/dex", "serve", "/etc/dex/cfg/config.yaml"]
+          ports:
+            - containerPort: 5556
+          volumeMounts:
+            - name: config
+              mountPath: /etc/dex/cfg
+              readOnly: true
+            - name: tls
+              mountPath: /etc/dex/tls
+              readOnly: true
+          readinessProbe:
+            tcpSocket:
+              port: 5556
+      volumes:
+        - name: config
+          configMap:
+            name: dex
+        - name: tls
+          secret:
+            secretName: dex-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dex
+  namespace: default
+spec:
+  selector:
+    app: dex
+  ports:
+    - port: 5556
+      targetPort: 5556
+---
+# SNI-routed through the same envoy gateway and 8443 port-forward as the
+# kcp shards; dex terminates the TLS itself (mode Passthrough upstream).
+apiVersion: gateway.networking.k8s.io/v1alpha3
+kind: TLSRoute
+metadata:
+  name: dex
+  namespace: default
+spec:
+  parentRefs:
+    - name: eg
+      namespace: envoy-gateway-system
+  hostnames:
+    - dex.kcp.localhost
+  rules:
+    - backendRefs:
+        - name: dex
+          port: 5556

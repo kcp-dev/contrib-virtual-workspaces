@@ -128,6 +128,23 @@ func Slugify(displayName string) string {
 	return truncate(b.String(), maxNameLength)
 }
 
+// MembershipName derives the object name of a grant from what it grants
+// to whom. It is deterministic so that granting the same access twice is
+// an update in place rather than a second object saying the same thing —
+// which is what lets a role be changed by re-granting it, and what makes
+// seeding safe to repeat.
+//
+// Subject, tenant and project are slugified because they become part of an
+// object name: a subject is usually an email address, which is not a DNS
+// label.
+func MembershipName(subject, tenant, project string) string {
+	name := Slugify(subject) + "-" + Slugify(tenant)
+	if project != "" {
+		name += "-" + Slugify(project)
+	}
+	return name
+}
+
 // truncate shortens s to at most n bytes without leaving a trailing dash.
 func truncate(s string, n int) string {
 	if len(s) > n {

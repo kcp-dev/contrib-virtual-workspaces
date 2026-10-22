@@ -1,0 +1,16 @@
+# marketplace-provisioner - the capability to CREATE PROVIDER WORKSPACES.
+#
+# Declares no resources; bound by hand into the producers parent and
+# nowhere else. The identityHash names kcp's own tenancy.kcp.io export,
+# discovered at install time - a claim on kcp's exported types without it
+# is a different claim that never applies.
+apiVersion: apis.kcp.io/v1alpha2
+kind: APIExport
+metadata:
+  name: marketplace-provisioner
+spec:
+  permissionClaims:
+    - group: tenancy.kcp.io
+      resource: workspaces
+      verbs: [get, list, watch, create, delete]
+      identityHash: __TENANCY_KCP_IO_IDENTITY_HASH__

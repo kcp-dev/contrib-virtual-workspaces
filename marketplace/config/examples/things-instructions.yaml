@@ -1,0 +1,49 @@
+# The example's "how to use this", applied to the PRODUCER's workspace
+# next to the export that names it. Short on purpose: the point of the
+# example is to show the shape, not to document Things.
+#
+# The namespace is part of the example because a provisioned producer
+# workspace starts without one: the operator creates the workspace and
+# nothing else, and a ConfigMap cannot be created into a namespace that
+# is not there. The marketplace reads the ConfigMap by name whatever its
+# namespace, so which one is the producer's choice.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: default
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: things-instructions
+  namespace: default
+data:
+  00-overview.md: |
+    # Things
+
+    Enabling binds `things.acme.example` into `{{tenant}}/{{project}}`,
+    where it is an ordinary API. One Thing is one object with a message.
+
+  10-kubectl.md: |
+    # kubectl
+
+    Point a kubeconfig at the project and create one:
+
+    ```sh
+    kubectl --server {{workspace}} apply -f - <<EOF
+    apiVersion: acme.example/v1alpha1
+    kind: Thing
+    metadata:
+      name: hello
+    spec:
+      message: from {{user}}
+    EOF
+
+    kubectl --server {{workspace}} get things
+    ```
+
+  20-console.md: |
+    # In this console
+
+    The *Things* entry in the sidebar lists them with the producer's own
+    columns, and *New Thing* opens a form generated from the schema.

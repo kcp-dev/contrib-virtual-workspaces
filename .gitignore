@@ -11,9 +11,13 @@ cover.out
 .local/
 pki/
 .dex/
+.tilt/
 
 # Kubeconfigs the README walkthrough writes (`tenancyctl kubeconfig -o ...`).
 *.kubeconfig
+
+# Serial files `openssl x509 -CAcreateserial` leaves beside wherever it ran.
+*.srl
 
 # Binaries built into component roots by `go build ./cmd/...`. They shadow
 # bin/ on tab-completion and go stale silently; use `make build`.
@@ -26,3 +30,10 @@ pki/
 
 # Self-signed serving certs a VW generates when none are supplied.
 apiserver.local.config/
+/marketplace/bin/
+
+# The web UI's build output and dependencies. Running vitest from the repo
+# root also leaves a node_modules/ cache there.
+node_modules/
+ui/dist/
+*.tsbuildinfo

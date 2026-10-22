@@ -10,7 +10,7 @@ metadata:
 spec:
   resources:
     - name: tenants
-      group: tenancy.contrib.kcp.io
-      schema: v1alpha1.tenants.tenancy.contrib.kcp.io
+      group: tenancy.platform.kcp.io
+      schema: v260926-3d181e5.tenants.tenancy.platform.kcp.io
       storage:
         crd: {}

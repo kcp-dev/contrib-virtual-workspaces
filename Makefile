@@ -28,7 +28,7 @@ help: ## Show available targets
 # ── Build ────────────────────────────────────────────────────────────
 
 .PHONY: build
-build: build-access build-mcp build-ephemeral build-tenancy ## Build every binary into bin/
+build: build-access build-mcp build-ephemeral build-tenancy build-marketplace build-cli ## Build every binary into bin/
 
 .PHONY: build-access
 build-access: ## Build the access virtual workspace binaries
@@ -68,15 +68,19 @@ lint: ## Run golangci-lint (configuration in .golangci.yml)
 .PHONY: vet
 vet: ## Run go vet, including the e2e build tag so the tests cannot rot
 	$(GO) vet ./...
-	$(GO) vet -tags e2e ./test/... ./access/test/... ./mcp/test/... ./ephemeral/test/... ./tenancy/test/...
+	$(GO) vet -tags e2e ./test/... ./access/test/... ./mcp/test/... ./ephemeral/test/... ./tenancy/test/... ./marketplace/test/...
 
 .PHONY: tidy
 tidy: ## Sync go.mod / go.sum
 	$(GO) mod tidy
 
 .PHONY: verify
-verify: verify-gofmt vet verify-fork-pin verify-e2e-manifests ## Run every verification check
+verify: verify-gofmt vet verify-fork-pin verify-e2e-manifests verify-producer-quickstart ## Run every verification check
 	$(GO) mod tidy -diff
+
+.PHONY: verify-producer-quickstart
+verify-producer-quickstart: ## Build and test the producer-quickstart template, which is a Go module of its own
+	cd producer-quickstart && $(GO) mod tidy -diff && $(GO) vet ./... && $(GO) build ./... && $(GO) test ./...
 
 .PHONY: verify-gofmt
 verify-gofmt: ## Check gofmt -s cleanliness
@@ -95,7 +99,7 @@ verify-fork-pin: ## Check the kcp Kubernetes fork pin matches virtual-workspace-
 # Each component owns its e2e harness; these are the entry points CI uses.
 
 .PHONY: test-e2e
-test-e2e: test-e2e-access test-e2e-mcp test-e2e-ephemeral test-e2e-tenancy ## Run every component's e2e tests in sequence
+test-e2e: test-e2e-access test-e2e-mcp test-e2e-ephemeral test-e2e-tenancy test-e2e-marketplace ## Run every component's e2e tests in sequence
 
 .PHONY: test-e2e-access
 test-e2e-access: ## Run the access VW e2e tests (throwaway kind cluster via kcp-operator)
@@ -113,6 +117,26 @@ test-e2e-ephemeral: ## Run the ephemeral VW e2e tests (local processes against a
 test-e2e-tenancy: ## Run the tenancy e2e tests (local processes against a real kcp)
 	cd tenancy && ./hack/ci/run-e2e-tests.sh
 
+.PHONY: generate
+generate: ## Regenerate the APIResourceSchemas from the sdk Go types (controller-gen + kcp apigen)
+	./hack/update-apiresourceschemas.sh
+
+.PHONY: build-cli
+build-cli: ## Build contribctl, the repo-wide CLI bundling every component's client
+	$(GO) build -o $(BIN_DIR)/contribctl ./cmd/cli
+
+.PHONY: build-marketplace
+build-marketplace: ## Build the marketplace server binary
+	$(GO) build -o $(BIN_DIR)/marketplace-vw ./marketplace
+
+.PHONY: test-spike-marketplace
+test-spike-marketplace: ## Prove the marketplace design's binder composition against a real kcp
+	./marketplace/hack/ci/run-spike.sh
+
+.PHONY: test-e2e-marketplace
+test-e2e-marketplace: ## Run the marketplace e2e tests (local processes against a real kcp)
+	cd marketplace && ./hack/ci/run-e2e-tests.sh
+
 # ── Images ───────────────────────────────────────────────────────────
 # One Dockerfile, one shared builder stage, three image targets.
 
@@ -120,7 +144,7 @@ IMAGE_PREFIX ?= ghcr.io/kcp-dev/contrib-virtual-workspaces
 IMAGE_TAG    ?= latest
 
 .PHONY: images
-images: image-access image-mcp image-ephemeral image-tenancy ## Build every container image
+images: image-access image-mcp image-ephemeral image-tenancy image-marketplace ## Build every container image
 
 .PHONY: image-access
 image-access: ## Build the access-vw container image
@@ -137,6 +161,14 @@ image-ephemeral: ## Build the ephemeral-vw container image
 .PHONY: image-tenancy
 image-tenancy: ## Build the tenancy-vw container image
 	docker build --target tenancy-vw -t $(IMAGE_PREFIX)/tenancy-vw:$(IMAGE_TAG) .
+
+.PHONY: image-marketplace
+image-marketplace: ## Build the marketplace-vw container image
+	docker build --target marketplace-vw -t $(IMAGE_PREFIX)/marketplace-vw:$(IMAGE_TAG) .
+
+.PHONY: tilt-up
+tilt-up: ## Bring up kcp (from $(KCP_DIR), default ../kcp) plus this repo's components under Tilt
+	./hack/tilt/up.sh
 
 .PHONY: clean
 clean: ## Remove build artifacts

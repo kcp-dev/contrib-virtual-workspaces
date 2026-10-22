@@ -12,7 +12,11 @@ metadata:
 spec:
   reference:
     export:
-      path: __EXPORTS_PATH__
+      # The logical cluster id, not the pretty path: an APIBinding reference
+      # resolves ids locally on the shard, while pretty paths need the cache
+      # server's path index — which multi-shard deployments have broken
+      # before. The WorkspaceTypes reference exports the same way.
+      path: __EXPORTS_REF__
       name: tenancy-provisioner
   permissionClaims:
     - group: tenancy.kcp.io

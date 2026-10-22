@@ -1,0 +1,16 @@
+# marketplace-catalog - the registry of Producer records.
+#
+# Bound by hand into the catalog workspace and nowhere else. It carries no
+# claims: a Producer record is data, and the tier holding the records that
+# say who may publish cannot reach into any workspace.
+apiVersion: apis.kcp.io/v1alpha2
+kind: APIExport
+metadata:
+  name: marketplace-catalog
+spec:
+  resources:
+    - name: producers
+      group: marketplace.platform.kcp.io
+      schema: v261001-fbafaea.producers.marketplace.platform.kcp.io
+      storage:
+        crd: {}

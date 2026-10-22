@@ -25,6 +25,8 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"k8s.io/klog/v2"
+
+	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/cli"
 )
 
 // Execute runs the tenancy binary.
@@ -45,6 +47,9 @@ func Execute() error {
 	root.AddCommand(newInitCommand())
 	root.AddCommand(newOperatorCommand())
 	root.AddCommand(newVirtualWorkspaceCommand())
+	// seed is shared with the CLI: one idempotent command any environment
+	// (Tilt, demos, CI) uses to converge on baseline tenancy data.
+	root.AddCommand(cli.NewSeedCommand())
 
 	return root.Execute()
 }
