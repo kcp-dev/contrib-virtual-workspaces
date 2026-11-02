@@ -349,7 +349,7 @@ func testContext(t *testing.T) context.Context {
 
 // bindingName mirrors the operator's deterministic binding naming.
 func bindingName(membershipName string) string {
-	return fmt.Sprintf("tenancy.contrib.kcp.io:membership:%s", membershipName)
+	return fmt.Sprintf("tenancy.platform.kcp.io:membership:%s", membershipName)
 }
 
 // getBinding fetches the materialized ClusterRoleBinding for a membership

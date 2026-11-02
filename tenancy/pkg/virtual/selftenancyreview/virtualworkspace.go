@@ -30,23 +30,45 @@ import (
 
 	"github.com/kcp-dev/contrib-virtual-workspaces/access/pkg/virtual"
 	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/directory"
+	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/virtual/membership"
+	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/virtual/selfprojectrequest"
+	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/virtual/selftenantrequest"
 	tenancyv1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/tenancy/sdk/apis/tenancy/v1alpha1"
 )
 
 const VirtualWorkspaceName = "tenancy"
 
 // RootPath is the URL prefix the front-proxy routes to this VW. The review
-// is served at RootPath + /apis/tenancy.contrib.kcp.io/v1alpha1/selftenancyreviews.
+// is served at RootPath + /apis/tenancy.platform.kcp.io/v1alpha1/selftenancyreviews.
 const RootPath = "/services/" + VirtualWorkspaceName
 
+// Config is what the server supplies: the shared directory every answer
+// is read from, how to render a workspace's URL, and the write paths —
+// each one a function, because how this server reaches another workspace
+// is a property of the deployment rather than of the API.
+type Config struct {
+	Directory   *directory.Directory
+	EndpointFor func(cluster string) string
+
+	CreateProject selfprojectrequest.CreateProjectFunc
+
+	Tenants      selftenantrequest.Options
+	CreateTenant selftenantrequest.CreateTenantFunc
+
+	Memberships membership.Options
+}
+
 // NewVirtualWorkspace builds the tenancy VW: a fixed-group-version
-// delegated apiserver serving tenancy.contrib.kcp.io/v1alpha1 with the
-// selftenancyreviews REST storage, answered from the shared directory.
+// delegated apiserver serving tenancy.platform.kcp.io/v1alpha1, answered
+// from the shared directory.
 //
-// The authorizer only requires an authenticated caller: the review is a
-// self-review, so the directory — not the authorizer — decides what the
-// answer contains.
-func NewVirtualWorkspace(d *directory.Directory, endpointFor func(cluster string) string) rootapiserver.NamedVirtualWorkspace {
+// The authorizer only requires an authenticated caller. That is not a gap:
+// every resource here decides for itself what the caller may see or do,
+// from the caller's own Memberships as the directory reports them. A
+// coarser authorizer would have to be told about tenants, which is exactly
+// the knowledge the directory already holds.
+func NewVirtualWorkspace(cfg Config) rootapiserver.NamedVirtualWorkspace {
+	d := cfg.Directory
 	vw := &fixedgvs.FixedGroupVersionsVirtualWorkspace{
 		RootPathResolver: framework.RootPathResolverFunc(func(urlPath string, ctx context.Context) (bool, string, context.Context) {
 			if urlPath != RootPath && !strings.HasPrefix(urlPath, RootPath+"/") {
@@ -68,7 +90,28 @@ func NewVirtualWorkspace(d *directory.Directory, endpointFor func(cluster string
 				BootstrapRestResources: func(_ genericapiserver.CompletedConfig) (map[string]fixedgvs.RestStorageBuilder, error) {
 					return map[string]fixedgvs.RestStorageBuilder{
 						"selftenancyreviews": func(_ genericapiserver.CompletedConfig) (restStorage.Storage, error) {
-							return NewREST(d, endpointFor), nil
+							return NewREST(d, cfg.EndpointFor), nil
+						},
+						// Creating a project in a tenant the caller
+						// administers. Authorized against the caller's own
+						// Membership, performed with this server's
+						// credential, because the tenant tier is
+						// deliberately closed to its own members.
+						"selfprojectrequests": func(_ genericapiserver.CompletedConfig) (restStorage.Storage, error) {
+							return selfprojectrequest.NewREST(d, cfg.CreateProject), nil
+						},
+						// How someone with no membership at all gets
+						// started: there is nothing to authorize against,
+						// so the deployment decides whether this is
+						// offered.
+						"selftenantrequests": func(_ genericapiserver.CompletedConfig) (restStorage.Storage, error) {
+							return selftenantrequest.NewREST(cfg.Tenants, cfg.CreateTenant), nil
+						},
+						// Managing who else may reach what. Mediated for
+						// the same reason projects are: the grants live in
+						// the workspace their holders may not enter.
+						"memberships": func(_ genericapiserver.CompletedConfig) (restStorage.Storage, error) {
+							return membership.NewREST(d, cfg.Memberships), nil
 						},
 					}, nil
 				},

@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // Package v1alpha1 holds the API types for the tenancy component (group
-// tenancy.contrib.kcp.io).
+// tenancy.platform.kcp.io).
 //
 // Three persisted, cluster-scoped kinds — Tenant, Project and Membership —
 // are exported through an APIExport and bound into an organization
@@ -25,5 +25,5 @@ limitations under the License.
 // identity a member of, and as what role?".
 //
 // +k8s:openapi-gen=true
-// +groupName=tenancy.contrib.kcp.io
+// +groupName=tenancy.platform.kcp.io
 package v1alpha1

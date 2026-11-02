@@ -325,3 +325,121 @@ func (in *SelfTenancyReviewList) DeepCopyObject() runtime.Object {
 	}
 	return nil
 }
+
+// DeepCopyInto is a deepcopy function, copying the receiver, writing into out. in must be non-nil.
+func (in *SelfProjectRequest) DeepCopyInto(out *SelfProjectRequest) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
+	out.Spec = in.Spec
+	out.Status = in.Status
+}
+
+// DeepCopy is a deepcopy function, copying the receiver, creating a new SelfProjectRequest.
+func (in *SelfProjectRequest) DeepCopy() *SelfProjectRequest {
+	if in == nil {
+		return nil
+	}
+	out := new(SelfProjectRequest)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// DeepCopyObject is a deepcopy function, copying the receiver, creating a new runtime.Object.
+func (in *SelfProjectRequest) DeepCopyObject() runtime.Object {
+	if c := in.DeepCopy(); c != nil {
+		return c
+	}
+	return nil
+}
+
+// DeepCopyInto is a deepcopy function, copying the receiver, writing into out. in must be non-nil.
+func (in *SelfProjectRequestList) DeepCopyInto(out *SelfProjectRequestList) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
+	if in.Items != nil {
+		l := make([]SelfProjectRequest, len(in.Items))
+		for i := range in.Items {
+			in.Items[i].DeepCopyInto(&l[i])
+		}
+		out.Items = l
+	}
+}
+
+// DeepCopy is a deepcopy function, copying the receiver, creating a new SelfProjectRequestList.
+func (in *SelfProjectRequestList) DeepCopy() *SelfProjectRequestList {
+	if in == nil {
+		return nil
+	}
+	out := new(SelfProjectRequestList)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// DeepCopyObject is a deepcopy function, copying the receiver, creating a new runtime.Object.
+func (in *SelfProjectRequestList) DeepCopyObject() runtime.Object {
+	if c := in.DeepCopy(); c != nil {
+		return c
+	}
+	return nil
+}
+
+// DeepCopyInto is a deepcopy function, copying the receiver, writing into out. in must be non-nil.
+func (in *SelfTenantRequest) DeepCopyInto(out *SelfTenantRequest) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
+	out.Spec = in.Spec
+	out.Status = in.Status
+}
+
+// DeepCopy is a deepcopy function, copying the receiver, creating a new SelfTenantRequest.
+func (in *SelfTenantRequest) DeepCopy() *SelfTenantRequest {
+	if in == nil {
+		return nil
+	}
+	out := new(SelfTenantRequest)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// DeepCopyObject is a deepcopy function, copying the receiver, creating a new runtime.Object.
+func (in *SelfTenantRequest) DeepCopyObject() runtime.Object {
+	if c := in.DeepCopy(); c != nil {
+		return c
+	}
+	return nil
+}
+
+// DeepCopyInto is a deepcopy function, copying the receiver, writing into out. in must be non-nil.
+func (in *SelfTenantRequestList) DeepCopyInto(out *SelfTenantRequestList) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
+	if in.Items != nil {
+		l := make([]SelfTenantRequest, len(in.Items))
+		for i := range in.Items {
+			in.Items[i].DeepCopyInto(&l[i])
+		}
+		out.Items = l
+	}
+}
+
+// DeepCopy is a deepcopy function, copying the receiver, creating a new SelfTenantRequestList.
+func (in *SelfTenantRequestList) DeepCopy() *SelfTenantRequestList {
+	if in == nil {
+		return nil
+	}
+	out := new(SelfTenantRequestList)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// DeepCopyObject is a deepcopy function, copying the receiver, creating a new runtime.Object.
+func (in *SelfTenantRequestList) DeepCopyObject() runtime.Object {
+	if c := in.DeepCopy(); c != nil {
+		return c
+	}
+	return nil
+}

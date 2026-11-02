@@ -44,6 +44,7 @@ func newTenantCommand() *cobra.Command {
 	var (
 		displayName string
 		description string
+		firstAdmin  string
 		wait_       bool
 	)
 
@@ -66,6 +67,7 @@ func newTenantCommand() *cobra.Command {
 				Spec: tenancyv1alpha1.TenantSpec{
 					DisplayName: displayName,
 					Description: description,
+					FirstAdmin:  firstAdmin,
 				},
 			}
 			if err := c.Create(cmd.Context(), tenant); err != nil {
@@ -85,6 +87,9 @@ func newTenantCommand() *cobra.Command {
 	create.Flags().StringVar(&displayName, "display-name", "",
 		"Human name of the tenant; seeds the workspace name. Defaults to NAME.")
 	create.Flags().StringVar(&description, "description", "", "Free text for humans.")
+	create.Flags().StringVar(&firstAdmin, "first-admin", "",
+		"Identity to grant admin on this tenant once its workspace exists. Saves a second "+
+			"`membership add`, and is what makes the tenant usable by anyone but you.")
 	create.Flags().BoolVar(&wait_, "wait", true, "Wait until the tenant's workspace is ready.")
 
 	list := &cobra.Command{
@@ -178,11 +183,16 @@ func dashPhase(p tenancyv1alpha1.Phase) tenancyv1alpha1.Phase {
 }
 
 // membershipName derives a deterministic object name for a grant, so that
-// granting the same access twice is a no-op rather than a duplicate.
-func membershipName(subject, tenant, project string) string {
-	parts := naming.Slugify(subject) + "-" + naming.Slugify(tenant)
-	if project != "" {
-		parts += "-" + naming.Slugify(project)
+// granting the same access twice is a no-op rather than a duplicate. The
+// virtual workspace derives the same name for grants made through it, so
+// the two paths cannot produce competing objects for one grant.
+func membershipName(kind tenancyv1alpha1.SubjectKind, subject, tenant, project string) string {
+	return naming.MembershipName(string(kind), subject, tenant, project)
+}
+
+func subjectKind(asGroup bool) tenancyv1alpha1.SubjectKind {
+	if asGroup {
+		return tenancyv1alpha1.SubjectKindGroup
 	}
-	return parts
+	return tenancyv1alpha1.SubjectKindUser
 }

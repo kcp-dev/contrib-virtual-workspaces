@@ -39,6 +39,10 @@ const maxNameLength = 54
 // fallback appends.
 const suffixLength = 8
 
+// subjectHashLength is how many hex characters of the subject hash a
+// membership name carries.
+const subjectHashLength = 6
+
 // A Strategy proposes workspace names for an object. Propose returns
 // candidates in preference order; the caller tries each until one is free
 // or already owned by the same object. The last candidate embeds the
@@ -126,6 +130,26 @@ func Slugify(displayName string) string {
 		}
 	}
 	return truncate(b.String(), maxNameLength)
+}
+
+// MembershipName derives the object name of a grant from what it grants
+// to whom. It is deterministic so that granting the same access twice is
+// an update in place rather than a second object saying the same thing —
+// which is what lets a role be changed by re-granting it, and what makes
+// seeding safe to repeat.
+//
+// Subject, tenant and project are slugified because they become part of an
+// object name: a subject is usually an email address, which is not a DNS
+// label. Different subjects can end up with the same slug (alice@x.com,
+// ALICE@X.COM and a group called alice.x.com all become alice-x-com), so a
+// short hash of the kind and subject is added to tell them apart.
+func MembershipName(kind, subject, tenant, project string) string {
+	sum := sha256.Sum256([]byte(kind + "\x00" + subject))
+	name := Slugify(subject) + "-" + hex.EncodeToString(sum[:])[:subjectHashLength] + "-" + Slugify(tenant)
+	if project != "" {
+		name += "-" + Slugify(project)
+	}
+	return name
 }
 
 // truncate shortens s to at most n bytes without leaving a trailing dash.

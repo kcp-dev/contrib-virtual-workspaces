@@ -23,12 +23,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
+	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/kcp-dev/contrib-virtual-workspaces/tenancy/pkg/naming"
 	tenancyv1alpha1 "github.com/kcp-dev/contrib-virtual-workspaces/tenancy/sdk/apis/tenancy/v1alpha1"
 )
 
@@ -141,7 +145,7 @@ func TestScenarioTenancyctlDrivesTheModel(t *testing.T) {
 	projectWS := workspaceClient(t, projectObj.Status.URL)
 
 	waitFor(t, ctx, "the CLI's grant to reach the project workspace", func(ctx context.Context) (bool, error) {
-		crb, err := getBinding(ctx, projectWS, "alice-"+tenant)
+		crb, err := getBinding(ctx, projectWS, naming.MembershipName(string(tenancyv1alpha1.SubjectKindUser), "alice", tenant, ""))
 		if err != nil {
 			return false, nil
 		}
@@ -151,7 +155,7 @@ func TestScenarioTenancyctlDrivesTheModel(t *testing.T) {
 	// Revoking removes it again.
 	tenancyctl(t, ctx, "revoke", "alice", "--tenant", tenant)
 	waitFor(t, ctx, "the CLI's revoke to remove the binding", func(ctx context.Context) (bool, error) {
-		_, err := getBinding(ctx, projectWS, "alice-"+tenant)
+		_, err := getBinding(ctx, projectWS, naming.MembershipName(string(tenancyv1alpha1.SubjectKindUser), "alice", tenant, ""))
 		return err != nil, nil
 	})
 }
@@ -215,4 +219,34 @@ func TestScenarioTenancyctlWhoamiAndKubeconfig(t *testing.T) {
 			t.Errorf("generated kubeconfig has no %q:\n%s", want, raw)
 		}
 	}
+
+	// Projects only. The tenant workspace is this system's own record
+	// store: a Membership materializes RBAC in the tenant's projects and
+	// never in the tenant itself, so a context for it could only answer
+	// Forbidden and must not be written.
+	written, err := clientcmd.Load(raw)
+	if err != nil {
+		t.Fatalf("parse generated kubeconfig: %v", err)
+	}
+	if _, found := written.Contexts[tenant]; found {
+		t.Errorf("generated kubeconfig has a context for the tenant workspace %q, which no member can enter", tenant)
+	}
+	project := "web-" + suffix
+	if _, found := written.Contexts[tenant+"-"+project]; !found {
+		t.Errorf("generated kubeconfig has no context for project %q; got %v",
+			tenant+"-"+project, contextNames(written))
+	}
+	if written.CurrentContext != tenant+"-"+project {
+		t.Errorf("current context is %q, want the project context %q",
+			written.CurrentContext, tenant+"-"+project)
+	}
+}
+
+func contextNames(cfg *clientcmdapi.Config) []string {
+	names := make([]string, 0, len(cfg.Contexts))
+	for name := range cfg.Contexts {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }

@@ -54,10 +54,13 @@ func init() {
 	utilruntime.Must(tenancyv1alpha1.AddToScheme(scheme))
 }
 
-// Execute runs tenancyctl.
-func Execute() error {
+// New builds the tenancy CLI command tree under the given name —
+// "tenancyctl" for the standalone binary, "tenancy" when mounted as a
+// subcommand of the repo-wide CLI. It registers no logging flags; the
+// binary that owns the process does that once, at its own root.
+func New(use string) *cobra.Command {
 	root := &cobra.Command{
-		Use:   "tenancyctl",
+		Use:   use,
 		Short: "Manage kcp tenants, projects and access",
 		Long: `tenancyctl is the client for the kcp tenancy model.
 
@@ -70,10 +73,6 @@ with no kubeconfig for kcp itself and no credential flags.`,
 		SilenceUsage: true,
 	}
 
-	klogFlags := goflag.NewFlagSet("klog", goflag.ContinueOnError)
-	klog.InitFlags(klogFlags)
-	root.PersistentFlags().AddGoFlagSet(klogFlags)
-
 	root.AddCommand(
 		newLoginCommand(),
 		newLogoutCommand(),
@@ -84,7 +83,19 @@ with no kubeconfig for kcp itself and no credential flags.`,
 		newWhoAmICommand(),
 		newKubeconfigCommand(),
 		newOrgCommand(),
+		newSeedCommand(),
 	)
+
+	return root
+}
+
+// Execute runs the standalone tenancyctl binary.
+func Execute() error {
+	root := New("tenancyctl")
+
+	klogFlags := goflag.NewFlagSet("klog", goflag.ContinueOnError)
+	klog.InitFlags(klogFlags)
+	root.PersistentFlags().AddGoFlagSet(klogFlags)
 
 	return root.Execute()
 }

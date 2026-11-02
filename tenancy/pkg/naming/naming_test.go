@@ -104,6 +104,27 @@ func TestCollidingDisplayNamesDivergeOnFallback(t *testing.T) {
 	}
 }
 
+func TestMembershipNamesKeepSubjectsApart(t *testing.T) {
+	// All three slugify to alice-x-com.
+	names := map[string]string{
+		"user alice@x.com":   MembershipName("User", "alice@x.com", "acme", ""),
+		"user ALICE@X.COM":   MembershipName("User", "ALICE@X.COM", "acme", ""),
+		"group alice.x.com":  MembershipName("Group", "alice.x.com", "acme", ""),
+		"group alice@x.com":  MembershipName("Group", "alice@x.com", "acme", ""),
+		"project-scoped one": MembershipName("User", "alice@x.com", "acme", "web"),
+	}
+	seen := map[string]string{}
+	for who, name := range names {
+		if other, ok := seen[name]; ok {
+			t.Errorf("%s and %s share the name %q", who, other, name)
+		}
+		seen[name] = who
+	}
+	if a, b := MembershipName("User", "alice", "acme", ""), MembershipName("User", "alice", "acme", ""); a != b {
+		t.Errorf("MembershipName is not deterministic: %q vs %q", a, b)
+	}
+}
+
 func TestUnknownStrategyIsAnError(t *testing.T) {
 	if _, err := ForName("cute-animals"); err == nil {
 		t.Error("expected an error for an unknown strategy")
