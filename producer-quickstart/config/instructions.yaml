@@ -1,0 +1,56 @@
+# What a consumer sees in the console after enabling this, as tabs: each
+# key is a section, the NN- prefix orders them and is dropped from the
+# label. A markdown subset — headings, paragraphs, lists, fenced code,
+# `inline code`, links — rendered as elements, never as HTML. {{variables}}
+# are filled in for the reader: {{server}}, {{workspace}}, {{cluster}},
+# {{tenant}}, {{project}}, {{user}}, {{export}}, {{binding}}, and more; see
+# the marketplace README for the list.
+#
+# A provisioned producer workspace starts with no namespace, hence the
+# Namespace here; the marketplace finds the ConfigMap by name whatever
+# namespace it is in.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: default
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dbaas-instructions
+  namespace: default
+data:
+  00-overview.md: |
+    # Databases
+
+    Enabling bound `dbaas.example.com` into `{{tenant}}/{{project}}`. A
+    `Database` object is one instance: say which engine and size, and the
+    producer reports where it answers in `status.endpoint` once it is
+    `Ready`.
+
+  10-kubectl.md: |
+    # kubectl
+
+    Point a kubeconfig at the project and ask for one:
+
+    ```sh
+    kubectl --server {{workspace}} apply -f - <<EOF
+    apiVersion: dbaas.example.com/v1alpha1
+    kind: Database
+    metadata:
+      name: orders
+    spec:
+      engine: postgres
+      size: small
+    EOF
+    kubectl --server {{workspace}} get databases -w
+    ```
+
+    `Pending` becomes `Ready` with an endpoint in a few seconds.
+
+  20-console.md: |
+    # Console
+
+    Open **Databases** in the sidebar: the table shows engine, size, phase
+    and endpoint — the same columns kubectl prints. *New* opens a form built
+    from the schema; *Edit* shows the object as YAML next to it.

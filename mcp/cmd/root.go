@@ -39,6 +39,8 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(serveCmd)
+	rootCmd.AddCommand(initCmd)
+	rootCmd.AddCommand(operatorCmd)
 
 	klogFlags := goflag.NewFlagSet("klog", goflag.ContinueOnError)
 	klog.InitFlags(klogFlags)

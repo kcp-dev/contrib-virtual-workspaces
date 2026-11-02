@@ -1,0 +1,33 @@
+# The export, which is also the offering: the annotations publish it to the
+# catalog, and spec.permissionClaims are what the consumer accepts when they
+# enable it. There is no other object to keep in step.
+#
+# `schema:` is rewritten by `make generate` to the current schema's name.
+apiVersion: apis.kcp.io/v1alpha2
+kind: APIExport
+metadata:
+  name: dbaas.example.com
+  annotations:
+    # Only the exact string "true" publishes.
+    marketplace.kcp.hub/publish: "true"
+    marketplace.kcp.hub/display-name: Databases
+    marketplace.kcp.hub/description: Managed databases, one object per instance.
+    # A ConfigMap in this workspace (config/instructions.yaml): what the
+    # console shows a consumer after they enable this.
+    marketplace.kcp.hub/instructions: dbaas-instructions
+    # marketplace.kcp.hub/docs-url: https://docs.example.com/dbaas
+spec:
+  resources:
+    - name: databases
+      group: dbaas.example.com
+      schema: v261002-64e2900.databases.dbaas.example.com
+      storage:
+        crd: {}
+  # This producer only touches its own kind, so it claims nothing. A
+  # producer that needs to read, say, the consumer's ConfigMaps or write a
+  # Secret with credentials lists that here — and the consumer sees exactly
+  # that list on the catalog card before they accept it.
+  # permissionClaims:
+  #   - group: ""
+  #     resource: secrets
+  #     verbs: [create, get, update, delete]

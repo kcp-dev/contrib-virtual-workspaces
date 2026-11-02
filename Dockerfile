@@ -91,3 +91,14 @@ FROM gcr.io/distroless/static:nonroot AS tenancy-vw
 COPY --from=build-tenancy /out/ /
 USER 65532:65532
 ENTRYPOINT ["/tenancy-vw"]
+
+# ── marketplace ──────────────────────────────────────────────────────
+FROM builder AS build-marketplace
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -o /out/marketplace-vw ./marketplace/
+
+FROM gcr.io/distroless/static:nonroot AS marketplace-vw
+COPY --from=build-marketplace /out/ /
+USER 65532:65532
+ENTRYPOINT ["/marketplace-vw"]

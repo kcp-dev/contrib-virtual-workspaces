@@ -1,0 +1,51 @@
+# Runs the controller in a Kubernetes cluster, with a kubeconfig for the
+# producer's workspace mounted from a Secret:
+#
+#   kubectl create namespace dbaas-producer
+#   kubectl -n dbaas-producer create secret generic kcp-kubeconfig \
+#     --from-file=kubeconfig=<kubeconfig for the producer workspace>
+#   kubectl apply -f config/deploy/deployment.yaml
+#
+# The kubeconfig's identity needs, in the producer's workspace, to read the
+# APIExportEndpointSlice and the export's content — which the workspace's
+# owner has, and a dedicated ServiceAccount or user can be granted.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dbaas-producer
+  namespace: dbaas-producer
+  labels:
+    app.kubernetes.io/name: dbaas-producer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dbaas-producer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dbaas-producer
+    spec:
+      containers:
+        - name: producer
+          image: ghcr.io/example/dbaas-producer:latest
+          args:
+            - --kubeconfig=/etc/kcp/kubeconfig
+            - --workspace-path=root:marketplace:producers:dbaas
+            - --apiexport-endpointslice=dbaas
+          volumeMounts:
+            - name: kubeconfig
+              mountPath: /etc/kcp
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+      volumes:
+        - name: kubeconfig
+          secret:
+            secretName: kcp-kubeconfig

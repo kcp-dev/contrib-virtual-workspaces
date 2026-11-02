@@ -1,0 +1,15 @@
+# The slice the controller follows. A workspace appears on it the moment it
+# binds the export, which makes the slice both how the controller discovers
+# consumers and the exact list of workspaces it may reach into.
+#
+# __PRODUCER_WORKSPACE__ is filled in by hack/publish.sh: the slice names
+# the export by workspace path, and a provisioned producer's path is only
+# known once the operator has created it.
+apiVersion: apis.kcp.io/v1alpha1
+kind: APIExportEndpointSlice
+metadata:
+  name: dbaas
+spec:
+  export:
+    name: dbaas.example.com
+    path: __PRODUCER_WORKSPACE__

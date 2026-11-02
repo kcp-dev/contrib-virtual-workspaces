@@ -1,0 +1,29 @@
+# Who may bind the mcp export.
+#
+# `bind` is what kcp checks when a consumer creates the APIBinding that
+# enables MCP. Granting it to system:authenticated does not give anyone
+# anything by itself: enabling still requires the right to create an
+# APIBinding in a workspace of one's own, which is what a tenancy admin
+# Membership materializes. This only opens the export's side of it.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: mcp:bind
+rules:
+  - apiGroups: ["apis.kcp.io"]
+    resources: ["apiexports"]
+    resourceNames: ["mcp"]
+    verbs: ["bind"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: mcp:bind
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mcp:bind
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: system:authenticated

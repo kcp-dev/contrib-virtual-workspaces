@@ -1,0 +1,61 @@
+# An offering with NO claims, applied to the PROVIDER's workspace.
+#
+# The minimal shape: an export that asks for nothing in the consumer's
+# workspace, so enabling it is a binding with an empty consent form. Its
+# catalog entry carries no claims and, having no claim surface, no
+# revision either.
+apiVersion: apis.kcp.io/v1alpha1
+kind: APIResourceSchema
+metadata:
+  name: v1alpha1.widgets.acme.example
+spec:
+  group: acme.example
+  names:
+    kind: Widget
+    listKind: WidgetList
+    plural: widgets
+    singular: widget
+  scope: Cluster
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - name: Size
+          type: string
+          jsonPath: .spec.size
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+        # priority above 0 is a wide-only column: kubectl hides it without
+        # -o wide, and the console behind its "wide" toggle.
+        - name: UID
+          type: string
+          jsonPath: .metadata.uid
+          priority: 1
+      schema:
+        type: object
+        properties:
+          apiVersion: {type: string}
+          kind: {type: string}
+          metadata: {type: object}
+          spec:
+            type: object
+            properties:
+              size: {type: string}
+---
+apiVersion: apis.kcp.io/v1alpha2
+kind: APIExport
+metadata:
+  name: widgets.acme.example
+  annotations:
+    marketplace.kcp.hub/publish: "true"
+    marketplace.kcp.hub/display-name: Widgets
+    marketplace.kcp.hub/description: A widget kind, and nothing else.
+spec:
+  resources:
+    - name: widgets
+      group: acme.example
+      schema: v1alpha1.widgets.acme.example
+      storage:
+        crd: {}

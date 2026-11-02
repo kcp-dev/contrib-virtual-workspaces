@@ -1,0 +1,16 @@
+# The Producer record, applied to the marketplace's CATALOG workspace by
+# whoever runs the platform. It is the one thing a producer cannot do for
+# themselves: registering is being vouched for.
+#
+# mode: provisioned asks the operator to create the producer's workspace
+# under root:marketplace:producers, already bound to marketplace-publish.
+# A producer that brings their own workspace uses mode: external with
+# workspacePath, and binds marketplace-publish there themselves.
+apiVersion: marketplace.platform.kcp.io/v1alpha1
+kind: Producer
+metadata:
+  name: dbaas
+spec:
+  displayName: Databases
+  description: Example producer built from the producer-quickstart template.
+  mode: provisioned
