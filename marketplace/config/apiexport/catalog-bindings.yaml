@@ -1,0 +1,16 @@
+# Applied into the CATALOG workspace: the registry of Producer records.
+# It binds the Producer API and nothing else - the record tier cannot
+# provision a workspace and cannot reach into anyone's.
+apiVersion: apis.kcp.io/v1alpha2
+kind: APIBinding
+metadata:
+  name: marketplace-catalog
+spec:
+  reference:
+    export:
+      # The logical cluster id, not the pretty path: an APIBinding reference
+      # resolves ids locally on the shard, while pretty paths need the cache
+      # server's path index — which multi-shard deployments have broken
+      # before. The WorkspaceTypes reference exports the same way.
+      path: __EXPORTS_REF__
+      name: marketplace-catalog

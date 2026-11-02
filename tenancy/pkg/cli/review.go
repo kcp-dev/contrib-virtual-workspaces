@@ -53,15 +53,19 @@ type userOptions struct {
 }
 
 func (o *userOptions) addFlags(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&o.url, "url", os.Getenv("TENANCY_VW_URL"),
-		"Base URL of the tenancy virtual workspace, e.g. https://kcp.example.com. "+
-			"Defaults to $TENANCY_VW_URL.")
+	// The address is learned once, by `login --url`, and kept in the
+	// shared context; $TENANCY_VW_URL still wins for a one-off, and an
+	// explicit flag wins over both.
+	cmd.Flags().StringVar(&o.url, "url", envOr("TENANCY_VW_URL", storedServiceURL("tenancy")),
+		"Base URL of the tenancy virtual workspace. Defaults to the server `login --url` "+
+			"stored, or $TENANCY_VW_URL.")
 	cmd.Flags().StringVar(&o.certFile, "client-cert", "", "Client certificate to authenticate with.")
 	cmd.Flags().StringVar(&o.keyFile, "client-key", "", "Key for --client-cert.")
 	cmd.Flags().StringVar(&o.tokenFile, "token-file", "", "File holding a bearer token to authenticate with.")
-	cmd.Flags().StringVar(&o.caFile, "certificate-authority", "",
+	storedCA, storedInsecure := storedTLS()
+	cmd.Flags().StringVar(&o.caFile, "certificate-authority", storedCA,
 		"CA bundle used to verify the virtual workspace's serving certificate.")
-	cmd.Flags().BoolVar(&o.insecure, "insecure-skip-tls-verify", false,
+	cmd.Flags().BoolVar(&o.insecure, "insecure-skip-tls-verify", storedInsecure,
 		"Do not verify the virtual workspace's serving certificate. For local testing only.")
 	cmd.Flags().StringVar(&o.kubeconfig, "kubeconfig", "",
 		"Take credentials from this kubeconfig's current context instead of --client-cert/--token-file.")
@@ -219,13 +223,19 @@ func newKubeconfigCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "kubeconfig",
-		Short: "Write a kubeconfig with a context per tenant and project you can reach",
+		Short: "Write a kubeconfig with a context per project you can reach",
 		Long: `Ask the virtual workspace what you can reach and turn the answer
-into a kubeconfig: one context per tenant and per project, each pointing at
-that workspace's own URL, all sharing your credential.
+into a kubeconfig: one context per project, each pointing at that
+workspace's own URL, all sharing your credential.
+
+Projects only, because those are the workspaces a member can work in. A
+tenant workspace is the record store the tenancy system keeps its own
+objects in — a Membership materializes RBAC in that tenant's projects and
+never in the tenant itself — so no member can enter it, and a context for
+it would only ever answer Forbidden.
 
 This is the closest thing to a login: after running it, "kubectl
---context=<tenant>" talks to that tenant's workspace directly.`,
+--context=<tenant>-<project>" talks to that project's workspace directly.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			review, err := o.review(cmd.Context())
@@ -271,15 +281,16 @@ This is the closest thing to a login: after running it, "kubectl
 				kubeconfig.Contexts[name] = ctx
 			}
 
+			// Projects only: the tenant workspace is a record store no
+			// member can enter, so a context for it would be a trap.
 			for _, t := range review.Status.Tenants {
-				add(t.Name, t.Endpoint)
 				for _, p := range t.Projects {
 					add(t.Name+"-"+p.Name, p.Endpoint)
 				}
 			}
 			if len(kubeconfig.Contexts) == 0 {
-				return fmt.Errorf("no workspace in the answer carried an endpoint URL; " +
-					"is the virtual workspace started with --endpoint-base?")
+				return fmt.Errorf("you are a member of no project yet, so there is nothing to write "+
+					"(`%s whoami` shows what you can reach)", cmd.Root().Name())
 			}
 
 			if context_ != "" {
@@ -288,7 +299,7 @@ This is the closest thing to a login: after running it, "kubectl
 				}
 				kubeconfig.CurrentContext = context_
 			} else {
-				kubeconfig.CurrentContext = review.Status.Tenants[0].Name
+				kubeconfig.CurrentContext = defaultContext(review.Status.Tenants, kubeconfig.Contexts)
 			}
 
 			if output == "" || output == "-" {
@@ -302,8 +313,12 @@ This is the closest thing to a login: after running it, "kubectl
 			if err := clientcmd.WriteToFile(*kubeconfig, output); err != nil {
 				return fmt.Errorf("write %s: %w", output, err)
 			}
-			fmt.Printf("wrote %s with %d contexts (current: %s)\n",
-				output, len(kubeconfig.Contexts), kubeconfig.CurrentContext)
+			plural := "s"
+			if len(kubeconfig.Contexts) == 1 {
+				plural = ""
+			}
+			fmt.Printf("wrote %s with %d project context%s (current: %s)\n",
+				output, len(kubeconfig.Contexts), plural, kubeconfig.CurrentContext)
 			return nil
 		},
 	}
@@ -335,4 +350,31 @@ func hint(err error) string {
 	default:
 		return ""
 	}
+}
+
+// defaultContext picks which project context a freshly written kubeconfig
+// starts in: the first one the caller actually holds a role in.
+//
+// A project can be listed with no roles of its own — a tenant-wide grant
+// is reported on the tenant, not repeated on every project — so "no
+// roles" is not "no access" and such a context is still worth keeping.
+// Preferring one with roles just makes the default the least surprising.
+func defaultContext(tenants []tenancyv1alpha1.TenantClaim, contexts map[string]*clientcmdapi.Context) string {
+	var fallback string
+
+	for _, t := range tenants {
+		for _, p := range t.Projects {
+			name := t.Name + "-" + p.Name
+			if _, ok := contexts[name]; !ok {
+				continue // no endpoint, so no context was written for it
+			}
+			if len(p.Roles) > 0 {
+				return name
+			}
+			if fallback == "" {
+				fallback = name
+			}
+		}
+	}
+	return fallback
 }

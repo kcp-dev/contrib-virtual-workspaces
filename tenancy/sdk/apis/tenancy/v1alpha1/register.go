@@ -22,7 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-const GroupName = "tenancy.contrib.kcp.io"
+const GroupName = "tenancy.platform.kcp.io"
 
 var (
 	SchemeBuilder      = runtime.NewSchemeBuilder(addKnownTypes)
@@ -48,6 +48,10 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&MembershipList{},
 		&SelfTenancyReview{},
 		&SelfTenancyReviewList{},
+		&SelfProjectRequest{},
+		&SelfProjectRequestList{},
+		&SelfTenantRequest{},
+		&SelfTenantRequestList{},
 	)
 	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
 	return nil

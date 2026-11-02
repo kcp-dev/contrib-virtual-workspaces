@@ -1,0 +1,29 @@
+# Applied into the PROVIDERS workspace: the parent provisioned producer
+# workspaces are created under. It binds only the capability to create
+# them - no marketplace API is servable here, so a bug in provisioning
+# cannot reach the records that drive it.
+apiVersion: apis.kcp.io/v1alpha2
+kind: APIBinding
+metadata:
+  name: marketplace-provisioner
+spec:
+  reference:
+    export:
+      # The logical cluster id, not the pretty path: an APIBinding reference
+      # resolves ids locally on the shard, while pretty paths need the cache
+      # server's path index — which multi-shard deployments have broken
+      # before. The WorkspaceTypes reference exports the same way.
+      path: __EXPORTS_REF__
+      name: marketplace-provisioner
+  permissionClaims:
+    - group: tenancy.kcp.io
+      resource: workspaces
+      verbs: [get, list, watch, create, delete]
+      # MUST match the identityHash on the export's claim; kcp compares
+      # claims by (group, resource, identityHash), and a mismatch leaves
+      # the claim exported-but-never-applied while the binding still
+      # reports Bound.
+      identityHash: __TENANCY_KCP_IO_IDENTITY_HASH__
+      state: Accepted
+      selector:
+        matchAll: true

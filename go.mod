@@ -23,17 +23,21 @@ require (
 )
 
 require (
+	github.com/bombsimon/logrusr/v3 v3.1.0 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
 	github.com/moby/spdystream v0.5.1 // indirect
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
+	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
+	golang.org/x/mod v0.35.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/cloud-provider v0.0.0 // indirect
 	k8s.io/endpointslice v0.0.0 // indirect
 	k8s.io/externaljwt v0.0.0 // indirect
+	k8s.io/gengo/v2 v2.0.0-20250922181213-ec3ebc5fd46b // indirect
 	k8s.io/kube-aggregator v0.0.0 // indirect
 	k8s.io/kube-controller-manager v0.0.0 // indirect
 	k8s.io/kube-proxy v0.0.0 // indirect

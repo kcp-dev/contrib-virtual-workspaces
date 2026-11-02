@@ -10,17 +10,17 @@
 # hash from the claim on the installed APIExport (init discovered and
 # injected it there):
 #
-#   kubectl get apiexport tenancy.contrib.kcp.io \
+#   kubectl get apiexport tenancy.platform.kcp.io \
 #     -o jsonpath='{.spec.permissionClaims[0].identityHash}'
 apiVersion: apis.kcp.io/v1alpha2
 kind: APIBinding
 metadata:
-  name: tenancy.contrib.kcp.io
+  name: tenancy.platform.kcp.io
 spec:
   reference:
     export:
       path: root:tenancy:controllers
-      name: tenancy.contrib.kcp.io
+      name: tenancy.platform.kcp.io
   permissionClaims:
     - group: tenancy.kcp.io
       resource: workspaces
