@@ -133,7 +133,10 @@ root down. Idempotent: safe to run on every pod start and every upgrade.`,
 				if err != nil {
 					return fmt.Errorf("resolve workspace path %s: %w", tenantsPath, err)
 				}
-				if err := bootstrap.BindTenantsParent(ctx, tenantsCfg, result); err != nil {
+				if err := bootstrap.BindTenantsParent(ctx, tenantsCfg, result, bootstrap.Options{
+					ServerUsers:  serverUsers,
+					ServerGroups: serverGroups,
+				}); err != nil {
 					return fmt.Errorf("bind the provisioner claim into %s: %w", tenantsPath, err)
 				}
 				logger.Info("provisioning parent ready", "workspace", tenantsPath)
