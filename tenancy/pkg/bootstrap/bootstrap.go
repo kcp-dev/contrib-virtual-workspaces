@@ -184,7 +184,7 @@ func BindStore(ctx context.Context, cfg *rest.Config, result *Result, opts Optio
 		if err != nil {
 			return fmt.Errorf("build kubernetes client: %w", err)
 		}
-		if err := applyStoreLocator(ctx, kube, opts.ServerUsers, opts.ServerGroups); err != nil {
+		if err := applyLocator(ctx, kube, tenancyv1alpha1.GroupName+":store-locator", opts.ServerUsers, opts.ServerGroups); err != nil {
 			return fmt.Errorf("grant the server identities the store locator role: %w", err)
 		}
 	}
@@ -214,8 +214,25 @@ func BindStore(ctx context.Context, cfg *rest.Config, result *Result, opts Optio
 //
 // There is nothing to wait for here — the claim adds no servable API, it
 // adds reach — so a readiness probe would have nothing to probe.
-func BindTenantsParent(ctx context.Context, cfg *rest.Config, result *Result) error {
-	return applyTier(ctx, cfg, result, apiexport.TenantsOrder)
+//
+// The operator creates tenant workspaces under this one through the
+// provisioner export, which addresses clusters and not paths, so the
+// server identities get the same locator role as in the store.
+func BindTenantsParent(ctx context.Context, cfg *rest.Config, result *Result, opts Options) error {
+	if err := applyTier(ctx, cfg, result, apiexport.TenantsOrder); err != nil {
+		return err
+	}
+	if len(opts.ServerUsers)+len(opts.ServerGroups) == 0 {
+		return nil
+	}
+	kube, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return fmt.Errorf("build kubernetes client: %w", err)
+	}
+	if err := applyLocator(ctx, kube, tenancyv1alpha1.GroupName+":tenants-locator", opts.ServerUsers, opts.ServerGroups); err != nil {
+		return fmt.Errorf("grant the server identities the tenants locator role: %w", err)
+	}
+	return nil
 }
 
 // applyTier applies one hand-bound tier's assets.
@@ -392,13 +409,13 @@ func applyManifests(ctx context.Context, dyn dynamic.Interface, mapper *restmapp
 	}
 }
 
-// applyStoreLocator grants the least a server needs to find out which
-// logical cluster the store workspace is: kcp's workspace gate, and a read
-// of the LogicalCluster that names it. Deliberately not the Tenant API —
-// tenants are written through the platform export, not through here.
-func applyStoreLocator(ctx context.Context, kube kubernetes.Interface, users, groups []string) error {
+// applyLocator grants the least a server needs to find out which logical
+// cluster a workspace is: kcp's workspace gate, and a read of the
+// LogicalCluster that names it. Deliberately not the Tenant API — tenants
+// are written through the platform export, not through here.
+func applyLocator(ctx context.Context, kube kubernetes.Interface, name string, users, groups []string) error {
 	role := &rbacv1.ClusterRole{
-		ObjectMeta: metav1.ObjectMeta{Name: tenancyv1alpha1.GroupName + ":store-locator"},
+		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Rules: []rbacv1.PolicyRule{
 			{
 				Verbs:           []string{"access"},

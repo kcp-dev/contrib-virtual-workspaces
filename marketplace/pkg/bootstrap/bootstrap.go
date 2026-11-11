@@ -170,8 +170,11 @@ func Bootstrap(ctx context.Context, cfg *rest.Config, exportsPath string, opts O
 
 // BindCatalog makes the workspace cfg points at the Producer registry: it
 // binds marketplace-catalog, then waits until Producers are servable.
-func BindCatalog(ctx context.Context, cfg *rest.Config, result *Result) error {
+func BindCatalog(ctx context.Context, cfg *rest.Config, result *Result, opts Options) error {
 	if err := applyTier(ctx, cfg, result, apiexport.CatalogOrder); err != nil {
+		return err
+	}
+	if err := grantLocator(ctx, cfg, opts); err != nil {
 		return err
 	}
 
@@ -198,8 +201,44 @@ func BindCatalog(ctx context.Context, cfg *rest.Config, result *Result) error {
 // parent: it binds marketplace-provisioner, so producer workspaces can be
 // created as its children. Nothing to wait for — the claim adds reach, not
 // a servable API.
-func BindProvidersParent(ctx context.Context, cfg *rest.Config, result *Result) error {
-	return applyTier(ctx, cfg, result, apiexport.ProducersOrder)
+func BindProvidersParent(ctx context.Context, cfg *rest.Config, result *Result, opts Options) error {
+	if err := applyTier(ctx, cfg, result, apiexport.ProducersOrder); err != nil {
+		return err
+	}
+	return grantLocator(ctx, cfg, opts)
+}
+
+// grantLocator grants the server identities the least they need to find
+// out which logical cluster the workspace cfg points at: kcp's workspace
+// gate, and a read of the LogicalCluster that names it. The marketplace
+// exports address clusters and not paths, so the operator cannot work
+// with a hand-bound tier without it.
+func grantLocator(ctx context.Context, cfg *rest.Config, opts Options) error {
+	if len(opts.ServerUsers)+len(opts.ServerGroups) == 0 {
+		return nil
+	}
+	kube, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return fmt.Errorf("build kubernetes client: %w", err)
+	}
+	role := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{Name: marketplacev1alpha1.GroupName + ":locator"},
+		Rules: []rbacv1.PolicyRule{
+			{
+				Verbs:           []string{"access"},
+				NonResourceURLs: []string{"/"},
+			},
+			{
+				APIGroups: []string{"core.kcp.io"},
+				Resources: []string{"logicalclusters"},
+				Verbs:     []string{"get"},
+			},
+		},
+	}
+	if err := applyRoleAndBinding(ctx, kube, role, opts.ServerUsers, opts.ServerGroups); err != nil {
+		return fmt.Errorf("grant the server identities the locator role: %w", err)
+	}
+	return nil
 }
 
 // applyTier applies one hand-bound tier's assets. These two tiers are the

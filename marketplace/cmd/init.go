@@ -85,10 +85,11 @@ created. Idempotent: safe to run on every pod start and every upgrade.`,
 				return fmt.Errorf("resolve workspace path %s: %w", workspacePath, err)
 			}
 
-			result, err := bootstrap.Bootstrap(ctx, target, workspacePath, bootstrap.Options{
+			opts := bootstrap.Options{
 				ServerUsers:  serverUsers,
 				ServerGroups: serverGroups,
-			})
+			}
+			result, err := bootstrap.Bootstrap(ctx, target, workspacePath, opts)
 			if err != nil {
 				return err
 			}
@@ -108,7 +109,7 @@ created. Idempotent: safe to run on every pod start and every upgrade.`,
 				if err != nil {
 					return fmt.Errorf("resolve workspace path %s: %w", catalogPath, err)
 				}
-				if err := bootstrap.BindCatalog(ctx, catalogCfg, result); err != nil {
+				if err := bootstrap.BindCatalog(ctx, catalogCfg, result, opts); err != nil {
 					return fmt.Errorf("bind the Provider API into %s: %w", catalogPath, err)
 				}
 				if err := bootstrap.GrantPlatformAdmins(ctx, catalogCfg, adminUsers, adminGroups); err != nil {
@@ -127,7 +128,7 @@ created. Idempotent: safe to run on every pod start and every upgrade.`,
 				if err != nil {
 					return fmt.Errorf("resolve workspace path %s: %w", producersPath, err)
 				}
-				if err := bootstrap.BindProvidersParent(ctx, providersCfg, result); err != nil {
+				if err := bootstrap.BindProvidersParent(ctx, providersCfg, result, opts); err != nil {
 					return fmt.Errorf("bind the provisioner claim into %s: %w", producersPath, err)
 				}
 				logger.Info("producers parent ready", "workspace", producersPath)
